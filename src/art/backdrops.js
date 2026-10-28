@@ -4,7 +4,7 @@
 // fall off through rich browns into deep, saturated teal-blue shadow; every surface is shaded with
 // its own ramp (lit side, core shadow, reflected light) and rim-lit where it faces a light.
 import { Img, hp, mixp, qt, bayer, hash, wob, noiseTile, nsf, material, Shade, mixHex, blobPts } from './backdrop_kit.js';
-import { rockMass, stalactites, boulder, farRanges, halo, godRay, paintGround, slab } from './backdrop_rock.js';
+import { rockMass, stalactites, boulder, farRanges, halo, godRay, paintGround, slab, isoShade } from './backdrop_rock.js';
 import * as P from './backdrop_props.js';
 
 // ---------------------------------------------------------------------------- region art direction
@@ -54,7 +54,7 @@ function mkLayer(g) {
   const w = Math.max(2, Math.round((g.x1 - g.x0) * g.ppu)), h = Math.max(2, Math.round((g.y1 - g.y0) * g.ppu));
   return { g, img: new Img(w, h), glow: new Img(w, h), px: (x) => (x - g.x0) * g.ppu, py: (y) => (g.y1 - y) * g.ppu, w, h };
 }
-const toPx = (L, l) => ({ x: L.px(l.x), y: L.py(l.y), z: (l.z ?? 0.4) * L.g.ppu, r: l.r * L.g.ppu, s: l.s, acc: !!l.acc });
+const toPx = (L, l) => ({ x: L.px(l.x), y: L.py(l.y), z: (l.z ?? 0.4) * L.g.ppu, r: l.r * L.g.ppu, s: l.s, acc: !!l.acc, band: !!l.band });
 const used = (img) => { for (let i = 0; i < img.d.length; i += 5) if (img.d[i]) return true; return false; };
 
 // ---------------------------------------------------------------------------- FAR
@@ -112,13 +112,15 @@ function paintWall(L, ri, kind, seed, opts, pl) {
   const S = STYLE[ri];
   const C = { img: L.img, glow: L.glow, sh: new Shade(pl.lights.map((l) => toPx(L, l))), ...context(S) };
   const nt = noiseTile(seed + 90, 4, 4);
-  const closed = kind === 'corridor' && ['crawl', 'tunnel', 'minecart', 'flooded'].includes(opts.tunnel || 'tunnel');
+  const closed = kind === 'campfire' || (kind === 'corridor' && ['crawl', 'tunnel', 'minecart', 'flooded'].includes(opts.tunnel || 'tunnel'));
   const ppu = L.g.ppu;
   const topAt = (x) => L.py(pl.wallTop(x / ppu + L.g.x0)) + (nsf(nt, x * 0.05, 1) - 0.5) * 18;
   const ceilAt = (x) => L.py(pl.ceilY(x / ppu + L.g.x0)) + (nsf(nt, x * 0.04, 7) - 0.5) * 22;
-  const size = Math.round(ppu * (ri === 3 ? 0.95 : 0.8));
+  const size = Math.max(60, Math.round(ppu * (ri === 3 ? 0.95 : 0.8)));
   const gem = hp(S.gem);
-  const rm = { size, seed: seed + 1, moss: C.M.moss, mossAmt: S.mossAmt, strata: ri === 3 ? 0.5 : 0.25, gem, gemAmt: 0.06, glow: L.glow };
+  // rock variety: base, a darker vein, an iron/ochre-stained or mineral-tinted stone
+  const Ms = [C.M.rock, C.mat(mixHex(S.rockL, S.shadow[2], 0.3)), C.mat(mixHex(S.rockL, ri === 1 ? '#8a6ac0' : ri === 2 ? '#7a8a4a' : ri === 4 ? '#7a2a1a' : ri === 5 ? '#7a6a9a' : '#a0602a', 0.4))];
+  const rm = { Ms, size, seed: seed + 1, moss: C.M.moss, mossAmt: S.mossAmt, strata: ri === 3 ? 0.5 : 0.25, gem, gemAmt: 0.06, glow: L.glow };
   if (closed) rockMass(L.img, C.sh, C.M.rock, { ...rm, full: true });
   else rockMass(L.img, C.sh, C.M.rock, { ...rm, top: topAt, ceil: ceilAt });
   // a tunnel's ceiling lip: an overhang of down-facing slabs with stalactites
@@ -132,7 +134,7 @@ function paintWall(L, ri, kind, seed, opts, pl) {
       x += rx * 1.4; k++;
     }
   }
-  stalactites(L.img, C.sh, C.M.rock, { ceil: (x) => cy(x) + (closed ? 6 : 2), seed: seed + 8, len: Math.round(ppu * 0.9), wid: Math.round(ppu * 0.12), gap: Math.round(ppu * 0.4), tip: ri === 1 ? hp('#9ae8ff') : ri === 0 || ri === 2 ? hp('#bfe8f0') : null, glow: L.glow });
+  if (pl.ceilY(L.g.x0) < L.g.y1 + 0.8) stalactites(L.img, C.sh, C.M.rock, { ceil: (x) => cy(x) + (closed ? 6 : 2), seed: seed + 8, len: Math.round(ppu * 0.9), wid: Math.round(ppu * 0.12), gap: Math.round(ppu * 0.4), tip: ri === 1 ? hp('#9ae8ff') : ri === 0 || ri === 2 ? hp('#bfe8f0') : null, glow: L.glow });
   // boulders and rubble at the foot of the wall
   const foot = L.py(0.02);
   for (let k = 0; k < Math.round(L.w / (ppu * 2.6)); k++) {
@@ -209,10 +211,16 @@ function mineMouth(L, C, x, y, w, h, seed) {
 /** Framed recess for the mining grid (world rect f.x0..f.x1, f.y0..f.y1). */
 function recess(L, C, f, seed) {
   const x0 = Math.round(L.px(f.x0)), x1 = Math.round(L.px(f.x1)), y0 = Math.round(L.py(f.y1)), y1 = Math.round(L.py(f.y0));
-  const D = C.M.rock.w;
+  const D = C.M.rock.w, H = y1 - y0;
   for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-    const e = Math.min(x - x0, x1 - 1 - x, y - y0, y1 - 1 - y);
-    L.img.set(x, y, D[e < 3 ? 0 : e < 8 ? 1 : qt(1.2 + (hash(x >> 2, y >> 2, seed) - 0.5) * 1.2, x, y, 3)]);
+    const e = Math.min(x - x0, x1 - 1 - x);
+    // overhang shadow from the top, faint bounce near the floor of the hole, darker rim inside the frame
+    const t = 0.35 + ((y - y0) / H) * 1.5 + (e < 6 ? -0.4 : 0) + (wob(x * 0.05 + y * 0.02, seed) - 0.5) * 0.5;
+    L.img.set(x, y, D[qt(t, x, y, 3, 0.12)]);
+  }
+  for (let k = 0; k < 6; k++) { // a few hairline fractures in the back of the hole
+    let x = x0 + hash(k, 1, seed) * (x1 - x0), y = y0 + hash(k, 2, seed) * H, dir = hash(k, 3, seed) * 6.28;
+    for (let q = 0; q < 14 + hash(k, 4, seed) * 30; q++) { L.img.set(x, y, D[0]); dir += (wob(q * 0.4, seed + k) - 0.5) * 1.2; x += Math.cos(dir); y += Math.sin(dir); if (x < x0 || x >= x1 || y < y0 || y >= y1) break; }
   }
   const fw = Math.max(10, Math.round(L.g.ppu * 0.14));
   const W = C.M.wood;
@@ -260,7 +268,7 @@ function plan(kind, ri, opts) {
     keyFront(-3.6, 0.9);
   } else if (kind === 'room') {
     const room = opts.room || 'event';
-    regionDress([-5.4, 5.6]);
+    regionDress([-4.8, 5.0]);
     if (room === 'merchant') { add({ t: 'stall', x: 0.9, w: 2.8, h: 2.4, c1: '#c83a2a', c2: '#f0e0c0' }); add({ t: 'lantern', x: 2.4, y: 2.7, s: 1.6, c: '#ffc070' }); Lt(2.4, 2.3, 3.6, 1.2); add({ t: 'sack', x: -1.6, w: 0.5, h: 0.5 }); add({ t: 'sack', x: -1.15, w: 0.4, h: 0.38, c: '#a08a5a' }); add({ t: 'barrel', x: 2.9, w: 0.5, h: 0.65 }); }
     else if (room === 'treasure') { add({ t: 'crate', x: -3.2, w: 0.7, h: 0.6 }); add({ t: 'barrel', x: 3.4, w: 0.5, h: 0.6 }); add({ t: 'skulls', x: 2.4, n: 3 }); Lt(0, 3.2, 4.6, 0.8, '#ffd890', false, 1.2); }
     else if (room === 'camp') { add({ t: 'tent', x: 3.2, w: 2.2, h: 1.6, c: '#7a8a5a' }); add({ t: 'crate', x: -3.0 }); add({ t: 'sack', x: -2.4 }); add({ t: 'bedroll', x: 1.6, w: 0.9, c: '#a83a3a' }); Lt(0, 0.5, 5.0, 1.4, '#ff9a40', false, 2.0); }
@@ -279,7 +287,7 @@ function plan(kind, ri, opts) {
     Lt(-0.6, 1.0, 5.5, 1.0, S.key, false, 3.0); // the miner's lamp
   } else if (kind === 'campfire') {
     // a cosy camp around the walls of a round cavern (arc-length x; 0 = behind the fire)
-    wallTop = (x) => 3.4 + Math.cos(x * 0.5) * 0.5 + Math.sin(x * 0.23) * 0.6; ceilY = (x) => 6.0 + Math.sin(x * 0.17) * 0.5;
+    wallTop = () => 9; ceilY = (x) => 4.3 + Math.sin(x * 0.17) * 0.35 + Math.sin(x * 0.61) * 0.12;
     const mx = opts.mineX ?? 3.6;
     add({ t: 'mine', x: mx, w: 1.7, h: 2.1 });
     add({ t: 'tent', x: -3.3, w: 2.6, h: 1.9, c: '#a0804a' });
@@ -292,7 +300,7 @@ function plan(kind, ri, opts) {
     add({ t: 'shrooms', x: 12.6, n: 6, g: '#5af0c8' }); add({ t: 'roots', x: -12.4, top: 5.2, len: 1.6, g: '#5af0c8' });
     add({ t: 'lantern', x: -2.4, y: 3.0, s: 1.6 }); add({ t: 'lantern', x: 0.9, y: 3.1, s: 1.5 });
     add({ t: 'barrel', x: 14.5, w: 0.5, h: 0.6 }); add({ t: 'crate', x: 15.4, w: 0.6, h: 0.5 }); add({ t: 'boulder', x: -14.8, r: 0.6 }); add({ t: 'boulder', x: 18.8, r: 0.5 });
-    for (let x = -24; x <= 24; x += 8.5) Lt(x, 0.7, 7.5, 1.35, '#ff8a2a', false, 5.5); // the fire, seen from every side
+    lights.push({ x: 0, y: 0.7, z: 7.2, r: 11, s: 1.5, c: '#ff8a2a', acc: false, band: true }); // the fire at the centre lights every side
     Lt(-2.4, 2.6, 2.6, 0.9); Lt(0.9, 2.7, 2.6, 0.8); Lt(mx + 3.0, 2.2, 2.6, 0.9);
     Lt(-7.6, 0.8, 2.6, 0.9, '#6ad8ff', true, 0.6); Lt(10.4, 0.8, 2.6, 0.9, '#6ad8ff', true, 0.6);
   } else if (kind === 'corridor') {
@@ -319,10 +327,10 @@ function plan(kind, ri, opts) {
 // ---------------------------------------------------------------------------- public
 /**
  * geo: { far, mid, wall: {x0,x1,y0,y1,z,ppu}, ground: {x0,x1,z0,z1,y,ppuX,ppuZ} }
- * opts: { tunnel, room, length, grid:{x0,x1,y0,y1}, gap:[x0,x1], mineX, seed }
+ * opts: { tunnel, room, length, grid:{x0,x1,y0,y1}, gap:[x0,x1], stairs:[x0,x1], mineX, seed }
  */
 export function paintStage(kind, ri, geo, opts = {}) {
-  const key = [kind, ri, opts.tunnel || '', opts.room || '', opts.length || 0, opts.seed || 0, opts.gap ? opts.gap.join(',') : '', JSON.stringify(geo)].join('|');
+  const key = [kind, ri, opts.tunnel || '', opts.room || '', opts.length || 0, opts.seed || 0, opts.gap ? opts.gap.join(',') : '', opts.stairs ? opts.stairs.join(',') : '', JSON.stringify({ ...geo, cam: 0 })].join('|');
   if (cache.has(key)) return cache.get(key);
   const seed = (opts.seed || 1) + ri * 101 + kind.length * 7;
   const S = STYLE[ri];
@@ -331,7 +339,7 @@ export function paintStage(kind, ri, geo, opts = {}) {
   let t0 = performance.now();
   const lap = (k) => { const t = performance.now(); T[k] = Math.round(t - t0); t0 = t; };
   // an enclosed tunnel's wall fills the view: nothing behind it is ever seen
-  const enclosed = kind === 'corridor' && ['crawl', 'tunnel', 'minecart', 'flooded'].includes(opts.tunnel || 'tunnel');
+  const enclosed = kind === 'wall' || kind === 'campfire' || (kind === 'corridor' && ['crawl', 'tunnel', 'minecart', 'flooded'].includes(opts.tunnel || 'tunnel'));
   const far = enclosed ? null : mkLayer(geo.far);
   if (far) paintFar(far, ri, kind, seed, S);
   lap('far');
@@ -358,13 +366,19 @@ export function paintStage(kind, ri, geo, opts = {}) {
   const flag = ri === 3 || ri === 5 || kind === 'tomb';
   paintGround(grd, gsh, {
     seed: seed + 2, M: ctx.M.ground, S: ctx.M.stone, moss: S.mossAmt > 0.1 ? ctx.M.moss : null, flag, sand: ri === 3 ? ctx.mat('#c8a470') : null,
-    water: ['#06141c', '#0c2a36', '#16404c', '#2a6070'].map((c) => hp(mixHex(c, S.shadow[2], 0.3))), keyP: hp('#ffb45a'), accP: hp(mixHex(S.acc, '#ffffff', 0.2)),
-    stones: flag ? 0.4 : ri === 4 ? 1.8 : 1.4, pebbles: ri === 4 ? 0.6 : 1, puddles: ri <= 2 ? Math.max(1, Math.round(gw / 500)) : ri === 3 ? 1 : 0,
+    water: ['#0c2a36', '#16404c', '#2a6070', '#5a98a0'].map((c) => hp(mixHex(c, S.shadow[2], 0.25))), keyP: hp('#ffb45a'), accP: hp(mixHex(S.acc, '#ffffff', 0.2)),
+    stones: flag ? 0.4 : ri === 4 ? 1.8 : 1.4, pebbles: ri === 4 ? 0.6 : 1, puddles: kind === 'campfire' ? 0 : ri <= 2 ? Math.max(1, Math.round(gw / 500)) : ri === 3 ? 1 : 0, rubble: kind !== 'campfire',
     tufts: ri === 2 ? 2.2 : ri === 0 ? 0.5 : ri === 3 ? 0.4 : 0,
   });
   groundDetails(grd, gsh, ctx, ri, kind, seed);
+  if (kind === 'campfire') campRing(grd, gsh, ctx, gg, seed);
   if ((kind === 'corridor' && (opts.tunnel === 'minecart' || (ri === 0 && !opts.gap))) || (kind === 'arena' && ri === 0)) rails(grd, gsh, ctx, kind === 'corridor' && opts.tunnel === 'minecart' ? gpz(0) : gpz(gg.z0 + 0.9), seed);
-  if (opts.gap) for (let y = 0; y < gh; y++) for (let x = Math.floor(gpx(opts.gap[0])); x < gpx(opts.gap[1]); x++) { grd.img.set(x, y, 0); grd.glow.set(x, y, 0); }
+  if (opts.stairs) stairTreads(grd, gsh, ctx, gpx(opts.stairs[0]), gpx(opts.stairs[1]), 10, seed);
+  if (opts.gap) for (let y = 0; y < gh; y++) { // a broken, wobbly cliff edge rather than a ruled cut
+    const ea = gpx(opts.gap[0]) - wob(y * 0.15, seed) * 10, eb = gpx(opts.gap[1]) + wob(y * 0.15, seed + 7) * 10;
+    for (let x = Math.floor(ea); x < eb; x++) { grd.img.set(x, y, 0); grd.glow.set(x, y, 0); }
+    for (const ex of [Math.floor(ea) - 1, Math.ceil(eb)]) { grd.img.set(ex, y, ctx.M.ground.w[0]); grd.img.set(ex + (ex < ea ? -1 : 1), y, ctx.M.ground.w[ex < ea ? 6 : 1]); }
+  }
   lap('ground');
   const shafts = [];
   if (ri === 3 || ri === 1 || (kind === 'room' && opts.room === 'treasure') || kind === 'tomb') {
@@ -408,6 +422,39 @@ function groundDetails(Gd, sh, ctx, ri, kind, seed) {
   if (ri === 5 || kind === 'tomb') for (let i = 0; i < w / 160; i++) P.skullPile(C, hash(i, 1, seed) * w, (0.3 + hash(i, 2, seed) * 0.6) * h, 1 + Math.floor(hash(i, 3, seed) * 2), seed + i);
 }
 
+/** Round cavern floor: rubble heaped where the floor meets the wall all the way round, and a ring
+ *  of ash and scorched stones around the fire pit. */
+function campRing(Gd, sh, ctx, gg, seed) {
+  const { img, iso } = Gd;
+  const c = (gg.x1 - gg.x0) / 2 * gg.ppuX, R = 8.55 * gg.ppuX;
+  const isoSh = isoShade(sh, iso);
+  for (let k = 0; k < 150; k++) {
+    const a = (k / 150) * Math.PI * 2 + hash(k, 1, seed) * 0.05, r = R - hash(k, 2, seed) ** 2 * gg.ppuX * 1.2;
+    const sz = 3 + hash(k, 3, seed) ** 2 * 12 * (r > R - 10 ? 1.3 : 0.8);
+    slab(img, isoSh, ctx.M.stone, blobPts(c + Math.cos(a) * r, c + Math.sin(a) * r, sz, sz * 0.75, seed * 3 + k, { rough: 0.55, n: 7 }), { seed: seed * 3 + k, F: [[0, 0, 1], [-0.6, -0.3, 0.75], [0.6, 0.2, 0.77], [0, 0.7, 0.7]] });
+  }
+  // ash ring and scorched hearth stones around the pit
+  for (let y = Math.round(c - 60); y < c + 60; y++) for (let x = Math.round(c - 60); x < c + 60; x++) {
+    const d = Math.hypot(x - c, y - c) / 52 + (wob(x * 0.2 + y * 0.13, seed) - 0.5) * 0.25;
+    if (d < 1 && d > 0.3) img.set(x, y, ctx.M.ground.w[d < 0.6 ? 1 : 2 + (hash(x, y, seed) > 0.7 ? 1 : 0)]);
+  }
+}
+
+/** Stairs on the ramp section of the floor: each step a worn tread and a dark riser, its own stone. */
+function stairTreads(Gd, sh, ctx, xa, xb, n, seed) {
+  const { img, h, iso } = Gd;
+  const ish = isoShade(sh, iso);
+  const sw = (xb - xa) / n;
+  for (let i = 0; i < n; i++) {
+    const x0 = xa + i * sw, rise = Math.max(3, sw * 0.22);
+    // riser: the drop at the far side of each tread, deep shadow with a lit lip
+    for (let y = 0; y < h; y++) for (let x = Math.round(x0 + sw - rise); x < x0 + sw + 1; x++) img.set(x, y, ctx.M.stone.w[x < x0 + sw - rise + 2 ? 6 : 1]);
+    const j = (k) => (hash(i, k, seed) - 0.5) * 3;
+    const pts = [[x0 + 1 + j(1), 2], [x0 + sw - rise - 1 + j(2), 2 + j(3)], [x0 + sw - rise - 1 + j(4), h - 2], [x0 + 1 + j(5), h - 2]];
+    slab(img, ish, ctx.M.stone, pts, { seed: seed + i * 7, F: [[-0.2, 0, 1], [0.3, 0, 0.95]], mott: 0.5, cracks: hash(i, 9, seed) > 0.5 ? 1 : 0, tone: (hash(i, 8, seed) - 0.5) * 0.6 });
+  }
+}
+
 /** Mine rails across the floor: hand-cut ties of varied length/tone, iron rails with a lit top edge. */
 function rails(Gd, sh, ctx, row, seed) {
   const { img, w, iso } = Gd;
@@ -429,35 +476,33 @@ function rails(Gd, sh, ctx, row, seed) {
   }
 }
 
-/** Corridor chasm: the far cliff drops away into teal darkness, with lit lips, mist and a deep glow. */
+/** Corridor chasm: the far wall keeps going down past the lip, sinking through stepped teal into
+ *  darkness with drifting mist; lava glow far below in the Emberdeep. */
 function chasm(L, C, gap, ri, seed) {
   const S = STYLE[ri];
   const { img, glow } = L;
   const x0 = Math.round(L.px(gap[0])), x1 = Math.round(L.px(gap[1]));
-  const lip = Math.round(L.py(0)), H = img.h;
-  const deep = [S.shadow[0], S.shadow[1], S.shadow[2]].map((c) => hp(c));
-  for (let x = x0 - 4; x < x1 + 4; x++) for (let y = lip - 6; y < H; y++) {
-    const k = (y - lip) / Math.max(1, H - lip), e = Math.min(x - x0, x1 - x) / Math.max(1, (x1 - x0) * 0.5);
-    img.set(x, y, deep[qt(2 - k * 2.2 + (1 - e) * 0.4 + (wob(x * 0.03 + y * 0.01, seed) - 0.5) * 0.6, x, y, 3)]);
-  }
-  for (const s of [-1, 1]) { // cliff faces stepping down on both sides
-    const ex = s < 0 ? x0 : x1;
-    for (let k = 0; k < 6; k++) {
-      const r = L.g.ppu * (0.25 + hash(k, s + 3, seed) * 0.35);
-      const cx = ex + s * (-r * 0.4 + hash(k, 5, seed) * r * 0.6), cy = lip + k * r * 1.1 + r * 0.3;
-      slab(img, C.sh, C.M.rock, blobPts(cx, cy, r, r * 0.7, seed + k * 13 + s * 50, { rough: 0.6, n: 8 }), { seed: seed + k * 13 + s * 50 });
+  const lip = Math.round(L.py(0)), H = img.h, W = img.w;
+  const deep = hp(S.shadow[0]), mist = hp(mixHex(S.shadow[3], '#9ad0d8', 0.2));
+  for (let y = lip - 4; y < H; y++) {
+    const k = Math.max(0, (y - lip) / Math.max(1, H - lip));
+    for (let x = Math.max(0, x0 - 6); x < Math.min(W, x1 + 6); x++) {
+      const i = y * W + x;
+      if (!img.d[i]) continue;
+      const step = Math.floor(Math.min(3, (0.25 + k * 0.9) * 3 + (bayer(x, y) - 0.5) * 0.6));
+      img.d[i] = mixp(img.d[i], deep, [0.25, 0.5, 0.72, 0.9][Math.max(0, step)]);
     }
   }
-  const mc = hp(mixHex(S.shadow[3], '#9ad0d8', 0.25));
   for (let b = 0; b < 3; b++) { // mist drifting in the gap
-    const by = lip + (0.25 + b * 0.22) * (H - lip);
-    for (let y = Math.round(by - 6); y < by + 6; y++) for (let x = x0; x < x1; x++) {
-      const a = (1 - Math.abs(y - by) / 6) * 0.5 * (0.6 + wob(x * 0.04 + b * 7, seed) * 0.6);
-      if (a > bayer(x, y) + 0.2) img.set(x, y, mixp(img.get(x, y), mc, 0.35));
+    const by = lip + (0.3 + b * 0.22) * (H - lip);
+    for (let y = Math.round(by - 7); y < by + 7; y++) for (let x = x0; x < x1; x++) {
+      const a = (1 - Math.abs(y - by) / 7) * 0.55 * (0.5 + wob(x * 0.03 + b * 7, seed));
+      if (a > bayer(x, y) + 0.15) img.set(x, y, mixp(img.get(x, y), mist, 0.4));
     }
   }
-  if (ri === 4) for (let x = x0; x < x1; x++) for (let y = H - 16; y < H; y++) { const c = hp(y > H - 8 ? '#ffb43a' : y > H - 12 ? '#ff6a1a' : '#a02a08'); img.set(x, y, c); glow.set(x, y, c); }
-  else halo(glow, (x0 + x1) / 2, H, (x1 - x0) * 0.5, hp(mixHex(S.acc, '#000000', 0.75)), 0.5, 0.6);
+  if (ri === 4) for (let x = x0; x < x1; x++) for (let y = H - 14; y < H; y++) { const c = hp(y > H - 6 ? '#ffb43a' : y > H - 10 ? '#ff6a1a' : '#a02a08'); img.set(x, y, c); glow.set(x, y, c); }
+  else halo(glow, (x0 + x1) / 2, H, (x1 - x0) * 0.5, hp(mixHex(S.acc, '#000000', 0.78)), 0.5, 0.6);
+  void C;
 }
 
 export function clearBackdropCache() { cache.clear(); }

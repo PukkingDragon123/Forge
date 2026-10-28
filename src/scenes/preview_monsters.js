@@ -44,7 +44,7 @@ export class PreviewMonsters extends Scene {
     this.rig = new CameraRig(30);
     const hf = 2 * Math.atan(Math.tan((30 * Math.PI) / 360) * (16 / 9));
     const dist = Math.max((total / 2 + 0.6) / Math.tan(hf / 2), (maxH * 0.75) / Math.tan((30 * Math.PI) / 360), 2.2);
-    const yaw = +(q.get('yaw') || 0.25);
+    const yaw = +(q.get('yaw') ?? -0.3); // default: front three-quarter (monsters face −X)
     this.rig.cut([Math.sin(yaw) * dist, maxH * 0.55 + dist * 0.12, Math.cos(yaw) * dist], [0, maxH * 0.42, 0], 30);
     this.rig.sway = 0;
     this.world = { scene, camera: this.rig.camera, post: {} };

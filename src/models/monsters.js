@@ -89,7 +89,7 @@ export class Monster {
   // ------------------------------------------------------------ sculpting API (used by archetypes)
   /** Palette material for sculpt regions: tile (fur|scale|chitin|stone|…), base hex, o: {acc, glow, gk, full, ts, j}. */
   mat(tile, base, o) { return this.sculpt.mat(tile, base, o); }
-  /** Rig bone (pivot) at `at` metres in parent space. o: rot [x,y,z], order, scale. */
+  /** Rig bone (pivot) at `at` metres in parent space. o: rot [x,y,z], order, scale, solo (hideable part: owns only its own surface). */
   bone(name, at = [0, 0, 0], parent = 'root', o = {}) {
     const b = new THREE.Bone();
     b.name = name;
@@ -97,6 +97,7 @@ export class Monster {
     if (o.order) b.rotation.order = o.order;
     if (o.rot) b.rotation.set(o.rot[0], o.rot[1], o.rot[2]);
     if (o.scale) b.scale.setScalar(o.scale);
+    if (o.solo) (this.solo || (this.solo = [])).push(this.bones.length);
     (parent === 'root' ? this.rootBone : this.parts[parent]).add(b);
     this._rest(b);
     this.parts[name] = b;
@@ -149,7 +150,7 @@ export class Monster {
   _buildMesh() {
     let g = GEO_CACHE.get(this.id);
     if (!g) {
-      g = this.sculpt.mesh({ res: this.res, bones: this.bones.length, fall: this.fall });
+      g = this.sculpt.mesh({ res: this.res, bones: this.bones.length, fall: this.fall, solo: this.solo });
       GEO_CACHE.set(this.id, g);
       MONSTER_STATS.meshed++;
     }

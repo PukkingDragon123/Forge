@@ -12,10 +12,11 @@ function beady(m, bone, c, r, glowCol, gk = 1.4) {
   m.sph(bone, c, r * 1.35, null, { op: 'sub', k: r * 0.5 });
   m.sph(bone, c, r, eye, { k: r * 0.25 });
 }
-/** Wheel on an axle along z: rounded rim disc + hub. */
+/** Spoked wheel on an axle along z: flat disc, iron tyre, hub. */
 function wheel(m, bone, c, r, w, mat, hubMat, o = {}) {
-  m.cap(bone, [c[0], c[1], c[2] - w / 2], [c[0], c[1], c[2] + w / 2], r, r, mat, { k: o.k ?? 0.01, rot: o.rot });
-  m.sph(bone, [c[0], c[1], c[2] + Math.sign(c[2] || 1) * w * 0.55], r * 0.32, hubMat, { k: 0.01 });
+  m.ell(bone, c, [r * 0.92, r * 0.92, w * 0.35], mat, { k: o.k ?? 0.01 });
+  m.tor(bone, c, r * 0.86, w * 0.4, mat, { rot: [PI / 2, 0, 0], k: 0.005 });
+  m.sph(bone, [c[0], c[1], c[2] + Math.sign(c[2] || 1) * w * 0.3], r * 0.3, hubMat, { k: 0.01 });
 }
 
 // ============================================================================ OLD RUSTJAW — minecart colossus
@@ -50,8 +51,8 @@ const rustjaw = {
     m.plate('head', [-0.42, 0, 0], [[-0.52, 0], [0.52, 0], [0.44, 0.58], [-0.44, 0.58]], 0.36, 0.04, rust, { k: 0.02 });
     m.box('head', [-0.92, 0.44, 0], [0.08, 0.06, 0.42], 0.03, iron, { k: 0.02, rot: [0, 0, 0.25] });
     for (const s of SIDES) {
-      m.tor('head', [-0.92, 0.27, s * 0.2], 0.11, 0.035, iron, { rot: [0, 0, PI / 2], k: 0.01 });
-      m.sph('head', [-0.91, 0.27, s * 0.2], 0.1, lamp, { k: 0.01 });
+      m.tor('head', [-0.93, 0.27, s * 0.2], 0.13, 0.04, iron, { rot: [0, 0, PI / 2], k: 0.01 });
+      m.sph('head', [-0.92, 0.27, s * 0.2], 0.12, lamp, { k: 0.01 });
     }
     for (let i = 0; i < 7; i++) m.cap('head', [-0.88, 0.04, -0.3 + i * 0.1], [-0.9, -0.1, -0.3 + i * 0.1], 0.045, 0.012, tooth, { k: 0.01 });
     m.box('head', [-0.42, -0.02, 0], [0.4, 0.06, 0.28], 0.03, fire, { op: 'sub', k: 0.02 });
@@ -65,20 +66,24 @@ const rustjaw = {
     for (const s of SIDES) {
       const n = s < 0 ? 'gearF' : 'gearB';
       m.bone(n, [0.25, 1.0, s * 0.76], 'torso');
-      m.tor(n, [0, 0, 0], 0.34, 0.07, brass, { rot: [PI / 2, 0, 0], k: 0.01 });
-      for (let i = 0; i < 10; i++) { const a = (i / 10) * PI * 2; m.box(n, [cos(a) * 0.42, sin(a) * 0.42, 0], [0.06, 0.05, 0.06], 0.015, brass, { rot: [0, 0, a], k: 0.01 }); }
-      m.cap(n, [0, 0, -0.08], [0, 0, 0.08], 0.13, 0.13, iron, { k: 0.02 });
-      for (let i = 0; i < 4; i++) { const a = (i / 4) * PI * 2 + 0.4; m.cap(n, [0, 0, 0], [cos(a) * 0.3, sin(a) * 0.3, 0], 0.035, 0.035, brass, { k: 0.01 }); }
+      m.ell(n, [0, 0, 0], [0.4, 0.4, 0.06], brass, { k: 0.01 });
+      for (let i = 0; i < 12; i++) { const a = (i / 12) * PI * 2; m.box(n, [cos(a) * 0.44, sin(a) * 0.44, 0], [0.06, 0.045, 0.055], 0.012, brass, { rot: [0, 0, a], k: 0.006 }); }
+      for (let i = 0; i < 5; i++) { const a = (i / 5) * PI * 2 + 0.3; m.sph(n, [cos(a) * 0.22, sin(a) * 0.22, 0], 0.075, null, { op: 'sub', k: 0.01 }); }
+      m.ell(n, [0, 0, 0], [0.13, 0.13, 0.1], iron, { k: 0.02 });
     }
-    // ---- arms: bent rails with sleepers; fists of clustered wheels around an ore boulder
+    // ---- arms hang from the shoulder gears: plated pipe upper arm, rail forearm with sleepers, wheel-bound boulder fist
     for (const s of SIDES) {
       const n = s < 0 ? 'armF' : 'armB';
-      m.bone(n, [-0.15, 1.08, s * 1.0], 'torso');
-      m.sph(n, [0, -0.02, 0], 0.2, iron, { k: 0.04 });
-      for (const z of [-0.09, 0.09]) m.tube(n, [[0, 0, z], [-0.08, -0.7, z], [-0.02, -1.5, z]], 0.04, iron, { k: 0.02 });
-      for (let k = 0; k < 6; k++) m.box(n, [-0.06 + (k > 2 ? 0.03 : 0), -0.2 - k * 0.24, 0], [0.065, 0.03, 0.17], 0.015, wood, { k: 0.01 });
-      m.ell(n, [-0.02, -1.66, 0], [0.28, 0.3, 0.26], rock, { k: 0.05, noise: 0.04, nf: 7 });
-      for (const [x, y, z, rx] of [[-0.2, -1.6, 0.18, 0.4], [0.18, -1.72, 0.14, -0.3], [0.0, -1.86, -0.18, 1.2], [-0.12, -1.48, -0.22, 0.8]]) m.cap(n, [x, y, z - 0.04], [x, y, z + 0.04], 0.15, 0.15, iron, { k: 0.02, rot: [rx, 0.4, 0] });
+      m.bone(n, [0.1, 1.0, s * 0.92], 'torso');
+      m.cap(n, [0, 0, 0], [-0.06, -0.62, 0], 0.17, 0.14, iron, { k: 0.04 });
+      for (const y of [-0.18, -0.4]) m.tor(n, [-0.03, y, 0], 0.16, 0.035, brass, { k: 0.01 });
+      m.ell(n, [-0.07, -0.66, 0], [0.17, 0.15, 0.17], rust, { k: 0.04 });
+      for (const z of [-0.09, 0.09]) m.cap(n, [-0.07, -0.66, z], [-0.02, -1.42, z], 0.045, 0.045, iron, { k: 0.02 });
+      for (let k = 0; k < 4; k++) m.box(n, [-0.05 + k * 0.012, -0.82 - k * 0.17, 0], [0.065, 0.03, 0.17], 0.015, wood, { k: 0.01 });
+      m.ell(n, [-0.03, -1.62, 0], [0.3, 0.3, 0.27], rock, { k: 0.05, noise: 0.045, nf: 6 });
+      m.tor(n, [-0.03, -1.62, 0], 0.3, 0.06, iron, { rot: [PI / 2, 0, 0], k: 0.02 });
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * PI * 2; m.cap(n, [-0.03, -1.62, 0], [-0.03 + cos(a) * 0.28, -1.62 + sin(a) * 0.28, 0], 0.035, 0.035, iron, { k: 0.01 }); }
+      m.sph(n, [-0.03, -1.62, s * -0.03], 0.09, brass, { k: 0.01 });
     }
     // ---- legs: riveted girder thighs on little cart boots
     for (const s of SIDES) {
@@ -92,10 +97,10 @@ const rustjaw = {
     }
     // ---- smokestack
     m.bone('stack', [0.62, 1.2, 0], 'torso');
-    m.cap('stack', [0, 0, 0], [0, 0.62, 0], 0.16, 0.14, iron, { k: 0.03 });
-    m.cap('stack', [0, 0.62, 0], [0, 0.88, 0], 0.2, 0.23, iron, { k: 0.03 });
-    m.tor('stack', [0, 0.3, 0], 0.16, 0.03, brass, { k: 0.01 });
-    m.ell('stack', [0, 0.9, 0], [0.18, 0.06, 0.18], glowMat(m, md.accent, 3, 'lava'), { op: 'sub', k: 0.02 });
+    m.box('stack', [0, 0.36, 0], [0.13, 0.4, 0.13], 0.1, iron, { k: 0.03 });
+    m.tor('stack', [0, 0.3, 0], 0.14, 0.03, brass, { k: 0.01 });
+    m.tor('stack', [0, 0.8, 0], 0.17, 0.05, iron, { k: 0.02 });
+    m.box('stack', [0, 0.82, 0], [0.11, 0.08, 0.11], 0.04, glowMat(m, md.accent, 3, 'lava'), { op: 'sub', k: 0.01 });
     m.emitter({ pos: [0.62, 3.7, 0], rate: 14, vel: [0.25, 1.2, 0], spread: 0.35, life: [0.6, 1.4], size: [1, 2], color: ['#ffb84a', '#ff6a1a', '#ffe08a'], glow: 3, drag: 0.6 });
     m.emitter({ pos: [-0.85, 2.2, 0], rate: 6, vel: [-0.3, 0.2, 0], spread: 0.25, posSpread: [0, 0.2, 0.3], life: [0.3, 0.8], size: 1, color: ['#ff6a1a', '#ffd25e'], glow: 3, gravity: 1.5 });
     m.points({ hit: [-0.9, 2.25, 0], mouth: [-1.05, 3.15, 0], cuts: [[-0.6, 3.4, 0], [-0.9, 2.2, 0], [0, 2.6, -1], [0, 2.6, 1], [0, 1.0, -0.5], [0.5, 2.0, 0]] });
@@ -141,7 +146,7 @@ const geodessa = {
     m.cap('abdomen', [1.55, 0.05, 0], [1.72, -0.06, 0], 0.12, 0.06, shell, { k: 0.04 });
     m.plate('abdomen', [0.66, 1.28, 0], [[-0.22, 0.28], [0.22, 0.28], [0.05, 0], [0.22, -0.28], [-0.22, -0.28], [-0.05, 0]], 0.3, 0.01, sigil, { op: 'paint', rot: [PI / 2, 0, -0.32] });
     // crystal armour on the back (shed in phase 2)
-    m.bone('armor', [0.6, 0.9, 0], 'abdomen');
+    m.bone('armor', [0.6, 0.9, 0], 'abdomen', { solo: true });
     for (const [c, d, l, r, mm] of [[[0, 0.3, 0], [0.1, 1, 0], 0.9, 0.2, crys], [[0.4, 0.15, -0.35], [0.4, 1, -0.4], 0.65, 0.15, crys], [[0.4, 0.15, 0.35], [0.4, 1, 0.4], 0.65, 0.15, crys], [[-0.3, 0.2, -0.42], [-0.2, 1, -0.6], 0.45, 0.12, ice], [[-0.3, 0.2, 0.42], [-0.2, 1, 0.6], 0.45, 0.12, ice], [[0.75, -0.05, 0], [1, 0.8, 0], 0.5, 0.13, crys], [[0.15, 0.32, -0.15], [0, 1, -0.3], 0.5, 0.12, crys], [[0.15, 0.32, 0.17], [0, 1, 0.3], 0.42, 0.11, crys]]) m.cry('armor', c, l, r, mm, { dir: d });
     // cephalothorax with eight beady eyes and a crystal tiara
     m.bone('ceph', [-1.05, -0.05, 0], 'abdomen');
@@ -241,7 +246,7 @@ const mycel = {
       m.ell('cap', [x, y + 0.34, z], [0.26, 0.12, 0.26], glowY, { k: 0.02 });
     }
     // bloom (phase 2): ring of extra glowing caps sprouting from the dome
-    m.bone('bloom', [0, 0.2, 0], 'cap');
+    m.bone('bloom', [0, 0.2, 0], 'cap', { solo: true });
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * PI * 2, r = 0.9 + (i % 3) * 0.3, h = 0.6 + (i % 4) * 0.15;
       const x = cos(a) * r, z = sin(a) * r, y0 = 0.95 - r * r * 0.2;
@@ -309,13 +314,13 @@ const warden = {
     // torso: broad gilded chest, rune-ladder breastplate, heart gem
     m.bone('torso', [0, 1.1, 0], 'skirt');
     m.ell('torso', [0, 0.78, 0], [0.95, 0.82, 0.68], gold, { k: 0.08 });
-    m.box('torso', [-0.62, 0.72, 0], [0.12, 0.55, 0.36], 0.08, goldR, { k: 0.08, rot: [0, 0, -0.12] });
-    for (let k = 0; k < 4; k++) m.box('torso', [-0.74 - k * 0.012, 0.5 + k * 0.18, 0], [0.03, 0.035, 0.26 - k * 0.03], 0.012, rune, { k: 0.01, rot: [0, 0, -0.12] });
-    m.sph('torso', [-0.78, 1.14, 0], 0.09, white, { k: 0.02 });
+    m.box('torso', [-0.84, 0.74, 0], [0.12, 0.5, 0.36], 0.08, goldR, { k: 0.08, rot: [0, 0, -0.06] });
+    for (let k = 0; k < 4; k++) m.box('torso', [-0.97 + k * 0.006, 0.45 + k * 0.16, 0], [0.03, 0.035, 0.24 - k * 0.03], 0.012, rune, { k: 0.01, rot: [0, 0, -0.06] });
+    m.sph('torso', [-0.95, 1.16, 0], 0.09, white, { k: 0.02 });
     // cracks overlay (phase 2): glowing fissures painted over the front
     m.bone('cracks', [0, 0, 0], 'torso');
-    for (const pts of [[[-0.8, 1.45, -0.2], [-0.86, 1.25, -0.12], [-0.86, 1.05, -0.24], [-0.84, 0.8, -0.18], [-0.8, 0.55, -0.3]], [[-0.82, 1.3, 0.25], [-0.86, 1.1, 0.33], [-0.84, 0.9, 0.24], [-0.8, 0.7, 0.36]], [[-0.66, 0.4, -0.05], [-0.7, 0.28, 0.08], [-0.68, 0.12, 0.0]]]) {
-      for (let i = 0; i < pts.length - 1; i++) m.cap('cracks', pts[i], pts[i + 1], 0.045, 0.045, glowMat(m, md.eye, 3), { op: 'paint', layer: 'cracks' });
+    for (const pts of [[[-0.93, 1.4, -0.2], [-0.97, 1.2, -0.12], [-0.98, 1.0, -0.24], [-0.97, 0.8, -0.18], [-0.93, 0.5, -0.3]], [[-0.94, 1.3, 0.25], [-0.98, 1.1, 0.33], [-0.97, 0.9, 0.24], [-0.92, 0.65, 0.36]], [[-0.85, 0.36, -0.05], [-0.86, 0.22, 0.08], [-0.82, 0.08, 0.0]]]) {
+      for (let i = 0; i < pts.length - 1; i++) m.cap('cracks', pts[i], pts[i + 1], 0.05, 0.05, glowMat(m, md.eye, 3), { op: 'paint', layer: 'cracks' });
     }
     m.P('cracks').visible = false;
     // head: serene mask-helm, one great rune eye, spiked crown
@@ -452,7 +457,8 @@ const cursedlord = {
   reach: 0.7, die: 'kneel',
   build(m, md) {
     m.res = 104;
-    const robe = m.mat('cloth', md.body, { acc: md.accent, glow: md.accent, gk: 1.8, ts: 0.7 });
+    const robe = m.mat('cloth', md.body, { acc: shade(md.body, -0.2), ts: 0.8 });
+    const trim = m.mat('trim', shade(md.body, -0.1), { acc: md.accent, glow: md.accent, gk: 1.4, ts: 1.5 });
     const plate = m.mat('rune', '#3a3448', { acc: md.accent, glow: md.accent, gk: 2.2 });
     const plate2 = m.mat('metal', '#2a2436', { acc: '#5a5068' });
     const bone = m.mat('bone', '#d8d0e0', { acc: '#9a90a8' });
@@ -465,6 +471,8 @@ const cursedlord = {
     m.cap('cloak', [0, 0.35, 0], [0, 2.8, 0], 1.05, 0.62, robe, { noise: 0.025, nf: 3 });
     m.ell('cloak', [0, 0.05, 0], [0.95, 0.45, 0.95], voidM, { op: 'sub', k: 0.05 });
     for (let i = 0; i < 14; i++) { const a = ((i + 0.5) / 14) * PI * 2, L = 0.3 + (i % 3) * 0.14; m.cap('cloak', [sin(a) * 0.98, 0.42, cos(a) * 0.98], [sin(a + 0.08) * 1.06, 0.42 - L, cos(a + 0.08) * 1.06], 0.15, 0.025, robe, { k: 0.06 }); }
+    m.cap('cloak', [0, 0.0, 0], [0, 0.62, 0], 1.25, 1.15, trim, { op: 'paint' });
+    m.box('cloak', [-0.66, 1.6, 0], [0.2, 1.3, 0.1], 0.02, trim, { op: 'paint', rot: [0, 0, -0.12] });
     for (let i = 0; i < 7; i++) { const a = (i / 7) * PI * 2 + 0.3; m.tube('cloak', [[sin(a) * 1.06, 0.3, cos(a) * 1.06], [sin(a) * 0.88, 1.3, cos(a) * 0.88], [sin(a) * 0.66, 2.6, cos(a) * 0.66]], 0.07, robe, { k: 0.06 }); }
     // armoured chest with a glowing rune seam and heart-core
     m.bone('chest', [0, 2.74, 0], 'cloak');

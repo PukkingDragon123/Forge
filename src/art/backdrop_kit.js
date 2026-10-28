@@ -223,7 +223,9 @@ export function blobPts(cx, cy, rx, ry, seed, o = {}) {
   for (let i = 0; i < n; i++) {
     const ang = rot + (i / n) * TAU + (hashi(i, seed, 7) - 0.5) * (TAU / n) * 0.7;
     const r = 1 + a2 * Math.sin(2 * ang + p2) + a3 * Math.sin(3 * ang + p3) + (hashi(i, seed, 9) - 0.5) * rough * 0.32;
-    let x = cx + Math.cos(ang) * rx * r, y = cy + Math.sin(ang) * ry * r;
+    let x = Math.cos(ang) * rx * r, y = Math.sin(ang) * ry * r;
+    if (o.tilt) { const c = Math.cos(o.tilt), sn = Math.sin(o.tilt), xx = x * c - y * sn; y = x * sn + y * c; x = xx; }
+    x += cx; y += cy;
     if (o.flatBottom != null) y = Math.min(y, cy + ry * o.flatBottom + (hashi(i, seed, 11) - 0.5) * 2);
     if (o.flatTop != null) y = Math.max(y, cy - ry * o.flatTop - (hashi(i, seed, 13) - 0.5) * 2);
     pts.push([x, y]);
@@ -310,13 +312,13 @@ export class Shade {
     this.gain = o.gain || 1;
   }
   near(x0, y0, x1, y1) {
-    return this.lights.filter((l) => l.x + l.r > x0 && l.x - l.r < x1 && l.y + l.r > y0 && l.y - l.r < y1);
+    return this.lights.filter((l) => l.band || (l.x + l.r > x0 && l.x - l.r < x1 && l.y + l.r > y0 && l.y - l.r < y1));
   }
   idx(x, y, nx, ny, nz, ls = this.lights) {
     let kw = 0, ka = 0, term = -2, tw = 0, bx = 0, by = 0;
     for (let i = 0; i < ls.length; i++) {
       const l = ls[i];
-      const dx = l.x - x, dy = l.y - y, dz = l.z;
+      const dx = l.band ? 0 : l.x - x, dy = l.y - y, dz = l.z; // band: a light straight out in front of every column (a fire at the centre of a round cave)
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 >= l.r2) continue;
       const d = Math.sqrt(d2), ndl = (nx * dx + ny * dy + nz * dz) / d;

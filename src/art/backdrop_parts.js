@@ -32,33 +32,47 @@ export function paintBridge(kind, ri, w, h, ppu, deckY, seed = 5) {
   }
   const deckM = kind === 'crystalbridge' ? null : kind === 'chainbridge' ? C.M.iron : C.M.wood;
   const ropeM = kind === 'chainbridge' ? C.M.iron : kind === 'rootbridge' ? C.mat('#5a3a22') : C.M.rope;
-  // deck: individually cut planks / plates / crystal slabs, a few missing, all following the sag
+  const deckH = Math.max(5, Math.round(ppu * 0.075));
+  // deck seen edge-on: a band of plank ends, each its own width/tone, a few missing, cross-beams below
   for (let x = 2, k = 0; x < w - 2; k++) {
-    const pw = plankW * (0.8 + hash(k, 1, seed) * 0.45);
+    const pw = plankW * (0.55 + hash(k, 1, seed) * 0.5);
     const y = deckY(x + pw / 2);
-    if (hash(k, 2, seed) > 0.93 && x > w * 0.2 && x < w * 0.8) { x += pw + 2; continue; } // missing plank
-    if (kind === 'crystalbridge') P.crystalCluster(C, x + pw / 2, y + ppu * 0.08, ppu * 0.12, k % 2 ? S.acc : S.gem, seed + k, { halo: false });
-    else if (kind === 'rootbridge') P.plank(C, ropeM, [x, y + 2], [x + pw, deckY(x + pw) + 2 + (hash(k, 3, seed) - 0.5) * 3], ppu * 0.07, seed + k, { round: true, knots: 0 });
-    else P.plank(C, deckM, [x + pw / 2, y], [x + pw / 2 + (hash(k, 4, seed) - 0.5) * 2, y + ppu * 0.09], pw, seed + k, { knots: hash(k, 5, seed) > 0.7 ? 1 : 0, nails: kind === 'chainbridge' ? [] : [0.3] });
-    x += pw + 1 + Math.round(hash(k, 6, seed) * 2);
+    if (hash(k, 2, seed) > 0.95 && x > w * 0.2 && x < w * 0.8) { x += pw + 2; continue; } // missing plank
+    const drop = (hash(k, 7, seed) - 0.5) * 1.6;
+    if (kind === 'crystalbridge') P.crystalCluster(C, x + pw / 2, y + deckH, ppu * 0.1, k % 2 ? S.acc : S.gem, seed + k, { halo: false });
+    else if (kind === 'rootbridge') P.plank(C, ropeM, [x - 1, y + drop + deckH / 2], [x + pw + 1, deckY(x + pw) + deckH / 2 + (hash(k, 3, seed) - 0.5) * 2], deckH * 0.9, seed + k, { round: true, knots: 0 });
+    else P.plank(C, deckM, [x, y + drop + deckH / 2], [x + pw, deckY(x + pw) + drop + deckH / 2], deckH, seed + k, { knots: 0, nails: kind === 'chainbridge' ? [0.5] : hash(k, 4, seed) > 0.5 ? [0.2] : [] });
+    x += pw + (hash(k, 6, seed) > 0.7 ? 2 : 1);
   }
-  // hand ropes: far one behind the deck, near one on the front layer, with hangers to the deck
-  const ropeY = (x, near) => deckY(x) - ppu * (0.62 - Math.sin((Math.PI * x) / w) * 0.1) + (near ? ppu * 0.05 : 0);
+  // hand ropes: catenaries between posts; the far one behind the deck, the near one on the front layer
+  const posts = [];
+  for (let x = 0; x <= w; x += ppu * (0.55 + hash(posts.length, 9, seed) * 0.25)) posts.push(Math.min(w, x));
+  if (posts[posts.length - 1] < w - 4) posts.push(w);
+  const ropeY = (x, near) => {
+    let i = 0;
+    while (i < posts.length - 2 && x > posts[i + 1]) i++;
+    const a = posts[i], b = posts[i + 1], t = (x - a) / Math.max(1, b - a);
+    return deckY(x) - ppu * 0.6 + Math.sin(t * Math.PI) * ppu * 0.07 + (near ? ppu * 0.06 : 0);
+  };
   const rope = (Ct, near) => {
-    const pts = [];
-    for (let x = 0; x <= w; x += 4) pts.push([x, ropeY(x, near)]);
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
-      const thick = kind === 'chainbridge' ? 2 : 3;
-      for (let t = 0; t <= 1; t += 0.25) for (let q = 0; q < thick; q++) {
-        const x = Math.round(ax + (bx - ax) * t), y = Math.round(ay + (by - ay) * t) + q;
-        const twist = ((x + q * 2) % 4) < 2 ? 0.4 : -0.6;
-        Ct.img.set(x, y, Ct.sh.col(ropeM, Math.max(1, Math.min(7.6, Ct.sh.idx(x, y, 0, q - 1, 0.8) + twist)), x, y));
+    const thick = kind === 'chainbridge' ? 2 : near ? 3 : 2;
+    for (let x = 0; x < w; x++) {
+      const y0 = Math.round(ropeY(x, near));
+      for (let q = 0; q < thick; q++) {
+        const twist = ((x + q * 2) % 5) < 2 ? 0.5 : -0.5;
+        Ct.img.set(x, y0 + q, Ct.sh.col(ropeM, Math.max(1, Math.min(7.6, Ct.sh.idx(x, y0 + q, 0, q - 1, 0.8) + twist - (near ? 0 : 0.8))), x, y0 + q));
       }
     }
-    for (let x = near ? 9 : 4; x < w; x += near ? 18 : 18) {
-      const y0 = ropeY(x, near) + 2, y1 = deckY(x) + (near ? 4 : 0);
-      for (let y = Math.round(y0); y < y1; y++) Ct.img.set(x, y, Ct.sh.col(ropeM, Math.max(1, Math.min(7.6, Ct.sh.idx(x, y, -0.5, 0, 0.85) + ((y & 3) === 0 ? -0.7 : 0))), x, y));
+    // hangers at the posts and one between, each tied with a little knot
+    for (let i = 0; i < posts.length; i++) {
+      const xs = [posts[i]];
+      if (i < posts.length - 1) xs.push((posts[i] + posts[i + 1]) / 2 + (hash(i, 3, seed) - 0.5) * 8);
+      for (const hx of xs) {
+        const x = Math.round(hx + (near ? 3 : 0));
+        const y0 = Math.round(ropeY(x, near)), y1 = Math.round(deckY(x) + (near ? deckH : 0));
+        for (let y = y0; y < y1; y++) Ct.img.set(x, y, Ct.sh.col(ropeM, Math.max(1, Math.min(7.6, Ct.sh.idx(x, y, -0.5, 0, 0.85) + ((y & 3) === 0 ? -0.7 : 0) - (near ? 0 : 0.8))), x, y));
+        Ct.img.set(x - 1, y0 + 1, ropeM.w[2]); Ct.img.set(x + 1, y0 + 1, ropeM.w[2]);
+      }
     }
   };
   rope(C, false);
@@ -80,34 +94,32 @@ export function paintElevator(ri, w, h, ppu, seed = 9) {
   return { img, glow };
 }
 
-/** Carved stairs descending left→right (w×h px): each step its own worn, chipped block. */
-export function paintStairs(ri, w, h, steps, ppu, seed = 13) {
-  const img = new Img(w, h), glow = new Img(w, h);
-  const C = ctxFor(ri, img, glow, [{ x: w * 0.15, y: h * 0.1, z: ppu * 2.5, r: ppu * 6, s: 0.9 }]);
-  const stepH = (h - ppu * 0.4) / steps;
-  for (let i = 0; i < steps; i++) {
-    const x0 = (i / steps) * w - 2, x1 = ((i + 1) / steps) * w + 6, y = ppu * 0.3 + i * stepH;
-    const j = (k) => (hash(i, k, seed) - 0.5) * 3;
-    const pts = [[x0 + j(1), y + j(2) * 0.4], [x1 + j(3), y + 1 + j(4) * 0.4], [x1 + j(5), h], [x0 + j(6), h]];
-    slab(img, C.sh, C.M.stone, pts, { seed: seed + i * 11, F: [[0, -0.75, 0.66], [0, 0, 1], [0.35, 0, 0.94]], mott: 0.5, cracks: hash(i, 9, seed) > 0.6 ? 1 : 0 });
-  }
-  return { img, glow };
-}
-
-/** Flood water surface tile (tileable in x): translucent teal with drawn ripple strokes and glints. */
-export function paintWater(ri, w = 512, h = 96) {
+/** Flood water surface tile (tileable in x, rows ≈ screen rows): translucent teal that darkens toward
+ *  the viewer, hand-drawn ripple arcs of varied length, and a scatter of glints. */
+export function paintWater(ri, w = 640, h = 300) {
   const S = stageStyle(ri);
   const img = new Img(w, h);
-  const base = hp(mixHex(S.shadow[2], '#1a6a7a', 0.35), 150), deep = hp(mixHex(S.shadow[1], '#0a2a3a', 0.4), 175);
-  const rip = hp(mixHex(S.shadow[3], '#9ad8e0', 0.45), 210), glint = hp('#ffd8a0', 235), glint2 = hp(mixHex(S.acc, '#ffffff', 0.4), 230);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) img.d[y * w + x] = (y + (bayer(x, y) * 4 | 0)) % 9 < 2 ? deep : base;
-  // ripple strokes: short wobbly dashes, longer toward the viewer
-  for (let k = 0; k < 140; k++) {
-    const y = Math.round(hash(k, 1, 3) * (h - 2)), len = 3 + hash(k, 2, 3) * (6 + (y / h) * 18);
-    const x0 = hash(k, 3, 3) * w;
-    for (let t = 0; t < len; t++) { const x = Math.round(x0 + t) % w; img.set(x, y + Math.round((wob(t * 0.3, k) - 0.5) * 1.4), t === 0 || t > len - 2 ? base : rip); }
+  const far = hp(mixHex(S.shadow[3], '#3a8a9a', 0.35), 150), mid = hp(mixHex(S.shadow[2], '#1a5a6a', 0.3), 165), near = hp(mixHex(S.shadow[1], '#0a2a3a', 0.3), 185);
+  const rip = hp(mixHex(S.shadow[3], '#9ad8e0', 0.5), 200), rip2 = hp(mixHex(S.shadow[3], '#d8f4f0', 0.6), 220);
+  const glint = hp('#ffe0b0', 235), glint2 = hp(mixHex(S.acc, '#ffffff', 0.4), 230);
+  for (let y = 0; y < h; y++) {
+    const v = y / h;
+    for (let x = 0; x < w; x++) {
+      const t = v * 2 + (bayer(x, y) - 0.5) * 0.35;
+      img.d[y * w + x] = t < 0.55 ? far : t < 1.3 ? mid : near;
+    }
   }
-  for (let k = 0; k < 30; k++) { const x = Math.round(hash(k, 5, 4) * w), y = Math.round(hash(k, 6, 4) * h); img.set(x, y, k % 3 ? glint : glint2); img.set((x + 1) % w, y, k % 3 ? glint : glint2); }
+  // ripple arcs: short near the far edge, longer and further apart toward the viewer
+  for (let k = 0; k < 260; k++) {
+    const y = Math.round(hash(k, 1, 3) ** 0.8 * (h - 3)), v = y / h;
+    const len = 3 + hash(k, 2, 3) * (4 + v * 26);
+    const x0 = hash(k, 3, 3) * w, bow = (hash(k, 4, 3) - 0.5) * (1 + v * 3);
+    for (let t = 0; t < len; t++) {
+      const x = Math.round(x0 + t) % w, yy = y + Math.round(Math.sin((t / len) * Math.PI) * bow);
+      img.set(x, yy, t > len * 0.3 && t < len * 0.7 && v > 0.3 ? rip2 : rip);
+    }
+  }
+  for (let k = 0; k < 40; k++) { const x = Math.round(hash(k, 5, 4) * (w - 1)), y = Math.round(hash(k, 6, 4) * h); img.set(x, y, k % 3 ? glint : glint2); }
   return img;
 }
 

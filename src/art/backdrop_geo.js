@@ -12,23 +12,31 @@ export const CAM = {
   campfire: { pos: [0, 2.3, 5.8], look: [0, 0.75, -0.4], fov: 40 },
 };
 
+/** Highest world y the camera sees on the plane at depth z (default camera of the kind). */
+export function visTop(cam, z) {
+  const dist = cam.pos[2] - z;
+  const yc = cam.pos[1] + ((cam.look[1] - cam.pos[1]) * dist) / (cam.pos[2] - cam.look[2]);
+  return yc + dist * Math.tan((cam.fov * Math.PI) / 360);
+}
+
 export function flatGeo(kind, ri, opts) {
   const cam = CAM[kind];
   const L = opts.length || 34;
   const corridor = kind === 'corridor';
   const tun = opts.tunnel || 'tunnel';
   const wallZ = kind === 'wall' ? -1.3 : kind === 'room' ? -3.0 : kind === 'tomb' ? -3.4 : corridor ? (tun === 'crawl' ? -1.7 : -2.3) : -2.2;
-  // only paint what the default (and nearby) cameras can see
-  const xr = corridor ? [-7, L + 7] : kind === 'wall' ? [-5.5, 5.5] : [-9.5, 9.5];
-  const lowY = corridor && /bridge$/.test(tun) ? -3.4 : corridor && tun === 'elevator' ? -4.8 : corridor && tun === 'stairs' ? -2.6 : kind === 'wall' ? -0.8 : -0.6;
-  const topY = kind === 'wall' ? 4.6 : kind === 'tomb' ? 8.2 : kind === 'room' ? 6.4 : corridor ? 5.2 : 6.6;
+  // only paint what the cameras can see (default framing plus a margin for scene moves and shakes)
+  const xr = corridor ? [-6, L + 6] : kind === 'wall' ? [-5.5, 5.5] : [-9.5, 9.5];
+  const lowY = corridor && /bridge$/.test(tun) ? -3.4 : corridor && tun === 'elevator' ? -4.8 : corridor && tun === 'stairs' ? -2.6 : kind === 'wall' ? -0.8 : -0.5;
+  const topY = Math.min(kind === 'wall' ? 4.6 : kind === 'tomb' ? 8.2 : kind === 'room' ? 6.4 : corridor ? 5.2 : 6.6, visTop(cam, wallZ) + 1.3);
   const wall = { x0: xr[0], x1: xr[1], y0: lowY, y1: topY, z: wallZ, ppu: Math.round(ppuAt(cam, wallZ)) };
   const midZ = wallZ - 6, farZ = wallZ - 16;
   const pm = Math.round(ppuAt(cam, midZ)), pf = Math.round(ppuAt(cam, farZ));
-  const mid = { x0: xr[0] - 4, x1: xr[1] + 4, y0: lowY - 3, y1: topY + 2.4, z: midZ, ppu: pm };
-  const far = { x0: xr[0] - 9, x1: xr[1] + 9, y0: lowY - 5, y1: topY + 4.5, z: farZ, ppu: pf };
+  // everything below ~1 m on the deep layers always hides behind the wall
+  const mid = { x0: xr[0] - 4, x1: xr[1] + 4, y0: 1.0, y1: visTop(cam, midZ) + 1.2, z: midZ, ppu: pm };
+  const far = { x0: xr[0] - 9, x1: xr[1] + 9, y0: 1.0, y1: visTop(cam, farZ) + 1.8, z: farZ, ppu: pf };
   const gz1 = cam.pos[2] - 1.6;
   const ppuX = Math.round(ppuAt(cam, (wallZ + gz1) / 2) * 0.75);
   const groundG = { x0: xr[0], x1: xr[1], z0: wallZ, z1: gz1, y: 0, ppuX, ppuZ: Math.round(ppuX * 0.42) };
-  return { far, mid, wall, ground: groundG };
+  return { far, mid, wall, ground: groundG, cam };
 }

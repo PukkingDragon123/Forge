@@ -173,6 +173,10 @@ export function slab(img, sh, M, pts, o = {}) {
     const di = wy * IW + wx;
     if (wx < 0 || wy < 0 || wx >= IW || wy >= IH) continue;
     if (lit > 0.2 && nn > 0.6) { sets[ns2++] = di; sets[ns2++] = mixp(D[di], rimC, 0.7); continue; } // lost edge
+    // against rock already painted the line is a soft seam; full ink only on a true silhouette
+    const ox2 = wx + ex, oy2 = wy + ey;
+    const inner = ox2 >= 0 && oy2 >= 0 && ox2 < IW && oy2 < IH && (D[oy2 * IW + ox2] >>> 24) > 0;
+    if (inner) { sets[ns2++] = di; sets[ns2++] = lit > 0.1 ? Mw[Math.max(1, Math.round(tb[i] - 1.6))] : Mw[nn < 0.5 ? 0 : 1]; if (ey < 0 && tb[i] > 1.5) { const j2 = i + w; if (m[j2]) { sets[ns2++] = di + IW; sets[ns2++] = Mw[Math.min(8, Math.round(tb[j2] + 1.1))]; } } continue; }
     sets[ns2++] = di; sets[ns2++] = lit > 0.1 ? warmInk : inkC;
     const ix = x - (Math.abs(ex) >= Math.abs(ey) ? Math.sign(ex) : 0), iy = y - (Math.abs(ey) > Math.abs(ex) ? Math.sign(ey) : 0);
     const j = iy * w + ix;
@@ -223,31 +227,48 @@ export function rockMass(img, sh, M, o) {
   const TOP = new Float32Array(W), CEIL = new Float32Array(W);
   for (let x = 0; x < W; x++) { TOP[x] = o.full ? -1e9 : o.top ? o.top(x) : 1e9; CEIL[x] = o.full ? -1e9 : o.ceil ? o.ceil(x) : -1e9; }
   const inRegion = (x, y, mrg) => { const xi = Math.max(0, Math.min(W - 1, x | 0)); return o.full || y > TOP[xi] + mrg || y < CEIL[xi] - mrg; };
-  const nt = noiseTile(23, 3, 8);
+  const nt = noiseTile(23, 3, 8), mt = noiseTile(29, 2, 4);
   const yMax = Math.min(H, o.yMax ?? H);
   const asp = o.aspect || 0.55;
+  // strata undulate and tilt (never a level masonry course): each row follows its own wavy baseline
+  const amp = size * (0.5 + hash(1, 1, seed) * 0.5), fq = 1 / (size * (5 + hash(2, 1, seed) * 4));
+  // neighbouring rows share nearly the same wave so the strata stay parallel and leave no holes
+  const base = (row, x) => Math.sin(x * fq + row * 0.12 + seed) * amp + Math.sin(x * fq * 2.3 + row * 0.2) * amp * 0.3 + x * (hash(3, 1, seed) - 0.5) * 0.12;
+  const big = [];
   let row = 0;
-  for (let y = -size * 0.3; y < yMax + size * 0.4; row++) {
-    const rowH = size * asp * (0.5 + hash(row, 1, seed) * 0.6);
+  for (let y = -size * 0.6; y < yMax + size * 0.6; row++) {
+    const rowH = size * asp * (0.6 + hash(row, 1, seed) * 0.4);
     let x = x0 - size * hash(row, 2, seed);
     let k = 0;
     while (x < x1 + size * 0.6) {
       const r = hash(row, k, seed + 5);
       // size classes: boulder masses, mid stones, wedged rubble
-      const sz = size * (r > 0.78 ? 1.5 + hash(row, k, seed + 6) * 0.9 : r > 0.3 ? 0.75 + hash(row, k, seed + 6) * 0.45 : 0.32 + hash(row, k, seed + 6) * 0.25);
+      const sz = size * (r > 0.8 ? 1.5 + hash(row, k, seed + 6) * 1.0 : r > 0.3 ? 0.75 + hash(row, k, seed + 6) * 0.45 : 0.32 + hash(row, k, seed + 6) * 0.25);
       const flat = hash(row, k, seed + 8) > 0.6 ? 1.6 : 1; // some long flat strata slabs
-      const rx = sz * (0.5 + hash(row, k, seed + 7) * 0.3) * flat, ry = sz * asp * (0.45 + hash(row, k, seed + 9) * 0.35) / Math.sqrt(flat);
-      const cx = x + rx * 0.9, cy = y + (hash(row, k, seed + 11) - 0.5) * rowH * 0.8;
-      x += rx * (1.15 + hash(row, k, seed + 13) * 0.45);
+      const rx = sz * (0.5 + hash(row, k, seed + 7) * 0.3) * flat, ry = (sz * asp * (0.45 + hash(row, k, seed + 9) * 0.35)) / Math.sqrt(flat);
+      const bx = x + rx * 0.9, by0 = base(row, bx);
+      const slope = (base(row, bx + 8) - by0) / 8;
+      const cx = bx, cy = y + by0 + (hash(row, k, seed + 11) - 0.5) * rowH * 0.6;
+      x += rx * (1.12 + hash(row, k, seed + 13) * 0.35);
       k++;
       if (cx < x0 - rx || cx > x1 + rx || cy < -ry || cy > yMax + ry) continue;
       if (!inRegion(cx, cy, ry * 0.15)) continue;
       const sd = seed * 131 + row * 977 + k * 31;
-      const pts = blobPts(cx, cy, rx, ry, sd, { rough: 0.55 + hash(sd, 4, 4) * 0.2, n: 6 + Math.floor(hash(sd, 1, 1) * 5), rot: (hash(sd, 2, 2) - 0.5) * 0.5 });
-      const ceilStone = cy < CEIL[Math.max(0, Math.min(W - 1, cx | 0))];
-      slab(img, sh, M, pts, { seed: sd, moss: ceilStone ? null : o.moss, mossAmt: o.mossAmt, strata: o.strata, gem: o.gem && hash(sd, 3, 3) < (o.gemAmt || 0.08) ? o.gem : null, glow: o.glow, top: ceilStone ? false : undefined, simple: o.simple && sz < size });
+      const item = { cx, cy, rx, ry, sd, rot: Math.atan(slope) + (hash(sd, 2, 2) - 0.5) * 0.35 };
+      if (r > 0.8) big.push(item); else draw(item);
     }
     y += rowH;
+  }
+  // the big masses go last so they sit over the strata like boulders bedded in the face
+  for (const it of big) draw(it);
+  function draw(it) {
+    const { cx, cy, rx, ry, sd } = it;
+    const pts = blobPts(cx, cy, rx, ry, sd, { rough: 0.55 + hash(sd, 4, 4) * 0.2, n: 6 + Math.floor(hash(sd, 1, 1) * 5), tilt: it.rot });
+    const ceilStone = cy < CEIL[Math.max(0, Math.min(W - 1, cx | 0))];
+    const Mv = o.Ms ? o.Ms[hash(sd, 9, 9) < 0.62 ? 0 : hash(sd, 10, 9) < 0.6 ? 1 : 2] : M;
+    // macro value structure: broad regions of the face sit back in shadow or push forward
+    const macro = (nsf(mt, cx * 0.0035 + seed, cy * 0.006) - 0.5) * 2.2;
+    slab(img, sh, Mv, pts, { tone: macro + (hash(sd, 6, 6) - 0.5) * 0.6, seed: sd, moss: ceilStone ? null : o.moss, mossAmt: o.mossAmt, strata: o.strata, gem: o.gem && hash(sd, 3, 3) < (o.gemAmt || 0.08) ? o.gem : null, glow: o.glow, top: ceilStone ? false : undefined, simple: o.simple && rx < size * 0.6 });
   }
   // deep crevices wherever no slab landed (filled last so no pixel is painted twice)
   const D = img.d, c0 = M.w[0], c1 = M.w[1], c2 = M.w[2];
@@ -255,34 +276,42 @@ export function rockMass(img, sh, M, o) {
     const i = y * W + x;
     if (D[i] || !(o.full || y > TOP[x] + size * 0.3 || y < CEIL[x] - size * 0.3)) continue;
     const t = 0.6 + nt[((y & 255) << 8) | ((x + seed) & 255)] * 1.5;
-    D[i] = t < 1.3 ? c0 : t < 1.75 ? (bayer(x, y) < 0.5 ? c1 : c0) : t < 2.1 ? c1 : c2;
+    D[i] = t < 1.1 ? c0 : t < 1.5 ? (bayer(x, y) < 0.5 ? c1 : c0) : t < 2.0 ? c1 : c2;
   }
 }
 
 /** Stalactites hanging from a ceiling profile: each one shaped, split into lit/shadow halves, inked. */
 export function stalactites(img, sh, M, o) {
   const W = img.w, seed = o.seed || 4;
-  let x = (o.x0 ?? 0) + hash(1, 1, seed) * 20;
-  let k = 0;
   const F = [[-0.62, 0.15, 0.77], [0.6, 0.12, 0.79], [0, -0.1, 1]];
   const L = o.len || 80;
+  let x = (o.x0 ?? 0) + hash(1, 1, seed) * 40;
+  let k = 0;
   while (x < (o.x1 ?? W)) {
-    const len = 8 + hash(k, 1, seed) ** 1.7 * L, wid = 3 + hash(k, 2, seed) * (o.wid || 11) * (0.5 + len / L);
-    const base = o.ceil(x) - 4;
-    const pts = [];
-    const n = Math.max(4, Math.round(len / 7));
-    const bend = (hash(k, 3, seed) - 0.5) * wid * 0.8;
-    for (let i = 0; i <= n; i++) { const t = i / n, hw = wid * (1 - t) ** 1.25 * (0.85 + wob(i * 0.9, seed + k) * 0.3); pts.push([x - hw + bend * t * t, base + len * t]); }
-    for (let i = n; i >= 0; i--) { const t = i / n, hw = wid * (1 - t) ** 1.25 * (0.85 + wob(i * 0.9 + 5, seed + k) * 0.3); pts.push([x + hw + bend * t * t, base + len * t]); }
-    pts.push([x + wid * 1.2, base - 6], [x - wid * 1.2, base - 6]);
-    slab(img, sh, M, pts, { seed: seed * 17 + k, F, mott: 0.4, cracks: 0 });
-    if (o.tip && hash(k, 5, seed) > 0.45) {
-      const tx = Math.round(x + bend), ty = Math.round(base + len);
-      img.set(tx, ty + 1, o.tip); img.set(tx, ty + 2, o.tip);
-      if (o.glow) { o.glow.set(tx, ty + 1, o.tip); o.glow.set(tx, ty + 2, o.tip); }
+    // a cluster: one master drip with a couple of smaller ones, then a bare stretch of ceiling
+    const n = 1 + Math.floor(hash(k, 9, seed) ** 1.5 * 4);
+    for (let j = 0; j < n; j++, k++) {
+      const master = j === 0;
+      const len = (master ? 0.45 + hash(k, 1, seed) * 0.55 : 0.12 + hash(k, 1, seed) ** 2 * 0.45) * L, wid = 3 + (master ? 0.6 : 0.3 + hash(k, 2, seed) * 0.3) * (o.wid || 11) * (0.5 + len / L);
+      const broken = !master && hash(k, 6, seed) > 0.75;
+      const tl = broken ? len * 0.35 : len;
+      const sx = x + (j ? (hash(k, 7, seed) - 0.3) * wid * 3.2 : 0);
+      const base = o.ceil(sx) - 4;
+      const pts = [];
+      const nn = Math.max(4, Math.round(tl / 7));
+      const bend = (hash(k, 3, seed) - 0.5) * wid * 0.8;
+      const tipW = broken ? 0.45 : 0;
+      for (let i = 0; i <= nn; i++) { const t = i / nn, hw = wid * Math.max(tipW, (1 - t) ** 1.25) * (0.85 + wob(i * 0.9, seed + k) * 0.3); pts.push([sx - hw + bend * t * t, base + tl * t]); }
+      for (let i = nn; i >= 0; i--) { const t = i / nn, hw = wid * Math.max(tipW, (1 - t) ** 1.25) * (0.85 + wob(i * 0.9 + 5, seed + k) * 0.3); pts.push([sx + hw + bend * t * t, base + tl * t]); }
+      pts.push([sx + wid * 1.3, base - 6], [sx - wid * 1.3, base - 6]);
+      slab(img, sh, M, pts, { seed: seed * 17 + k, F, mott: 0.4, cracks: 0 });
+      if (o.tip && !broken && hash(k, 5, seed) > 0.4) {
+        const tx = Math.round(sx + bend), ty = Math.round(base + tl);
+        img.set(tx, ty + 1, o.tip); img.set(tx, ty + 2, o.tip);
+        if (o.glow) { o.glow.set(tx, ty + 1, o.tip); o.glow.set(tx, ty + 2, o.tip); }
+      }
     }
-    x += wid * 1.6 + hash(k, 4, seed) * (o.gap || 34);
-    k++;
+    x += (o.wid || 11) * 2 + hash(k, 4, seed) ** 0.7 * (o.gap || 34) * 3.2;
   }
 }
 
@@ -320,7 +349,7 @@ export function farRanges(img, o) {
       for (let x = Math.max(0, Math.floor(g.x - g.r)); x < Math.min(W, g.x + g.r); x++) {
         const q = ((x - g.x) * (x - g.x) + dy2) * ir2;
         if (q >= 1) continue;
-        const a = Math.floor(LUT[(q * 64) | 0] + (bayer(x, y) - 0.5) * 0.6);
+        const a = Math.floor(LUT[(q * 64) | 0] + (bayer(x, y) - 0.5) * 0.22);
         if (a <= 0) continue;
         const i = y * W + x, base = d[i], key = base * 8 + Math.min(5, a);
         let c = tint.get(key);
@@ -411,16 +440,18 @@ export function halo(glow, x, y, r, c, s = 0.5, sy = 1) {
   }
 }
 
-/** God ray: a slanted dithered wedge of light (transparent canvas, drawn additive). */
+/** God ray: a slanted wedge of light in four soft posterised steps (transparent canvas, drawn additive). */
 export function godRay(img, x, y0, len, w0, w1, slant, color, strength = 0.5) {
+  const steps = [0.25, 0.5, 0.75, 1].map((k) => mixp(hp('#000000'), color, k) | 0xff000000);
   for (let y = Math.max(0, y0); y < Math.min(img.h, y0 + len); y++) {
     const t = (y - y0) / len;
     const cx = x + slant * (y - y0), w = w0 + (w1 - w0) * t;
     const fade = Math.sin(Math.PI * Math.min(1, t * 1.15)) * strength;
     for (let xx = Math.floor(cx - w); xx < cx + w; xx++) {
       const e = 1 - Math.abs(xx - cx) / w;
-      const a = fade * e * (0.7 + 0.3 * wob(xx * 0.08 + y * 0.01, 5));
-      if (a > bayer(xx, y)) img.set(xx, y, color);
+      const a = fade * e * (0.7 + 0.3 * wob(xx * 0.05 + y * 0.004, 5)) * 4;
+      const q = Math.floor(a + (bayer(xx, y) - 0.5) * 0.3);
+      if (q > 0) img.set(xx, y, steps[Math.min(3, q - 1)]);
     }
   }
 }
@@ -490,7 +521,7 @@ export function paintGround(Gd, sh, o) {
     for (let y = bite; y < Math.min(h, bite + 10); y++) if ((1 - (y - bite) / 10) * 0.85 > bayer(x, y) + (wob(x * 0.1, seed) - 0.5) * 0.4) d[y * w + x] = M.w[y === bite ? 0 : 1];
   }
   // rubble heaped along the foot of the wall
-  for (let k = 0; k < Math.round(w / 35); k++) stone(img, ish, iso, o.S || M, hash(k, 31, seed) * w, 3 + hash(k, 32, seed) * h * 0.08, 3 + hash(k, 33, seed) ** 2 * 11, seed * 13 + k, null);
+  if (o.rubble !== false) for (let k = 0; k < Math.round(w / 35); k++) stone(img, ish, iso, o.S || M, hash(k, 31, seed) * w, 3 + hash(k, 32, seed) * h * 0.08, 3 + hash(k, 33, seed) ** 2 * 11, seed * 13 + k, null);
   if (o.tufts) for (let k = 0; k < Math.round((w / 40) * o.tufts); k++) tuft(img, sh, o.moss || M, hash(k, 8, seed) * w, (0.1 + hash(k, 9, seed) * 0.9) * h, iso, seed + k * 3);
 }
 
@@ -530,25 +561,30 @@ function tuft(img, sh, MM, x, y, iso, seed) {
   }
 }
 
-/** Puddle: dark sky-teal water with ripples and vertical reflection streaks under each light source. */
+/** Puddle: still water reflecting the dark cave (lighter toward the far edge), ripple lines, a wet
+ *  rim, glints, and broken vertical streaks under each light source. */
 function puddle(Gd, sh, o, seed, x, y) {
-  const { img, iso } = Gd;
+  const { img } = Gd;
   const rx = 26 + hash(seed, 1, 1) * 60, ry = rx * 0.22;
   const pm = polyMask(blobPts(x, y, rx, ry, seed, { rough: 0.45, n: 12 }), 1);
   const W = o.water;
   const ls = sh.lights.filter((l) => Math.abs(l.x - x) < rx + 10);
+  // wet mud ring first
+  const ring = polyMask(blobPts(x, y + 1, rx + 3, ry + 2, seed + 3, { rough: 0.45, n: 12 }), 1);
+  for (let yy = 0; yy < ring.h; yy++) for (let xx = 0; xx < ring.w; xx++) if (ring.m[yy * ring.w + xx]) img.set(xx + ring.x0, yy + ring.y0, o.M.w[1]);
   for (let yy = 0; yy < pm.h; yy++) for (let xx = 0; xx < pm.w; xx++) {
     const i = yy * pm.w + xx;
     if (!pm.m[i]) continue;
     const px = xx + pm.x0, py = yy + pm.y0;
-    const t = 1.2 + (wob(px * 0.15 + py * 0.9, seed) - 0.5) * 0.9 + (Math.sin(py * 2.1 + px * 0.05) > 0.85 ? 0.8 : 0);
-    let c = W[qt(t, px, py, W.length)];
+    const v = yy / pm.h; // 0 = far edge (reflects higher, lighter wall), 1 = near edge (darker)
+    let t = 2.6 - v * 2 + (Math.sin(py * 2.3 + wob(px * 0.05, seed) * 4) > 0.82 ? 0.9 : 0);
+    let c = W[qt(t, px, py, W.length, 0.18)];
     for (const l of ls) {
-      const dx = Math.abs(px - l.x + (wob(py * 0.8, seed) - 0.5) * 3), wdt = 2 + l.s * 5;
-      if (dx < wdt && Math.sin(py * 1.7 + dx) > -0.2) c = mixp(c, l.acc ? o.accP : o.keyP, Math.min(0.9, (1 - dx / wdt) * 1.2 * l.s));
+      const dx = Math.abs(px - l.x + (wob(py * 0.8, seed) - 0.5) * 4), wdt = 2 + l.s * 6;
+      if (dx < wdt && Math.sin(py * 1.6 + dx * 0.7) > -0.3) c = mixp(c, l.acc ? o.accP : o.keyP, Math.min(0.9, (1 - dx / wdt) * 1.3 * l.s));
     }
-    if (yy > 0 && !pm.m[i - pm.w]) c = mixp(c, o.keyP, 0.35);
-    if (yy < pm.h - 1 && !pm.m[i + pm.w]) c = o.M.w[0];
+    if (yy > 0 && !pm.m[i - pm.w]) c = mixp(c, o.keyP, 0.3);
+    if (hash(px, py, seed) > 0.992) c = hp('#e8f4f0');
     img.set(px, py, c);
   }
 }
@@ -568,7 +604,7 @@ function flagstones(Gd, ish, o) {
       const j = (a, b) => (hash(r * 31 + a, k, seed + b) - 0.5) * 2.2;
       const pts = [[x + g + j(1, 1), y0 + g * 0.6 + j(2, 1) * 0.4], [x + ww * 0.5 + j(3, 1), y0 + g * 0.5 + j(4, 1) * 0.3], [x + ww - g + j(5, 1), y0 + g * 0.6 + j(6, 1) * 0.4],
         [x + ww - g + j(7, 1) * 1.3, y1 - g * 0.6 + j(8, 1) * 0.3], [x + ww * 0.45 + j(9, 1), y1 - g * 0.5], [x + g + j(10, 1) * 1.3, y1 - g * 0.6 + j(11, 1) * 0.3]];
-      if (hash(r, k, seed + 40) > 0.55) pts.splice(hash(r, k, seed + 41) > 0.5 ? 1 : 4, 0, [x + ww * (0.2 + hash(r, k, seed + 42) * 0.6), hash(r, k, seed + 43) > 0.5 ? y0 + g * 2.2 : y1 - g * 2]);
+      if (hash(r, k, seed + 40) > 0.6) { const c = Math.floor(hash(r, k, seed + 41) * 4), ci = [0, 2, 3, 5][c], cut = g * (1.5 + hash(r, k, seed + 42) * 2.5); const [px, py] = pts[ci]; const nx = ci === 0 || ci === 5 ? 1 : -1, ny = ci < 3 ? 1 : -1; pts.splice(ci, 1, [px + nx * cut, py], [px, py + ny * cut * 0.6]); if (ci === 0 || ci === 3) { const a2 = pts[ci]; pts[ci] = pts[ci + 1]; pts[ci + 1] = a2; } } // a chipped corner
       const tilt = (hash(r, k, seed + 50) - 0.5) * 0.35;
       slab(img, ish, M, pts, { seed: seed + r * 101 + k, F: [[tilt, (hash(r, k, seed + 51) - 0.5) * 0.3, 1]], mott: 0.5, cracks: hash(r, k, seed + 52) > 0.7 ? 1 : 0, tone: (hash(r, k, seed + 53) - 0.5) * 0.9, moss: o.moss, mossAmt: o.moss ? 0.35 : 0 });
       x += ww; k++;

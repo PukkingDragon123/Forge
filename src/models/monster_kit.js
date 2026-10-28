@@ -132,7 +132,7 @@ export function roundCone(a, b, ra, rb) {
 
 // ============================================================================ pattern atlas (triplanar pixel-art tiles)
 // Each 64×64 tile: R = shade position on the palette ramp, G = accent mask, B = glow mask.
-export const TILE = { fur: 0, scale: 1, chitin: 2, stone: 3, metal: 4, rust: 5, bone: 6, cloth: 7, wood: 8, crystal: 9, membrane: 10, cap: 11, slime: 12, feather: 13, crust: 14, flesh: 15, wart: 16, smooth: 17, rune: 18, moss: 19, gill: 20, hide: 21, spots: 22, plate: 23, eye: 24, bark: 25, lava: 26 };
+export const TILE = { fur: 0, scale: 1, chitin: 2, stone: 3, metal: 4, rust: 5, bone: 6, cloth: 7, wood: 8, crystal: 9, membrane: 10, cap: 11, slime: 12, feather: 13, crust: 14, flesh: 15, wart: 16, smooth: 17, rune: 18, moss: 19, gill: 20, hide: 21, spots: 22, plate: 23, eye: 24, bark: 25, lava: 26, trim: 27 };
 const TS = 64, ACOLS = 8, AROWS = 4;
 let ATLAS = null;
 function paintTiles() {
@@ -191,10 +191,13 @@ function paintTiles() {
     return [q(0.68 - ly * 0.055 + hl + (hash2(((x + ox) / 10) | 0, row, 4) - 0.5) * 0.15, x, y), 0, ly > 4 ? 0.6 : 0];
   }));
   tile(TILE.chitin, (t) => fill(t, (x, y) => {
-    const ly = y % 21, seam = ly === 0 || (ly === 1 && x % 3 === 0);
-    if (seam) return [0.1, 1];
-    const sheen = Math.exp(-(((ly - 6) / 2.2) ** 2)) * 0.35;
-    return [q(0.38 + sheen - ly * 0.008 + (hash2(x >> 1, y >> 1, 5) > 0.93 ? 0.15 : 0), x, y), ly > 18 ? 1 : 0];
+    const ly = y % 32, wob = Math.round(Math.sin(x * 0.2) * 1.5);
+    const lyw = (ly + wob + 32) % 32;
+    if (lyw === 0) return [0.1];
+    if (lyw === 1) return [0.62, 1];
+    const sheen = Math.exp(-(((lyw - 8) / 3.5) ** 2)) * 0.3 + Math.exp(-((((x % 64) - 20) / 6) ** 2)) * 0.06;
+    const growth = (lyw % 6 === 0 && hash2(x >> 2, y, 5) > 0.4) ? -0.08 : 0;
+    return [q(0.36 + sheen - lyw * 0.004 + growth + (hash2(x >> 1, y >> 1, 5) > 0.95 ? 0.12 : 0), x, y)];
   }));
   tile(TILE.stone, (t) => fill(t, (x, y) => {
     const [d1, d2, id] = vor(x, y, 11, 6);
@@ -208,8 +211,8 @@ function paintTiles() {
       const lx = x % 32, ly = y % 32;
       if (lx === 0 || ly === 0) return [0.1];
       if (lx === 1 || ly === 1) return [0.72];
-      const riv = [[4, 4], [28, 4], [4, 28], [28, 28]].some(([a, b]) => (lx - a) ** 2 + (ly - b) ** 2 < 4.5);
-      if (riv) return [lx < 16 ? 0.85 : 0.6, 1];
+      const riv = [[5, 5], [27, 27]].some(([a, b]) => (lx - a) ** 2 + (ly - b) ** 2 < 3.5);
+      if (riv) return [lx < 16 ? 0.72 : 0.5, 0.6];
       return [q(0.45 + (per(x, y, 0.1, 8) - 0.5) * 0.3 - ly * 0.004, x, y)];
     });
     for (let i = 0; i < 14; i++) { const x = hash2(i, 1, 9) * TS, y = hash2(i, 2, 9) * TS; t.line(x, y, x + 4 + hash2(i, 3, 9) * 6, y + hash2(i, 4, 9) * 3, 0.78); }
@@ -230,12 +233,18 @@ function paintTiles() {
   tile(TILE.cloth, (t) => fill(t, (x, y) => {
     const fold = Math.sin((x / TS) * TAU * 3 + Math.sin((y / TS) * TAU) * 0.6) * 0.16;
     const weave = (x + y) % 2 === 0 ? 0.04 : -0.03;
-    const band = y % 32;
-    if (band < 5) {
-      const motif = band === 0 || band === 4 ? 1 : (x + band * 2) % 8 < 2 ? 1 : 0;
-      return [q(0.55 + fold + weave, x, y), 1, motif && band > 0 && band < 4 ? 1 : 0];
-    }
-    return [q(0.45 + fold + weave + (per(x, y, 0.1, 16) - 0.5) * 0.12, x, y)];
+    const wear = per(x, y, 0.08, 16);
+    return [q(0.45 + fold + weave + (wear - 0.5) * 0.14, x, y), wear > 0.66 ? 1 : 0];
+  }));
+  // embroidered trim: two bordered motif rows (accent) with glowing stitches — painted onto hems/edges
+  tile(TILE.trim, (t) => fill(t, (x, y) => {
+    const ly = y % 16, weave = (x + y) % 2 === 0 ? 0.05 : 0;
+    if (ly === 0 || ly === 15) return [0.15, 1];
+    if (ly === 1 || ly === 14) return [0.75, 1];
+    const lx = (x + (Math.floor(y / 16) % 2) * 4) % 8, d = Math.abs(lx - 4) + Math.abs(ly - 7.5);
+    if (d < 1.5) return [0.9, 1, 1];
+    if (d < 3.5) return [0.55 + weave, 1, d < 2.5 ? 0.6 : 0];
+    return [q(0.38 + weave, x, y)];
   }));
   tile(TILE.wood, (t) => fill(t, (x, y) => {
     const px = x % 16;
@@ -275,11 +284,11 @@ function paintTiles() {
     return [q(0.38 + ly * 0.07 + (hash2((x + ox) >> 3, row, 25) - 0.5) * 0.2, x, y), row % 5 === 2 && lx > 1 ? 1 : 0];
   }));
   tile(TILE.crust, (t) => fill(t, (x, y) => {
-    const [d1, d2, id] = vor(x, y, 9, 26);
-    const e = d2 - d1;
-    if (e < 1.3) return [0.95, 0, 1];
-    if (e < 2.3) return [0.6, 0, 0.5];
-    return [q(0.18 + hash2(id, 1, 26) * 0.2 + (e > 5 ? 0.08 : 0) + (hash2(x, y, 27) > 0.92 ? 0.12 : 0), x, y)];
+    const [d1, d2, id] = vor(x, y, 22, 26);
+    const e = d2 - d1, hot = per(x, y, 0.06, 46) > 0.47;
+    if (e < 1.1) return hot ? [0.95, 0, 1] : [0.12, 0, 0.15];
+    if (e < 2.0) return hot ? [0.55, 0, 0.45] : [0.22];
+    return [q(0.2 + hash2(id, 1, 26) * 0.22 + (e > 4 ? 0.1 : 0) + (hash2(x, y, 27) > 0.92 ? 0.12 : 0), x, y)];
   }));
   tile(TILE.flesh, (t) => {
     fill(t, (x, y) => [q(0.42 + (per(x, y, 0.12, 28) - 0.5) * 0.45, x, y)]);
@@ -287,7 +296,7 @@ function paintTiles() {
     for (let i = 0; i < 5; i++) { let x = hash2(i, 3, 29) * TS, y = hash2(i, 4, 29) * TS; for (let k = 0; k < 14; k++) { t.set(x, y, 0.2, 1); x += 1; y += Math.sin(k + i) > 0 ? 1 : 0; } }
   });
   tile(TILE.wart, (t) => {
-    fill(t, (x, y) => { const s = per(x, y, 0.07, 30); return [q(0.45 + (per(x, y, 0.2, 31) - 0.5) * 0.2, x, y), s > 0.56 ? 1 : 0]; });
+    fill(t, (x, y) => { const s = per(x, y, 0.09, 30); return [q(0.45 + (per(x, y, 0.2, 31) - 0.5) * 0.2, x, y), s > 0.64 ? 1 : 0]; });
     for (let i = 0; i < 22; i++) { const cx = hash2(i, 1, 32) * TS, cy = hash2(i, 2, 32) * TS, r = 1 + hash2(i, 3, 32) * 2.2; t.disc(cx, cy + 1, r, 0.15); t.disc(cx, cy, r, 0.7); t.set(cx - r * 0.4, cy - r * 0.4, 0.95); }
   });
   tile(TILE.smooth, (t) => fill(t, (x, y) => [q(0.5 + (per(x, y, 0.1, 33) - 0.5) * 0.16, x, y)]));
@@ -484,25 +493,47 @@ export class Sculpt {
     const bd = new Float32Array(nB);
     const near = (p, x, y, z) => x >= p.elo[0] && x <= p.ehi[0] && y >= p.elo[1] && y <= p.ehi[1] && z >= p.elo[2] && z <= p.ehi[2];
     const subs = P.filter((p) => p.op === SUB && p.mat != null), paints = P.filter((p) => p.op === PAINT);
+    // coarse spatial bins → per-vertex primitive lists (authoring order preserved)
+    const BN = 10, bsx = (hi[0] - lo[0]) / BN, bsy = (hi[1] - lo[1]) / BN, bsz = (hi[2] - lo[2]) / BN;
+    const binOf = (x, y, z) => Math.min(BN - 1, Math.max(0, ((x - lo[0]) / bsx) | 0)) + Math.min(BN - 1, Math.max(0, ((y - lo[1]) / bsy) | 0)) * BN + Math.min(BN - 1, Math.max(0, ((z - lo[2]) / bsz) | 0)) * BN * BN;
+    const binLists = (list) => {
+      const B = Array.from({ length: BN * BN * BN }, () => []);
+      for (const p of list) {
+        const i0 = Math.max(0, Math.floor((p.elo[0] - lo[0]) / bsx)), i1 = Math.min(BN - 1, Math.floor((p.ehi[0] - lo[0]) / bsx));
+        const j0 = Math.max(0, Math.floor((p.elo[1] - lo[1]) / bsy)), j1 = Math.min(BN - 1, Math.floor((p.ehi[1] - lo[1]) / bsy));
+        const k0 = Math.max(0, Math.floor((p.elo[2] - lo[2]) / bsz)), k1 = Math.min(BN - 1, Math.floor((p.ehi[2] - lo[2]) / bsz));
+        for (let k = k0; k <= k1; k++) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) B[i + j * BN + k * BN * BN].push(p);
+      }
+      return B;
+    };
+    const bAdds = binLists(adds), bSubs = binLists(subs), bPaints = binLists(paints), bBinds = binLists(binds);
     const VM = new Int16Array(nV), VL = new Int16Array(nV).fill(-1);
     const pairs = [];
+    const solo = new Uint8Array(nB);
+    for (const b of o.solo || []) solo[b] = 1;
+    const anySolo = (o.solo || []).length > 0;
     for (let v = 0; v < nV; v++) {
       const x = VX[v * 3], y = VX[v * 3 + 1], z = VX[v * 3 + 2];
       bd.fill(1e9);
       let dmin = 1e9, best = 1e9, mat = 0;
-      for (const p of adds) {
+      const bi = binOf(x, y, z);
+      for (const p of bAdds[bi]) {
         if (!near(p, x, y, z)) continue;
         const dr = dist(p, x, y, z), d = dr > 0 ? dr : 0, ad = dr < 0 ? -dr : dr;
         if (ad < best) { best = ad; mat = p.mat; }
         if (d < bd[p.bone]) bd[p.bone] = d;
         if (d < dmin) dmin = d;
       }
-      for (const p of subs) { if (!near(p, x, y, z)) continue; const dr = dist(p, x, y, z), ad = dr < 0 ? -dr : dr; if (ad < best) { best = ad; mat = p.mat; } }
-      for (const p of paints) if (near(p, x, y, z) && dist(p, x, y, z) < 0) { if (p.layer) VL[v] = p.mat; else mat = p.mat; }
+      for (const p of bSubs[bi]) { if (!near(p, x, y, z)) continue; const dr = dist(p, x, y, z), ad = dr < 0 ? -dr : dr; if (ad < best) { best = ad; mat = p.mat; } }
+      for (const p of bPaints[bi]) if (near(p, x, y, z) && dist(p, x, y, z) < 0) { if (p.layer) VL[v] = p.mat; else mat = p.mat; }
       VM[v] = mat;
       pairs.length = 0;
-      for (let b = 0; b < nB; b++) { const w = 1 - (bd[b] - dmin) / fall; if (w > 0) pairs.push([b, w * w]); }
-      for (const p of binds) {
+      // solo bones (parts that can be hidden) never claim vertices that sit on another bone's surface
+      let dns = 1e9;
+      if (anySolo) for (let b = 0; b < nB; b++) if (!solo[b] && bd[b] < dns) dns = bd[b];
+      const blockSolo = anySolo && dns <= cell * 1.6, ref = blockSolo ? dns : dmin;
+      for (let b = 0; b < nB; b++) { if (blockSolo && solo[b]) continue; const w = 1 - (bd[b] - ref) / fall; if (w > 0) pairs.push([b, w * w]); }
+      for (const p of bBinds[bi]) {
         if (!near(p, x, y, z)) continue;
         const wb = clamp(0.5 - dist(p, x, y, z) / fall, 0, 1);
         if (wb <= 0) continue;

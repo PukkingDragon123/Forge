@@ -3,7 +3,7 @@
 // Kit that merges parts per material into a few shadow-casting meshes.
 import * as THREE from 'three';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Painter, dither } from '../art/pixel.js';
 import { TOON4, pixelTexture } from '../gfx/materials.js';
 import { hash2, hash3, ramp, clamp, shadeHex, mixHex, hexToRgb } from '../core/math.js';
@@ -575,7 +575,7 @@ export function chippedBlock(w, h, d, seed = 1, chip = 0.05, bevel = 0.015) {
 export function plank(len, w, t, seed = 1, bow = 0.012, twist = 0.03) {
   const c = Math.min(w, t) * 0.22;
   const prof = shape([[-w / 2 + c, -t / 2], [w / 2 - c, -t / 2], [w / 2, -t / 2 + c], [w / 2, t / 2 - c], [w / 2 - c, t / 2], [-w / 2 + c, t / 2], [-w / 2, t / 2 - c], [-w / 2, -t / 2 + c]]);
-  const g = new THREE.ExtrudeGeometry(prof, { depth: len, steps: 5, bevelEnabled: false });
+  const g = new THREE.ExtrudeGeometry(prof, { depth: len, steps: 3, bevelEnabled: false });
   g.translate(0, 0, -len / 2);
   g.rotateY(Math.PI / 2);
   g.rotateX(Math.PI / 2); // wall board: length along x, width along y, thickness along z (faces +z)
@@ -596,7 +596,9 @@ export { makeTex as paintTex };
 
 const SHADOW_DEPTH = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
 const SHADOW_DIST = new THREE.MeshDistanceMaterial({ side: THREE.DoubleSide });
-SHADOW_DEPTH.userData.keep = SHADOW_DIST.userData.keep = true;
+const SHADOW_PROXY = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+SHADOW_DEPTH.userData.keep = SHADOW_DIST.userData.keep = SHADOW_PROXY.userData.keep = true;
+const LAYER_SHADOW = 4; // not LAYER_SOLID: the view-normal pass must not draw the attribute-less proxy
 
 // ======================================================================= Kit: accumulate parts per material
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
@@ -630,22 +632,41 @@ export class Kit {
     bucket.geos.push(g);
     return g;
   }
-  /** Merge into a Group (one mesh per material). */
+  /**
+   * Merge into a Group (one mesh per material). Shadows come from a single position-only proxy per
+   * prop (invisible: no colour/depth writes, on its own layer so the normal pass skips it), so a prop
+   * costs one draw per shadow face instead of one per material.
+   */
   build(opts = {}) {
     const grp = new THREE.Group();
+    const casters = [];
     for (const { mat, geos, shadow } of this.parts.values()) {
       const merged = mergeGeometries(geos, false);
       merged.computeBoundingSphere();
       merged.userData.keep = !!opts.keep;
       const mesh = new THREE.Mesh(merged, mat);
       const isGlow = mat.isMeshBasicMaterial;
-      mesh.castShadow = shadow && !isGlow && opts.shadow !== false;
+      mesh.castShadow = false;
       mesh.receiveShadow = !isGlow;
-      // one shared depth/distance material for every prop: stops the shadow pass flipping map/side
-      // state per draw (each flip forces a program switch — ruinous with cube point-light shadows)
-      mesh.customDepthMaterial = SHADOW_DEPTH;
-      mesh.customDistanceMaterial = SHADOW_DIST;
       grp.add(mesh);
+      // tiny trims (rivets, buttons, nail heads) are not worth a shadow
+      if (shadow && !isGlow && opts.shadow !== false && !mat.transparent && merged.attributes.position.count >= 120) casters.push(merged.attributes.position.array);
+    }
+    if (casters.length) {
+      const pos = new Float32Array(casters.reduce((n, a) => n + a.length, 0));
+      let o = 0;
+      for (const a of casters) { pos.set(a, o); o += a.length; }
+      // welded + indexed: the faceted meshes repeat every corner ~6×, the shadow pass only needs one
+      const g = mergeVertices(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos, 3)), 1e-4);
+      g.computeBoundingSphere();
+      const proxy = new THREE.Mesh(g, SHADOW_PROXY);
+      proxy.name = 'shadowProxy';
+      proxy.castShadow = true;
+      proxy.receiveShadow = false;
+      proxy.layers.set(LAYER_SHADOW);
+      proxy.customDepthMaterial = SHADOW_DEPTH;
+      proxy.customDistanceMaterial = SHADOW_DIST;
+      grp.add(proxy);
     }
     return grp;
   }

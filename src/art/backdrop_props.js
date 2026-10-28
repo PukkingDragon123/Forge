@@ -187,7 +187,7 @@ export function giantMushroom(C, x, y, h, capHex, glowHex, seed = 1) {
   const capM = C.mat(capHex), stemM = C.mat(mixHex('#d8c8a8', capHex, 0.15));
   const lean = (hash(seed, 1, 1) - 0.5) * h * 0.25;
   const sw = h * (0.08 + hash(seed, 2, 2) * 0.04);
-  const capW = h * (0.42 + hash(seed, 3, 3) * 0.22), capH = capW * (0.42 + hash(seed, 4, 4) * 0.2);
+  const capW = h * (0.4 + hash(seed, 3, 3) * 0.2), capH = capW * (0.62 + hash(seed, 4, 4) * 0.3);
   const tx = x + lean, ty = y - h + capH * 0.55;
   const sp = new Spr(C, x - capW * 1.2 - Math.abs(lean), y - h - 4, x + capW * 1.2 + Math.abs(lean), y + 3);
   const N = 40, pl = [], pr = [];
@@ -212,12 +212,16 @@ export function giantMushroom(C, x, y, h, capHex, glowHex, seed = 1) {
       if (C.glow && !line && hash(xx, yy, seed) > 0.8) C.glow.set(xx, yy, hp(mixHex(glowHex, '#000000', 0.6)));
     }
   }
+  // cap: a full dome (superellipse) with lumps, its rim curling under, then the gill line underneath
   const cap = [];
-  for (let i = 0; i <= 26; i++) {
-    const a = Math.PI + (i / 26) * Math.PI, r = 1 + (wob(i * 0.7, seed + 5) - 0.5) * 0.18;
-    cap.push([tx + Math.cos(a) * capW * r, ty + Math.sin(a) * capH * r]);
+  const N2 = 30;
+  for (let i = 0; i <= N2; i++) {
+    const u = -1 + (2 * i) / N2, au = Math.abs(u);
+    const lump = 1 + (wob(i * 0.8, seed + 5) - 0.5) * 0.16;
+    const top = -capH * Math.pow(Math.max(0, 1 - Math.pow(au, 2.3)), 0.55) * lump;
+    cap.push([tx + u * capW * (1 + (wob(i * 0.5, seed + 6) - 0.5) * 0.05), ty + top + (au > 0.92 ? (au - 0.92) * capH * 2.2 : 0)]);
   }
-  cap.push([tx + capW * 0.95, ty + 2], [tx + capW * 0.6, ty + gillH * 0.4], [tx, ty + gillH * 0.55], [tx - capW * 0.6, ty + gillH * 0.4], [tx - capW * 0.95, ty + 2]);
+  cap.push([tx + capW * 0.98, ty + capH * 0.2], [tx + capW * 0.6, ty + gillH * 0.45], [tx, ty + gillH * 0.6], [tx - capW * 0.6, ty + gillH * 0.45], [tx - capW * 0.98, ty + capH * 0.2]);
   const spots = [];
   for (let k = 0; k < 4 + hash(seed, 6, 6) * 6; k++) spots.push([tx + (hash(seed, k, 7) - 0.5) * capW * 1.5, ty - capH * (0.2 + hash(seed, k, 8) * 0.65), 1.5 + hash(seed, k, 9) * capW * 0.09, seed + k]);
   const gl = hp(glowHex), gl2 = hp(mixHex(glowHex, '#ffffff', 0.55));
@@ -350,10 +354,10 @@ export function runePanel(C, x0, y0, w, h, M, runeHex, seed = 1) {
 export function basaltColumns(C, x0, y, w, h, M, seed = 1) {
   let x = x0, i = 0;
   const cols = [];
-  while (x < x0 + w) { const cw = 9 + hash(seed, i, 1) * 12; cols.push({ x, cw, ch: h * (0.4 + hash(seed, i, 2) * 0.6) * (1 - Math.abs((x - x0) / w - 0.5) * 0.6), sd: seed + i * 11 }); x += cw - 1; i++; }
+  while (x < x0 + w) { const cw = 13 + hash(seed, i, 1) * 14; cols.push({ x, cw, ch: h * (0.4 + hash(seed, i, 2) * 0.6) * (1 - Math.abs((x - x0) / w - 0.5) * 0.6), sd: seed + i * 11 }); x += cw - 1; i++; }
   cols.sort((a, b) => a.ch - b.ch);
   for (const c of cols) {
-    const tx = c.x, ty = y - c.ch, cw = c.cw, cap = cw * 0.3;
+    const tx = c.x, ty = y - c.ch, cw = c.cw, cap = cw * 0.45;
     const tilt = (hash(c.sd, 3, 3) - 0.5) * cap;
     const pts = [[tx, ty + cap / 2 + tilt], [tx + cw * 0.3, ty + tilt * 0.5], [tx + cw * 0.7, ty - tilt * 0.2], [tx + cw, ty + cap / 2 - tilt], [tx + cw, y], [tx, y]];
     const sp = new Spr(C, tx, ty - cap, tx + cw, y);

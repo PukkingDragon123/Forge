@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { REGIONS } from '../data/regions.js';
 import { paintStage, stageStyle } from '../art/backdrops.js';
-import { paintBridge, paintElevator, paintStairs, paintWater, paintForeground } from '../art/backdrop_parts.js';
+import { paintBridge, paintElevator, paintWater, paintForeground } from '../art/backdrop_parts.js';
 import { CAM, VH, ppuAt, flatGeo } from '../art/backdrop_geo.js';
 import { Img, hp, hash, qt, wob, mixHex } from '../art/backdrop_kit.js';
 import { buildProp, tickProps } from './props.js';
@@ -31,7 +31,9 @@ function tex(canvas, { mips = true } = {}) {
 }
 function basicMat(map, o = {}) {
   return new THREE.MeshBasicMaterial({
-    map, transparent: !!o.transparent || !!o.additive, alphaTest: o.alphaTest ?? 0, depthTest: o.depthTest ?? false, depthWrite: false,
+    // additive glow stays in the opaque list (blending still applies) so renderOrder keeps it between
+    // the layers it belongs to instead of being drawn after every opaque plane
+    map, transparent: !!o.transparent, alphaTest: o.alphaTest ?? 0, depthTest: o.depthTest ?? false, depthWrite: false,
     fog: false, blending: o.additive ? THREE.AdditiveBlending : THREE.NormalBlending, color: new THREE.Color(0xffffff).multiplyScalar(o.gain ?? 1),
     opacity: o.opacity ?? 1, side: o.side ?? THREE.FrontSide,
   });
@@ -193,7 +195,11 @@ export class Stage {
     const fy = this.pathY ? this.pathY(x) : 0;
     if (this.walkerLight) this.walkerLight.position.set(x + 0.45, fy + 1.3, 0.9);
     if (this.key && this.kind === 'corridor') { this.key.position.set(x - 3, fy + 6, 6); this.key.target.position.set(x + 1, fy, 0); }
-    if (this.poolPlanes) for (const p of this.poolPlanes) { p.position.x = x + 0.3; if (p.userData.onFloor) p.position.y = fy + 0.006; else p.position.y = fy + 1.2; }
+    if (this.poolPlanes) for (const p of this.poolPlanes) {
+      p.position.x = x + 0.3;
+      p.position.y = p.userData.onFloor ? fy + 0.006 : fy + 1.2;
+      if (p.userData.onFloor) p.visible = !this.gapAt || !this.gapAt(x); // no floor to light over a chasm or shaft
+    }
   }
   floorAt(x) { return this.pathY ? this.pathY(x) : 0; }
   update(dt, t) {
@@ -347,7 +353,7 @@ function buildFlat(st, kind, ri, opts) {
     st.anchors.gridCenter = V(0, gy0 + gw / 2, gzT);
     st.anchors.cell = cell;
   }
-  const painted = paintStage(kind, ri, geo, { ...opts, length: L, gap, grid, seed: opts.seed || 1 });
+  const painted = paintStage(kind, ri, geo, { ...opts, length: L, gap, grid, stairs, seed: opts.seed || 1 });
   const G = st.group;
   // ---- planes in painter's order (actors draw afterwards with depth)
   if (painted.far) {
@@ -377,9 +383,9 @@ function buildFlat(st, kind, ri, opts) {
   addForeground(st, kind, ri, cam, L, opts.seed || 1);
 
   // ---- specials
+  if (gap || shaft) st.gapAt = (x) => { const g = gap || shaft; return x > g[0] - 1.8 && x < g[1] + 1.8; };
   if (gap) addBridge(st, tun, gap, pathY, ri);
   if (shaft) addElevator(st, shaft, pathY, ri);
-  if (stairs) addStairs(st, stairs, pathY, ri);
   if (corridor && tun === 'flooded') addWater(st, geo, ri);
 
   // ---- lights for actors
@@ -434,13 +440,13 @@ function addLanternPool(st, geo) {
     const img = new Img(w, h), c = new THREE.Color(col);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const d = Math.hypot((x + 0.5 - w / 2) / (w / 2), ((y + 0.5 - h / 2) / (h / 2)) * sy);
-      const a = Math.floor((1 - Math.min(1, d)) ** 1.5 * 4 + (((x & 3) + (y & 3) * 4) / 16 - 0.5) * 0.5) / 4;
+      const a = Math.floor((1 - Math.min(1, d)) ** 2 * 6 + (((x & 3) + (y & 3) * 4) / 16 - 0.5) * 0.4) / 6;
       if (a > 0) img.set(x, y, hp('#' + c.clone().multiplyScalar(a).getHexString()));
     }
     return img;
   };
   const warm = mixHex(st.style.key, '#3a1a06', 0.55);
-  const floor = ring(512, 128, 1, warm), wall = ring(384, 384, 1, mixHex(warm, '#000000', 0.25));
+  const floor = ring(512, 128, 1, warm), wall = ring(384, 384, 1, mixHex(warm, '#000000', 0.62));
   const fm = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 3.0).rotateX(-Math.PI / 2), basicMat(tex(floor.toCanvas(), { mips: false }), { additive: true, gain: 1 }));
   fm.position.set(0, 0.006, 0.1);
   fm.userData.onFloor = true;
@@ -490,18 +496,11 @@ function addElevator(st, shaft, pathY, ri) {
   st.anchors.elevatorBottom = V(shaft[1], pathY(shaft[1]), 0);
 }
 
-function addStairs(st, stairs, pathY, ri) {
-  const ppu = 96;
-  const w = stairs[1] - stairs[0] + 0.5, top = 0.35, bot = pathY(stairs[1]) - 0.7;
-  const { img } = paintStairs(ri, Math.round(w * ppu), Math.round((top - bot) * ppu), 10, ppu);
-  vplanes(st.group, img, { x0: stairs[0] - 0.25, x1: stairs[0] - 0.25 + w, y0: bot, y1: top, z: -0.9 }, -58, { alphaTest: 0.5 });
-}
-
 function addWater(st, geo, ri) {
   const t = tex(paintWater(ri).toCanvas(), { mips: false });
   t.wrapS = THREE.RepeatWrapping;
   const W = geo.ground.x1 - geo.ground.x0, D = geo.ground.z1 - geo.ground.z0;
-  t.repeat.set(W / 5.3, 1);
+  t.repeat.set(W / 5.4, 1);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, fog: false }));
   m.position.set((geo.ground.x0 + geo.ground.x1) / 2, -0.06, (geo.ground.z0 + geo.ground.z1) / 2);
   m.renderOrder = 120;
@@ -519,17 +518,14 @@ function buildCampfire(st, ri, opts) {
   const arc = (R) => Math.PI * R;
   const mineAz = Math.atan2(3.6, 4.4);
   const geo = {
-    wall: { x0: -arc(Rw), x1: arc(Rw), y0: -0.4, y1: 7.0, z: -Rw, ppu: Math.round(ppuR(Rw) * 1.05) },
+    wall: { x0: -arc(Rw), x1: arc(Rw), y0: -0.4, y1: 5.6, z: -Rw, ppu: Math.round(ppuR(Rw) * 1.05) },
     mid: { x0: -arc(Rm), x1: arc(Rm), y0: -3, y1: 10, z: -Rm, ppu: ppuR(Rm) },
     far: { x0: -arc(Rf), x1: arc(Rf), y0: -6, y1: 14, z: -Rf, ppu: ppuR(Rf) },
     ground: { x0: -9.2, x1: 9.2, z0: -9.2, z1: 9.2, y: 0, ppuX: 52, ppuZ: 52 },
   };
   const painted = paintStage('campfire', ri, geo, { ...opts, mineX: mineAz * Rw, seed: opts.seed || 3 });
   const G = st.group;
-  cyclorama(G, painted.far.canvas, Rf, geo.far.y0, geo.far.y1, -100);
-  if (painted.far.glow) cyclorama(G, painted.far.glow, Rf - 0.02, geo.far.y0, geo.far.y1, -99, { additive: true, gain: 1.2 });
-  cyclorama(G, painted.mid.canvas, Rm, geo.mid.y0, geo.mid.y1, -90, { alphaTest: 0.5 });
-  if (painted.mid.glow) cyclorama(G, painted.mid.glow, Rm - 0.02, geo.mid.y0, geo.mid.y1, -89, { additive: true, gain: 1.4 });
+  // the camp sits in a closed cavern: the wall cyclorama is the whole view (no deeper layers)
   cyclorama(G, painted.wall.canvas, Rw, geo.wall.y0, geo.wall.y1, -80, { alphaTest: 0.5 });
   if (painted.wall.glow) cyclorama(G, painted.wall.glow, Rw - 0.02, geo.wall.y0, geo.wall.y1, -79, { additive: true, gain: 1.6 });
   const disc = (canvas, order, o) => G.add(fxify(new THREE.Mesh(new THREE.CircleGeometry(Rw + 0.1, 64).rotateX(-Math.PI / 2), basicMat(tex(toCanvas(canvas)), o)), order));
@@ -557,7 +553,7 @@ function buildCampfire(st, ri, opts) {
   st.fireAnchor = V(0, 0, 0);
   st.anchors.fire = V(0, 0, 0);
   st.anchors.center = V(0, 0.8, -0.4);
-  st.anchors.anvil = V(3.0, 0, 0.7);
+  try { st.prop('anvil', {}, 3.2, 0, 0.6, -0.6); } catch (e) { /* optional */ }
   const mr = Rw - 0.4;
   st.anchors.mineEntrance = V(Math.sin(mineAz) * mr, 1.0, -Math.cos(mineAz) * mr);
   st.anchors.mineDeep = V(Math.sin(mineAz) * (Rw + 6), 0.9, -Math.cos(mineAz) * (Rw + 6));
@@ -567,7 +563,7 @@ function buildCampfire(st, ri, opts) {
   st.lights.push(rim);
   st.ambient(['dust']);
   st.emitters.push((dt) => { if (rnd.chance(dt * 3)) st.P.add.emit({ pos: [rnd.float(-5, 5), rnd.float(0.4, 2.6), rnd.float(-5, 2)], vel: [rnd.float(-0.1, 0.1), 0.05, 0], spread: 0.05, life: [2, 4], size: 1, color: ['#d8ff8a', '#ffe08a'], glow: 2.5, flicker: 0.6, fadeIn: 0.6 }); });
-  st.camera = { ...cam, orbit: { center: [0, 0.8, -0.4], radius: 6.0, height: 2.3, arc: Math.PI } };
+  st.camera = { ...cam, orbit: { center: [0, 0.8, -0.4], radius: 6.0, height: 2.3, arc: 0.7 } };
   st.spread.set(5, 2, 3);
   st.focus.set(0, 1.5, -0.5);
   st.fog.density = 0.01; st.fogDensity = 0.01;
@@ -607,7 +603,12 @@ export function buildStage(kind, regionIdx = 0, opts = {}) {
   else if (kind === 'room') {
     Object.assign(A, { center: V(0, 0, 0), player: V(-1.9, 0, 0.8) });
     const room = opts.room || 'event';
-    if (room === 'treasure') for (let i = 0; i < 3; i++) A['chest' + i] = V(-1.5 + i * 1.5, 0, -0.6);
+    if (room === 'treasure') {
+      for (let i = 0; i < 3; i++) A['chest' + i] = V(-1.5 + i * 1.5, 0, -0.6);
+      try { st.prop('goldpile', {}, -2.6, 0, -1.2, 0.3, 1.4); st.prop('goldpile', {}, 2.5, 0, -1.0, 1.2); } catch (e) { /* optional 3D gold */ }
+      st.light(new THREE.PointLight(0xffd890, 3, 6, 1.5), 0, 2.6, 0.6);
+      st.emitters.push((dt) => { if (rnd.chance(dt * 6)) st.P.add.emit({ pos: [rnd.float(-2, 2), rnd.float(0.2, 2.5), rnd.float(-1.2, 0)], vel: [0, 0.05, 0], life: [0.6, 1.4], size: 1, color: ['#fff4c8', '#ffe08a'], glow: 2.5, flicker: 0.5 }); });
+    }
     else if (room === 'merchant') {
       A.merchant = V(-0.2, 0, -0.5); // the mole stands here, in front of the painted stall
       A.cart = V(1.0, 0, -1.5);
@@ -619,7 +620,11 @@ export function buildStage(kind, regionIdx = 0, opts = {}) {
       A.fire = V(0, 0, -0.2);
       A.seat = V(-1.3, 0.32, 0.25);
       A.anvil = V(1.7, 0, 0.5);
-    } else A.prop = V(0.6, 0, -0.8);
+    } else {
+      A.prop = V(0.6, 0, -0.8);
+      const spot = new THREE.SpotLight(new THREE.Color(st.style.acc), 14, 12, 0.5, 0.7, 1.4);
+      st.light(spot, 0, 5.2, 1.2); spot.target.position.set(0.6, 0, -0.8); st.group.add(spot.target);
+    }
   } else if (kind === 'wall') {
     A.player = V(-1.4, 0, 0.9);
     st.spread.set(3, 1.6, 1.5);

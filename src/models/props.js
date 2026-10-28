@@ -4,12 +4,11 @@
 // userData.emit(P, dt) (P = { add: ParticleSystem, alpha: ParticleSystem }) and userData.lights.
 import * as THREE from 'three';
 import { VoxelGrid, meshVoxels } from '../gfx/voxel.js';
-import { toon, glow, pixelTexture } from '../gfx/materials.js';
+import { glow } from '../gfx/materials.js';
 import { FlickerLight } from '../gfx/camera.js';
 import { LAYER_FX } from '../gfx/renderer.js';
-import { hash2, hash3, noise2, noise3, mixHex, shadeHex } from '../core/math.js';
+import { hash2, noise2, noise3, mixHex, shadeHex } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
-import { Painter } from '../art/pixel.js';
 import {
   Kit, TEX, texMat, glowTexMat, flatMat, glowMat, paintTex, cached, between, pfbm,
   hull, chamferBox, chippedBlock, plank, rockGeo, prism, lathe, tube, beam, logGeo, shape, extrude, wobble,
@@ -419,7 +418,7 @@ const BUILDERS = {
         { f: flat(noisy(bag, 0.006, 9, 2)), m: 'bag' },
         { f: noisy(sbox([0, 0.17, -0.44], [0.305, 0.028, 0.15], 0.025), 0.005, 12, 3), m: 'lining' },
         { f: noisy(sbox([0, 0.21, -0.6], [0.2, 0.055, 0.1], 0.05), 0.012, 14, 4), m: 'pillow' },
-      ], [-0.34, -0.01, -0.8], [0.34, 0.3, 0.82], 0.034, { bag: M.cloth(c), lining: M.quilt(brighten(c)), pillow: M.cloth('#ece2cc') }, {}, { k: 0.015 });
+      ], [-0.34, -0.01, -0.8], [0.34, 0.3, 0.82], 0.04, { bag: M.cloth(c), lining: M.quilt(brighten(c)), pillow: M.cloth('#ece2cc') }, {}, { k: 0.015 });
       kit.add(tube([[0.3, 0.09, 0.72], [0.31, 0.11, 0.2], [0.3, 0.12, -0.3]], 0.008, 8, 4), flatMat('#d8b060'), { uv: 'raw' });
       return kit.build();
     });
@@ -440,7 +439,7 @@ const BUILDERS = {
       ];
       for (const sx of [-0.1, 0.1]) parts.push({ f: sbox([sx, 0.42, 0.172], [0.018, 0.22, 0.012], 0.008), m: 'strap' });
       for (const sx of [-0.18, 0.18]) parts.push({ f: sbox([sx, 0.75, 0], [0.016, 0.094, 0.094], 0.014), m: 'strap' });
-      addSculpt(kit, parts.map((p) => ({ ...p, f: floor(p.f) })), [-0.4, -0.01, -0.22], [0.4, 0.86, 0.27], 0.028,
+      addSculpt(kit, parts.map((p) => ({ ...p, f: floor(p.f) })), [-0.4, -0.01, -0.22], [0.4, 0.86, 0.27], 0.034,
         { pack: M.leather(c), flap: M.leather(brighten(c)), pocket: M.leather(shadeHex(c, -0.2)), strap: M.leather(shadeHex(c, -0.4)), roll: M.quilt('#3a6a8a') }, {}, { k: 0.012 });
       kit.add(chamferBox(0.075, 0.065, 0.025, 0.008), flatMat(BRASS), { pos: [0, 0.43, 0.2] });
       kit.add(chamferBox(0.03, 0.025, 0.03, 0.004), flatMat('#2a1a10'), { pos: [0, 0.43, 0.21] });
@@ -664,7 +663,7 @@ const BUILDERS = {
         r.rotateY(Math.PI / 2);
         kit.add(r, M.metal('#7a7e88', 0.35, 10), { pos: [0, 0.055, z] });
         kit.add(chamferBox(L, 0.006, 0.026, 0.002), flatMat('#c8ccd4'), { pos: [0, 0.117, z] });
-        for (let i = 0; i < n; i++) for (const dz of [-0.035, 0.035]) kit.add(chamferBox(0.014, 0.02, 0.014, 0.003), flatMat('#4a4e58'), { pos: [-L / 2 + (i + 0.5) * (L / n), 0.065, z + dz] });
+        for (let i = 0; i < n; i++) kit.add(prism(4, 0.05, 0.012, { rot: Math.PI / 4 }), flatMat('#4a4e58'), { pos: [-L / 2 + (i + 0.5) * (L / n), 0.054, z], uv: 'raw' });
       }
       return kit.build();
     });
@@ -771,7 +770,7 @@ const BUILDERS = {
         fs.push(capsule([p0[0] + Math.cos(a) * r0 * 0.5, p0[1], p0[2] + Math.sin(a) * r0 * 0.5], [p0[0] + Math.cos(a) * r0 * 1.05, p0[1] - Math.min(0.5, L * 0.2), p0[2] + Math.sin(a) * r0 * 1.05], r0 * 0.42, 0.014));
       }
       const f = noisy(union(0.05, ...fs), 0.022, 8, h);
-      const cell = L > 3 ? 0.065 : 0.045;
+      const cell = L > 3 ? 0.08 : 0.06;
       addSculpt(kit, [{ f: (x, y, z) => Math.max(f(x, y, z), y), m: 'stone' }], [-0.5, -L - 0.08, -0.5], [0.5, 0.04, 0.5], cell,
         { stone: M.stone(stoneTint(avgTone(tone)), 6) }, {}, { seed: h, jitter: 0.18 });
       if (tipc) kit.add(prism(5, 0.03, 0.14, { taper: 0.4, seed: h }), glowMat(tipc, 2.6), { pos: [pts[n][0], -L - 0.06, pts[n][2]], uv: 'raw' });
@@ -1759,5 +1758,3 @@ export function tickProps(root, dt, t, P) {
   });
 }
 
-// keep legacy imports referenced (pixelTexture/toon/Painter used by external helpers)
-void pixelTexture; void toon; void Painter; void hash3;
