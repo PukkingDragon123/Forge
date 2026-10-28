@@ -2,8 +2,8 @@
 // and renders the events this produces. Also usable headless for balance sims.
 import { MONSTERS } from '../data/monsters.js';
 
-export const HP_SCALE = [1, 2.2, 4.5, 9, 17, 30];
-export const DMG_SCALE = [1, 1.2, 1.45, 1.7, 2.0, 2.3];
+export const HP_SCALE = [1, 2.2, 4.5, 10, 17, 30];
+export const DMG_SCALE = [1, 1.2, 1.4, 1.6, 1.72, 1.85];
 const HP_BASE = 10;
 
 export function monsterStats(id, region) {

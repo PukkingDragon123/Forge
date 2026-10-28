@@ -97,7 +97,17 @@ export class Monster {
     const s = this.parts[src];
     const p = new THREE.Group();
     p.name = name;
-    for (const c of s.children) if (c.isGroup && !this._isPart(c)) p.add(c.clone());
+    for (const c of s.children) {
+      if (!c.isGroup || this._isPart(c)) continue;
+      // rebuild the mesh container by hand: Object3D.clone() would JSON-serialise userData (which holds meshes)
+      const g = new THREE.Group();
+      for (const mesh of c.children) {
+        const nm = new THREE.Mesh(mesh.geometry, mesh.material);
+        nm.castShadow = mesh.castShadow; nm.receiveShadow = mesh.receiveShadow; nm.name = mesh.name;
+        g.add(nm);
+      }
+      p.add(g);
+    }
     const S = o.S || this.S;
     p.position.set(at[0] * S, at[1] * S, at[2] * S);
     if (o.rot) p.rotation.set(...o.rot); else p.rotation.copy(s.rotation);

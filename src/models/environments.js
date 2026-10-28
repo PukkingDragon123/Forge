@@ -96,7 +96,7 @@ function ambient(set, kinds) {
   const E = {
     dust: (dt) => { if (rnd.chance(dt * 9)) P.alpha.emit({ pos: rp(), vel: [rnd.float(-0.05, 0.05), 0.015, 0], spread: 0.03, life: [4, 7], size: 1, color: '#d8c8b0', alpha: 0.45, fadeIn: 1.2 }); },
     fireflies: (dt) => { if (rnd.chance(dt * 1.6)) P.add.emit({ pos: rp(), vel: [0, 0.03, 0], spread: 0.18, life: [3, 6], size: 1, color: ['#d8ff6a', '#ffe08a'], glow: 2.6, fadeIn: 0.8, flicker: 0.35, swirl: 0.8 }); },
-    sparkle: (dt) => { if (rnd.chance(dt * 5)) P.add.emit({ pos: rp(), vel: [0, 0.02, 0], spread: 0.04, life: [0.8, 2], size: 1, color: ['#9ae8ff', '#ff9af0', '#e0d0ff'], glow: 3, fadeIn: 0.3, flicker: 0.5 }); },
+    sparkle: (dt) => { if (rnd.chance(dt * 2.5)) P.add.emit({ pos: rp(), vel: [0, 0.02, 0], spread: 0.04, life: [0.8, 2], size: 1, color: ['#9ae8ff', '#ff9af0', '#e0d0ff'], glow: 3, fadeIn: 0.3, flicker: 0.5 }); },
     spores: (dt) => { if (rnd.chance(dt * 7)) P.add.emit({ pos: rp(), vel: [0.03, 0.08, 0], spread: 0.05, life: [4, 8], size: 1, color: ['#5af0c8', '#e0f08a', '#9affc8'], glow: 2, fadeIn: 1, flicker: 0.2, swirl: 0.4 }); },
     gold: (dt) => { if (rnd.chance(dt * 4)) P.add.emit({ pos: rp(), vel: [0.02, 0.01, 0], spread: 0.03, life: [3, 6], size: 1, color: ['#ffe08a', '#fff4c0'], glow: 1.8, fadeIn: 1, alpha: 0.7 }); },
     embers: (dt) => { if (rnd.chance(dt * 12)) P.add.emit({ pos: [f.x + rnd.float(-s.x, s.x), f.y - 1, f.z + rnd.float(-s.z, 0)], vel: [rnd.float(-0.1, 0.1), 0.6, 0], spread: 0.2, life: [2, 4], size: 1, color: ['#ffb04a', '#ff6a1a', '#ffe08a'], glow: 3, flicker: 0.3, swirl: 0.7 }); },
@@ -258,7 +258,7 @@ function dressRegion(set, ri, xs, floorAt, zBack, opts = {}) {
         break;
       }
       case 2: {
-        if (i % 2 === 0) {
+        if (i % 2 === 0 && !opts.low) {
           const g = P('mushroom', { giant: true, height: 18 + Math.floor(h * 14), radius: 8 + Math.floor(h * 6), color: ['#d04a3a', '#3ab08a', '#d04a8a', '#e0a04a'][i % 4], glow: ['#5af0c8', '#ffe08a', '#9affc8'][i % 3], light: lit() ? 2.6 : 0 }, x, z - 0.4, h * 6);
         } else {
           P('mushroom', { glow: '#5af0c8', color: '#3ab08a' }, x, z + 0.6, h * 5, 1.4);
@@ -684,7 +684,7 @@ const BUILD = {
     const G = ground(F, S, OX, OZ);
     const walkGround = walker(G, S, OX, 0);
     const pathY = (x) => (inGap(x) ? bridgeY(x) + 0.04 : flooded ? -0.62 + S : walkGround(x) ?? pathF(x));
-    const paint = painter(ri);
+    const paint = painter(ri, { lift: 0.1 });
     const ceilY = (x, z) => pathF(x) + 2.4 + cnoise(x, z, 33, 0.8) * 0.3;
     const x0 = OX, x1 = L + 6;
     for (let cx = x0; cx < x1; cx += CW) {
@@ -700,7 +700,7 @@ const BUILD = {
       const lo = Math.min(pathF(cx), pathF(Math.min(x1, cx + 12)));
       set.group.add(shellChunk({
         S: 0.28, x0: cx, x1: Math.min(x1, cx + 12), y0: lo - 4.5, y1: Math.max(pathF(cx), 0) + 6.5, z0: -15, z1: -5,
-        floor: (x, z) => pathF(x) - 1.8 + cnoise(x, z, 5, 0.3) * 1.4, back: (x, y) => -12.5 + cnoise(x, y, 19, 0.2) * 2.2, color: paint, seed: 90 + ri,
+        floor: (x, z) => (bridge && x > gap0 - 2 && x < gap1 + 2 ? null : pathF(x) - 1.8 + cnoise(x, z, 5, 0.3) * 1.4), back: (x, y) => -12.5 + cnoise(x, y, 19, 0.2) * 2.2, color: paint, seed: 90 + ri,
       }));
     }
     const glowHex = { 0: '#ffb060', 1: '#6ad8ff', 2: '#5af0c8', 3: '#ffc060', 4: '#ff6a1a', 5: '#c86bff' }[ri];
@@ -745,9 +745,9 @@ const BUILD = {
       // spires rising from the abyss (midground silhouettes)
       for (let i = 0; i < 5; i++) {
         const x = gap0 + 1 + (i + 0.3) * ((gap1 - gap0 - 2) / 5) + (hash2(i, 7, ri) - 0.5);
-        const sp = buildProp('stalactite', { length: 40 + Math.floor(hash2(i, 8, ri) * 25), tone: pal.rock.slice(0, 4), tip: ri === 1 ? '#6ad8ff' : null });
+        const sp = buildProp('stalactite', { length: 70 + Math.floor(hash2(i, 8, ri) * 30), tone: pal.rock.slice(0, 4), tip: ri === 1 ? '#6ad8ff' : ri === 4 ? '#ff6a1a' : ri === 5 ? '#c86bff' : null });
         sp.rotation.x = Math.PI;
-        set.add(sp, x, -10.5 + hash2(i, 9, ri) * 3 + 0, -2.4 - hash2(i, 6, ri) * 2.8);
+        set.add(sp, x, -7.5 + hash2(i, 9, ri) * 1.5, -2.6 - hash2(i, 6, ri) * 2.6);
       }
       // cliff edges
       for (const [ex, dir] of [[gap0, 1], [gap1, -1]]) {
@@ -789,7 +789,7 @@ const BUILD = {
     // midground dressing
     const xs = [];
     for (let x = 2; x < L - 1; x += 4.4 + hash2(x | 0, ri, 9) * 1.4) if (!inGap(x) && !(tunnel === 'elevator' && x > elevX0 - 1.5 && x < elevX1 + 1.5)) xs.push(x);
-    dressRegion(set, ri, xs, floorAt, -2.25, { lights: 7, statue: true });
+    dressRegion(set, ri, xs, floorAt, -2.25, { lights: 7, statue: !crawl, low: crawl });
     scatter(set, ri, floorAt, Math.round(L * 0.7), { x0: -2, x1: L + 2, z0: -2.2, z1: 2.6 }, { x: 0, z: 0.75 });
     // foreground silhouettes: low rocks at the bottom of the frame
     for (let x = 3; x < L + 3; x += 7 + hash2(x | 0, 2, ri) * 5) {
@@ -825,10 +825,10 @@ const BUILD = {
       if (ri === 0) set.prop('support', { width: 20, height: 26 }, ox - 1, pathF(ox) - 1.8, -10.6);
     }
     // the explorer carries a lantern; plus soft key & region ambience
-    set.walkerLight = new THREE.PointLight(0xffc888, 3.2, 7, 1.4);
+    set.walkerLight = new THREE.PointLight(0xffc888, 5, 9, 1.3);
     set.group.add(set.walkerLight);
-    hemi(set, pal, R.light, 1.6);
-    const key = new THREE.DirectionalLight(new THREE.Color(mixHex('#' + R.light.key.toString(16).padStart(6, '0'), '#ffffff', 0.5)), 1.0);
+    hemi(set, pal, R.light, 2.4);
+    const key = new THREE.DirectionalLight(new THREE.Color(mixHex('#' + R.light.key.toString(16).padStart(6, '0'), '#ffffff', 0.5)), 1.7);
     key.position.set(-2, 6, 6);
     set.group.add(key);
     ambient(set, { 0: ['dust'], 1: ['dust', 'sparkle'], 2: ['spores', 'fireflies'], 3: ['dust', 'gold'], 4: ['embers', 'ash'], 5: ['wisps', 'dust'] }[ri]);

@@ -13,9 +13,12 @@ import { Painter } from '../art/pixel.js';
 /** Build a world from an environment Set. */
 export function makeWorld(set, opts = {}) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(set.background || '#07060b');
-  scene.fog = new THREE.FogExp2(new THREE.Color(set.fog || '#07060b'), opts.fogDensity ?? 0.045);
-  scene.add(set.group);
+  if (set.attach) set.attach(scene); // env sets bring their own fog + background
+  else {
+    scene.background = new THREE.Color(set.background || '#07060b');
+    scene.fog = new THREE.FogExp2(new THREE.Color(set.fog || '#07060b'), opts.fogDensity ?? 0.045);
+    scene.add(set.group);
+  }
   const rig = new CameraRig(set.camera ? set.camera.fov : 40);
   if (set.camera) rig.cut(set.camera.pos, set.camera.look, set.camera.fov);
   const sparks = new ParticleSystem(1500, { additive: true });

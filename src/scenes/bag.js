@@ -220,7 +220,7 @@ export class BagOverlay extends Scene {
     // footer
     const fy = L.trayY + L.trayH + 8;
     ui.text('{dim}Drag to arrange · {/}{gold}R{/}{dim} / right-click rotates{/}', L.trayX, fy + 32, { font: 'body' });
-    if (ui.button('bag-done', L.trayX, fy, 90, 22, 'Done', { style: 'gold', icon: 'check' }) || (inp.actionPressed('bag') && !this.confirm) || (inp.actionPressed('back') && !this.confirm)) this.close();
+    if (ui.button('bag-done', L.trayX, fy, 90, 22, 'Done', { style: 'gold', icon: 'check' }) || (this.time > 0 && !this.confirm && (inp.actionPressed('bag') || inp.actionPressed('back')))) this.close();
 
     if (this.confirm) {
       ui.block(5);

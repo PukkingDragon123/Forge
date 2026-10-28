@@ -1109,7 +1109,7 @@ const surfVert = /* glsl */ `
 varying vec3 vW;
 void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
 const surfFrag = /* glsl */ `
-uniform float time; uniform vec3 c0, c1, c2, c3; uniform float hdr; uniform float speed; uniform float scale;
+uniform float time; uniform vec3 c0, c1, c2, c3; uniform float hdr; uniform float speed; uniform float scale; uniform vec3 bands;
 varying vec3 vW;
 float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -1119,7 +1119,7 @@ void main(){
   float t = time * speed;
   float v = n(p * 2.0 + vec2(t, t * 0.6)) * 0.6 + n(p * 4.5 - vec2(t * 0.7, -t)) * 0.4;
   v = floor(v * 5.0) / 5.0;
-  vec3 col = v < 0.35 ? c0 : v < 0.55 ? c1 : v < 0.75 ? c2 : c3;
+  vec3 col = v < bands.x ? c0 : v < bands.y ? c1 : v < bands.z ? c2 : c3;
   gl_FragColor = vec4(col * hdr, 1.0);
 }`;
 function surfaceMat(kind, o) {
@@ -1130,7 +1130,8 @@ function surfaceMat(kind, o) {
     uniforms: {
       time: { value: 0 }, c0: { value: new THREE.Color(pal[0]) }, c1: { value: new THREE.Color(pal[1]) },
       c2: { value: new THREE.Color(pal[2]) }, c3: { value: new THREE.Color(pal[3]) },
-      hdr: { value: kind === 'lava' ? (o.hdr ?? 2.2) : (o.hdr ?? 1.0) }, speed: { value: kind === 'lava' ? 0.25 : 0.35 }, scale: { value: kind === 'lava' ? 1.2 : 1.6 },
+      bands: { value: kind === 'lava' ? new THREE.Vector3(0.35, 0.55, 0.75) : new THREE.Vector3(0.4, 0.62, 0.86) },
+      hdr: { value: kind === 'lava' ? (o.hdr ?? 2.2) : (o.hdr ?? 0.85) }, speed: { value: kind === 'lava' ? 0.25 : 0.35 }, scale: { value: kind === 'lava' ? 1.2 : 1.6 },
     },
     vertexShader: surfVert, fragmentShader: surfFrag,
   });

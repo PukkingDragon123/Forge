@@ -180,9 +180,6 @@ export class VictoryScene extends Scene {
       c.setExpression('happy');
       return c;
     });
-    this.fire = buildProp('campfire');
-    this.fire.position.copy(set.anchors.center || new THREE.Vector3());
-    this.w.scene.add(this.fire);
     this.w.rig.cut([0, 2.4, 6.5], [0, 0.8, 0], 40);
     this.line = 0; this.lineT = 0;
     this.game.audio.play('victory_sting');
@@ -194,8 +191,6 @@ export class VictoryScene extends Scene {
     this.w.rig.aim([Math.sin(this.time * 0.15) * 3, 2.2, 6.2], [0, 0.8, 0]);
     this.w.rig.update(dt); this.w.sparks.update(dt); this.w.dust.update(dt);
     this.set.update && this.set.update(dt, this.time);
-    if (this.fire.userData.update) this.fire.userData.update(dt, this.time);
-    if (this.fire.userData.emit) this.fire.userData.emit(this.w.P, dt);
     for (const c of this.chars) c.update(dt);
     this.lineT += dt;
     if ((this.lineT > 3.6 || (this.game.input.pressed && this.lineT > 0.4)) && this.line < ENDING.length) { this.line++; this.lineT = 0; }

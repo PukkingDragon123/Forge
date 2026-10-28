@@ -16,6 +16,7 @@ import { COLORS } from '../ui/font.js';
 import { save } from '../core/save.js';
 import { clamp, ease } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
+import { STORIES } from '../data/stories.js';
 
 const ROUTINE = { bran: 'hammer', elio: 'read', durgan: 'sitTalk', clover: 'sitTalk' };
 const ARGUMENTS = [
@@ -35,10 +36,10 @@ const STORY = [
 ];
 
 export class TitleScene extends Scene {
-  enter() {
+  enter(params = {}) {
     const set = buildSet('campfire', 0);
     this.set = set;
-    this.w = makeWorld(set, { fogDensity: 0.035 });
+    this.w = makeWorld(set, { fogDensity: set.fogDensity ?? 0.03 });
     this.world = this.w;
     this.w.post = { bloom: 0.85, vignette: 0.45 };
     const a = set.anchors;
@@ -52,6 +53,7 @@ export class TitleScene extends Scene {
       if (st) c.group.rotation.y = st.rotY;
       else c.group.lookAt(this.center.x, 0, this.center.z);
       c.seatHeight = st ? st.height : 0.35;
+      c.setSeated && c.setSeated(true, c.seatHeight);
       c.seat = seat.clone();
       c.home = c.group.rotation.y;
       c.id = id;
@@ -64,7 +66,9 @@ export class TitleScene extends Scene {
     this.focus = null;
     this.bubbles = [];
     this.convo = null; this.convoT = 3;
-    this.state = save.data.seen.intro ? 'menu' : 'story';
+    this.state = save.data.seen.intro || params.skipintro ? 'menu' : 'story';
+    const pending = STORIES.find((st) => save.data.stats.bestRegion >= st.need && !save.data.unlocks.story.includes(st.id));
+    if (pending && this.state === 'menu') { this.tale = { story: pending, i: -1, t: 1.2 }; this.state = 'tale'; }
     this.storyIdx = 0; this.storyT = 0;
     this.panel = null;
     this.crackle = this.game.audio.loop('campfire');
@@ -84,20 +88,20 @@ export class TitleScene extends Scene {
   update(dt) {
     const a = this.set.anchors;
     this.set.update && this.set.update(dt, this.time);
-    for (const e of this.set.emitters || []) e(this.w, dt);
     for (const id in this.chars) this.chars[id].update(dt);
     this.w.sparks.update(dt); this.w.dust.update(dt);
     // camera: slow orbit, or focus on a chosen explorer
     if (this.state === 'leaving') { /* driven by coroutine */ }
     else if (this.focus) {
+      // frame the explorer from the fire side, offset so they sit left of the ability panel
       const c = this.chars[this.focus];
       const p = c.group.position;
-      const dir = new THREE.Vector3(p.x - this.center.x, 0, p.z - this.center.z).normalize();
-      const side = new THREE.Vector3(-dir.z, 0, dir.x);
-      const cam = p.clone().add(dir.multiplyScalar(-0.2)).add(side.multiplyScalar(0.9)).add(new THREE.Vector3(0, 1.05, 0));
-      const toward = this.center.clone().sub(p).normalize().multiplyScalar(1.7);
-      cam.add(toward);
-      this.w.rig.aim(cam.toArray(), [p.x, p.y + 0.75, p.z], 30, 3.5);
+      const r = c.group.rotation.y;
+      const f = new THREE.Vector3(Math.sin(r), 0, Math.cos(r));
+      const right = new THREE.Vector3().crossVectors(f.clone().negate(), new THREE.Vector3(0, 1, 0)).normalize();
+      const cam = p.clone().addScaledVector(f, 2.5).addScaledVector(right, 0.62).add(new THREE.Vector3(0, 1.05, 0));
+      const look = p.clone().addScaledVector(right, 0.62).add(new THREE.Vector3(0, 0.62, 0));
+      this.w.rig.aim(cam.toArray(), look.toArray(), 32, 3.5);
     } else {
       this.angle += dt * 0.06;
       const r = 6.4;
@@ -120,6 +124,15 @@ export class TitleScene extends Scene {
         if (this.convo.i >= this.convo.lines.length) { this.convo = null; this.convoT = 6 + rnd.float(0, 4); }
       }
     }
+    if (this.state === 'tale') {
+      const tl = this.tale;
+      tl.t -= dt;
+      if (tl.t <= 0 || (this.game.input.pressed && tl.i >= 0)) {
+        tl.i++;
+        if (tl.i >= tl.story.lines.length) { save.learn('unlocks.story', tl.story.id); this.state = 'menu'; this.tale = null; }
+        else { const [id, text] = tl.story.lines[tl.i]; this.say(id, text, 4); tl.t = 3.2; }
+      }
+    }
     // Bran's hammer sparks + clang
     const bran = this.chars.bran;
     if (bran && bran.anim === 'hammer') {
@@ -140,6 +153,7 @@ export class TitleScene extends Scene {
     if (this.focus) this.release();
     this.focus = id;
     const c = this.chars[id];
+    c.setSeated && c.setSeated(false);
     c.play('wave', { onDone: () => c.play('idle', { loop: true }) });
     c.setExpression('happy');
     this.game.audio.play('ui_pop');
@@ -149,7 +163,7 @@ export class TitleScene extends Scene {
   }
   release() {
     const c = this.chars[this.focus];
-    if (c) { c.play(ROUTINE[c.id] === 'hammer' || ROUTINE[c.id] === 'read' ? ROUTINE[c.id] : 'sit', { loop: true }); c.setExpression('neutral'); }
+    if (c) { c.setSeated && c.setSeated(true, c.seatHeight); c.play(ROUTINE[c.id] === 'hammer' || ROUTINE[c.id] === 'read' ? ROUTINE[c.id] : 'sit', { loop: true }); c.setExpression('neutral'); }
     for (const o of CHARACTER_ORDER) this.chars[o].lookAt && this.chars[o].lookAt(null);
     this.focus = null;
   }
@@ -188,6 +202,12 @@ export class TitleScene extends Scene {
       const p = this.w.rig.project(c.headPos(), ui.w, ui.h);
       if (p.behind) continue;
       speech(ui, p.x, p.y, b.text, { maxW: 120, alpha: clamp(b.t * 3, 0, 1) * clamp((b.dur - b.t) * 6, 0, 1) });
+    }
+    if (this.state === 'tale') {
+      ui.rect(0, 0, ui.w, 30, '#07060b'); ui.rect(0, ui.h - 30, ui.w, 30, '#07060b');
+      ui.text(`{gold}Campfire tale:{/} ${this.tale.story.title}`, ui.w / 2, 10, { align: 'center' });
+      ui.text('{dim}click to continue{/}', ui.w - 10, ui.h - 16, { align: 'right', font: 'small' });
+      return;
     }
     if (this.state === 'leaving') return;
     // clickable explorers (screen-space hit boxes around each)

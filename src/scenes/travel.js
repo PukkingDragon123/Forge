@@ -718,6 +718,5 @@ export class TravelScene extends Scene {
 }
 
 function ribbonTitleFlash(scene, text) {
-  scene.flashTitle = { text, t: 0 };
   scene.game.ui.toast(text, { icon: 'minecart', color: COLORS.warn, life: 1.8 });
 }

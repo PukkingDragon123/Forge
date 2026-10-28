@@ -59,8 +59,8 @@ class RoomBase extends Scene {
 // ============================================================================ MERCHANT
 const MERCHANT_LINES = [
   'Ores! Parts! Keys! Shiny things! No refunds!',
-  'Tibbs has what you need. Tibbs has what you don\'t need too.',
-  'Cursed? Pfft. Tibbs is cursed with good prices.',
+  'Mossworth has what you need. And what you don\'t need, too.',
+  'Cursed? Pfft. I\'m cursed with excellent prices.',
   'You look like someone who appreciates a fine rock.',
 ];
 
@@ -68,23 +68,16 @@ export class MerchantScene extends RoomBase {
   enter(p) {
     this.setup('merchant', { music: 'shop' });
     const a = this.set.anchors;
-    this.cart = buildProp('merchantcart');
-    this.cart.position.copy(a.center).add(new THREE.Vector3(0.9, 0, -0.6));
-    this.w.scene.add(this.cart);
-    this.npc = buildMonster('kobold');
-    this.npc.group.position.copy(a.center).add(new THREE.Vector3(0.6, 0, 0.4));
-    this.npc.group.scale.multiplyScalar(1.1);
-    this.w.scene.add(this.npc.group);
-    this.npc.play('idle');
+    this.npc = a.npc; // the wandering mole merchant placed by the room set
+    this.npcPos = (a.merchant || a.center).clone();
     this.stock = merchantStock(this.run);
     this.tab = 'buy';
     this.npcBubble = { text: rnd.pick(MERCHANT_LINES), t: 3.5 };
-    this.w.rig.cut([a.center.x + 1.2, 1.9, a.center.z + 6.2], [a.center.x + 2.1, 0.75, a.center.z], 38);
+    this.w.rig.cut([a.center.x + 1.4, 1.9, a.center.z + 6.0], [a.center.x + 2.2, 0.75, a.center.z - 0.4], 38);
     this.game.audio.play('door_creak');
   }
   update(dt) {
     this.tick(dt);
-    this.npc.update(dt);
     if (this.npcBubble) { this.npcBubble.t -= dt; if (this.npcBubble.t <= 0) this.npcBubble = null; }
   }
   npcSay(text) { this.npcBubble = { text, t: 2.6 }; }
@@ -94,7 +87,7 @@ export class MerchantScene extends RoomBase {
     if (h.bagClicked) openBag(g);
     const W = 300, H = 196, x = ui.w - W - 10, y = 40;
     ui.panel('wood', x, y, W, H, { tone: 'dark' });
-    ribbonTitle(ui, 'Tibbs\' Wandering Wares', x + W / 2, y - 8, 'brown');
+    ribbonTitle(ui, 'Mossworth\'s Wandering Wares', x + W / 2, y - 8, 'brown');
     // tabs
     ['buy', 'sell'].forEach((t, i) => {
       if (ui.button('mtab' + t, x + 8 + i * 60, y + 12, 56, 16, t === 'buy' ? 'Buy' : 'Sell', { style: this.tab === t ? 'gold' : 'wood', font: 'body' })) this.tab = t;
@@ -133,14 +126,14 @@ export class MerchantScene extends RoomBase {
         drawCard(ui, materialCard(it), cx, cy, { lift: hit.hover ? 3 : 0, hover: hit.hover });
         ui.icon('coin', cx + 6, cy + 64); ui.text('+' + v, cx + 17, cy + 65, { color: COLORS.gold, outline: '#140c10', outlineShadow: false });
         if (hit.hover) { const tt = itemTooltip(it); tt.body += `\n{gold}Sells for ${v}{/}`; ui.tooltip(tt); }
-        if (hit.clicked) { run.removeItem(it); run.coins += v; g.audio.play('coin'); this.npcSay(rnd.pick(['Ooh, I\'ll take it!', 'Tibbs loves junk. Er, treasure.', 'Into the pile!'])); }
+        if (hit.clicked) { run.removeItem(it); run.coins += v; g.audio.play('coin'); this.npcSay(rnd.pick(['Ooh, I\'ll take it!', 'Mossworth loves junk. Er, treasure.', 'Into the pile!'])); }
       });
       if (!items.length) ui.text('Nothing to sell.', x + W / 2, y + 100, { align: 'center', color: COLORS.dim });
     }
     if (ui.button('mleave', x + W - 90, y + H + 6, 84, 20, 'Leave', { style: 'stone', icon: 'arrowR' }) || g.input.actionPressed('back')) this.leaveWithLoot('Purchases');
     // bubbles
     if (this.npcBubble) {
-      const p = this.w.rig.project(this.npc.group.position.clone().add(new THREE.Vector3(0, 1.0, 0)), ui.w, ui.h);
+      const p = this.w.rig.project(this.npcPos.clone().add(new THREE.Vector3(0, 1.1, 0)), ui.w, ui.h);
       speech(ui, p.x, p.y, this.npcBubble.text, { maxW: 110, alpha: clamp(this.npcBubble.t * 3, 0, 1) });
     }
   }
@@ -156,15 +149,15 @@ export class TreasureScene extends RoomBase {
     const kinds = ['wood', rng.pick(['iron', 'iron', 'crystal', 'bone']), rng.pick(['wood', 'iron', 'gold'])].slice(0, n);
     const mimicIdx = rng.chance(0.4 + run.region * 0.05) ? rng.int(0, n - 1) : -1;
     this.chests = kinds.map((k, i) => {
-      const x = a.center.x + (i - (n - 1) / 2) * 1.5;
-      const pos = new THREE.Vector3(x, 0, a.center.z - 0.3);
+      const anchor = a['chest' + (n === 2 ? i * 2 : i)];
+      const pos = anchor ? anchor.clone() : new THREE.Vector3(a.center.x + (i - (n - 1) / 2) * 1.5, 0, a.center.z - 0.3);
       const isMimic = i === mimicIdx;
       let obj;
       if (isMimic) { obj = buildMonster('mimic'); obj.play('disguise'); obj.group.position.copy(pos); obj.group.rotation.y = Math.PI / 2; this.w.scene.add(obj.group); }
       else { obj = buildProp('chest', { kind: k }); obj.position.copy(pos); this.w.scene.add(obj); }
       return { kind: isMimic ? 'wood' : k, mimic: isMimic, obj, pos, opened: false, inspected: false, tell: rng.pick(['blinks', 'drools', 'breathes', 'twitches']) };
     });
-    this.hero.group.position.set(a.center.x - 2.4, 0, a.center.z + 0.9);
+    this.hero.group.position.copy(a.player || new THREE.Vector3(a.center.x - 2.4, 0, a.center.z + 0.9));
     this.hero.group.rotation.y = Math.PI / 2;
     this.w.rig.cut([a.center.x - 0.3, 2.3, a.center.z + 6.6], [a.center.x - 0.3, 0.5, a.center.z], 40);
     this.sel = null;
@@ -276,24 +269,20 @@ export class CampScene extends RoomBase {
   enter(p) {
     this.setup('camp', { music: 'campfire' });
     const a = this.set.anchors;
-    this.fire = buildProp('campfire');
-    this.fire.position.copy(a.center);
-    this.w.scene.add(this.fire);
-    this.hero.group.position.copy(a.center).add(new THREE.Vector3(-0.9, 0, 0.5));
-    this.hero.group.rotation.y = Math.PI / 2;
+    const fire = a.fire || a.center;
+    if (a.seat) this.hero.group.position.copy(a.seat).y -= 0.32;
+    else this.hero.group.position.copy(fire).add(new THREE.Vector3(-1.2, 0, 0.4));
+    this.hero.group.lookAt(fire.x, this.hero.group.position.y, fire.z);
+    this.hero.setSeated && this.hero.setSeated(true, 0.32);
     this.hero.play('sit', { loop: true });
-    this.w.rig.cut([a.center.x + 0.3, 1.8, a.center.z + 5.4], [a.center.x - 0.3, 0.55, a.center.z], 38);
+    this.w.rig.cut([fire.x + 0.3, 1.8, fire.z + 5.4], [fire.x - 0.4, 0.55, fire.z], 38);
     this.crackle = this.game.audio.loop('campfire');
     this.chosen = null;
     this.say('A safe spot. Finally.');
     this.picking = null;
   }
   exit() { this.crackle && this.crackle.stop(1); }
-  update(dt) {
-    this.tick(dt);
-    if (this.fire.userData.update) this.fire.userData.update(dt, this.time);
-    if (this.fire.userData.emit) this.fire.userData.emit(this.w.P, dt);
-  }
+  update(dt) { this.tick(dt); }
   draw(ui) {
     const g = this.game, run = this.run;
     const h = hud(ui, g);

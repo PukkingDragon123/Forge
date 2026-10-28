@@ -505,6 +505,12 @@ class ForgeController {
       if (h.clicked) this.toggle(it);
     });
     ui.text(`{dim}Click cards to add them · ${this.sel.length}/${this.slots()} slots{/}`, ui.w / 2, ui.h - 8, { align: 'center', font: 'small' });
+    if (!save.data.seen.tips.forge && this.mode === 'weapon') {
+      const tw = 250, tx = Math.round(ui.w / 2 - tw / 2), ty = y0 - 58;
+      ui.panel('parchment', tx, ty, tw, 40, { seed: 5 });
+      ui.text('Pick ore & part cards. Each adds {chips}Chips{/} or {mult}Mult{/}.\nCombine them for named synergies, then hit FORGE!', ui.w / 2, ty + 8, { align: 'center', color: '#3a2618' });
+      if (this.sel.length) { save.data.seen.tips.forge = true; save.write(); }
+    }
   }
 
   drawHammer(ui) {

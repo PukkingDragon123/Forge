@@ -52,6 +52,9 @@ export class CombatScene extends Scene {
     // ---- world
     this.set = buildSet(this.lord ? 'tomb' : 'arena', run.region, {});
     const W = makeWorld(this.set, { fogDensity: 0.035 });
+    // EnvSet carries real Fog/Color objects (makeWorld expects hex): use them directly
+    if (this.set.fog && this.set.fog.isFogExp2) W.scene.fog = this.set.fog;
+    if (this.set.background && this.set.background.isColor) W.scene.background = this.set.background;
     this.W = W; this.rig = W.rig;
     this.world = { scene: W.scene, camera: W.camera, post: { bloom: 0.75, vignette: 0.4, exposure: 1 } };
     this.debris = new Debris(260, 0.035);
@@ -229,21 +232,24 @@ export class CombatScene extends Scene {
     this.tw.to(this.forgeGrp.scale, { x: 1, y: 1, z: 1 }, 0.45, { ease: 'outBack' });
     const fp = this.forgeGrp.position;
     this.W.dust.emit({ pos: [fp.x, 0.3, fp.z], posSpread: [0.5, 0.1, 0.3], vel: [0, 0.6, 0], spread: 0.5, count: 30, life: [0.6, 1.2], size: [1, 2], color: '#c8b8a0', alpha: 0.6 });
-    const a = this.anvilBase;
-    yield this.walkTo(a.x - 0.6, a.z + 0.12, 0.6);
-    this.face(1);
-    this.rig.moveTo([a.x + 0.9, 1.4, a.z + 2.6], [a.x, 0.7, a.z], 38, 0.8);
+    yield* this.goToAnvil(0.6);
     this.hero.play('forge');
     yield 0.6;
     this.openForgeUI(false);
+  }
+
+  *goToAnvil(dur) {
+    const a = this.anvilBase;
+    yield this.walkTo(a.x + 0.04, a.z - 0.5, dur);
+    this.hero.group.rotation.y = 0.15;
+    this.rig.moveTo([a.x + 0.55, 1.5, a.z + 2.7], [a.x - 0.1, 0.65, a.z - 0.25], 38, 0.8);
   }
 
   openForgeUI(emergency) {
     this.phase = emergency ? 'emergency' : 'forge';
     this.forgeCtrl = openForge(this, {
       mode: 'weapon', monster: this.mid, emergency, anvil: this.anvilBase.clone(), rig: this.rig, world: this.W,
-      onHammerStart: () => this.hero.play('hammer'),
-      onStrike: () => this.hero.play('hammer'),
+      onHammerStart: () => this.hero.play('hammer', { loop: true }),
       onDone: (w) => this.onForged(w, emergency),
     });
   }
@@ -310,7 +316,6 @@ export class CombatScene extends Scene {
       if (u.update) u.update(dt, this.time);
       if (u.emit) u.emit({ add: this.W.sparks, alpha: this.W.dust }, dt);
     });
-    if (this.set.emitters) for (const e of this.set.emitters) e.update && e.update(dt, this.time);
     this.hero.update(dt);
     this.mon.update(dt);
     this.W.sparks.update(dt); this.W.dust.update(dt);
@@ -482,7 +487,9 @@ export class CombatScene extends Scene {
     const bp = this.weapon.bp;
     const g = this.hero.group;
     const wind = e.windup;
-    this.hero.play(SWING[bp] || 'slash', { speed: clamp(0.55 / wind, 0.8, 2.2), onDone: () => this.phase === 'fight' && this.hero.play('idleCombat', { loop: true }) });
+    const anim = SWING[bp] || 'slash';
+    const base = this.hero.impactTime ? this.hero.impactTime(anim) * ((this.hero.animOpts && this.hero.animOpts.speed) || 1) : 0.3;
+    this.hero.play(anim, { restart: true, speed: clamp(base / (wind * 0.95), 0.6, 3) });
     const step = STEP[bp] ?? 0.3;
     if (step > 0) {
       this.tw.to(g.position, { x: this.heroFightX + step }, wind * 0.8, { ease: 'inOutQuad' });
@@ -740,8 +747,9 @@ export class CombatScene extends Scene {
     this.harvest = { picks, left: picks, cards: drops.map((id) => ({ id, state: 'down', item: null, flip: 0, lift: 0 })), cut: null, contT: 0 };
     const hw = this.hitWorld();
     const mh = this.mon.height || 1;
-    this.rig.moveTo([hw.x - 0.6, Math.max(0.9, mh * 0.6), hw.z + 2.2 + mh * 0.9], [hw.x, Math.max(0.35, mh * 0.3), 0], 36, 0.9);
-    this.heroAct('harvest');
+    this.walkTo(Math.max(this.heroHome.x, this.monFront() - 0.75), this.heroHome.z + 0.25, 0.5);
+    this.co.start(function* (s) { yield 0.5; s.face(1); s.hero.play('harvest', { loop: true }); }, this);
+    this.rig.moveTo([hw.x + 0.8, Math.max(1.0, mh * 0.75), hw.z + 2.5 + mh * 0.8], [hw.x - 0.25, Math.max(0.35, mh * 0.3), 0], 36, 0.9);
     this.sfx('page_turn');
   }
 
@@ -800,8 +808,6 @@ export class CombatScene extends Scene {
     this.co.start(function* (s) { yield 0.18; s.sfx('card_flip'); }, this);
     this.game.hitStop(0.05);
     this.rig.shake(0.15);
-    this.mon.flash('#ffffff', 0.06);
-    this.hero.play('harvest');
     const label = timing > 0 ? 'CLEAN CUT!' : timing === 0 ? 'Cut' : 'Hacked';
     ui.float(label, p.x, p.y - 22, { color: timing > 0 ? COLORS.gold : timing === 0 ? COLORS.text : COLORS.dim, vy: -16 });
     ui.float(QUALITY[q].name, p.x, p.y - 10, { color: QUALITY[q].color, vy: -12, life: 1.1 });
@@ -826,11 +832,19 @@ export class CombatScene extends Scene {
       yield* this.wrapUp();
       return;
     }
-    this.rig.moveTo([h.x + 0.4, 1.15, h.z + 2.0], [h.x + 0.2, 0.95, 0], 34, 0.8, 'inOutCubic');
+    this.walkTo(this.heroFightX, this.heroHome.z, 0.4);
+    yield 0.4;
+    this.face(1);
+    this.hero.play('victory', { loop: true, expr: false });
+    this.hero.setExpression('surprised');
+    yield 0.35;
+    const wp = this.wmesh.getWorldPosition(V3());
+    this.rig.moveTo([wp.x + 0.75, wp.y + 0.2, wp.z + 2.1], [wp.x + 0.1, wp.y - 0.15, wp.z], 34, 0.8, 'inOutCubic');
     yield 0.6;
     this.caption = 'The curse stirs…';
     yield* this.shatterWeapon(1.5);
     this.caption = null;
+    this.hero.play('idle', { loop: true });
     this.hero.setExpression('sad');
     this.say(bark(run.char, 'shatter'), 2.2);
     yield 2.2;
@@ -927,10 +941,7 @@ export class CombatScene extends Scene {
     this.hero.setExpression('angry');
     this.say(this.run.char === 'durgan' ? 'THEN I\'LL MAKE ANOTHER!' : 'Then I\'ll forge another!', 1.8);
     yield 1.4;
-    const a = this.anvilBase;
-    yield this.walkTo(a.x - 0.6, a.z + 0.12, 0.45);
-    this.face(1);
-    this.rig.moveTo([a.x + 0.9, 1.4, a.z + 2.6], [a.x, 0.7, a.z], 38, 0.5);
+    yield* this.goToAnvil(0.45);
     this.hero.play('forge');
     yield 0.4;
     this.openForgeUI(true);

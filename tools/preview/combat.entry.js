@@ -26,3 +26,5 @@ game.run = run;
 window.FORGLITE = game;
 game.go('combat', { node: run.map.nodes[1], monster: q.get('monster') || 'rustrat', autoplay: q.has('auto') }, { transition: 'none' });
 game.start();
+// test hook: ?mhp=0.7 sets the monster to 70% HP once the fight starts (to reach boss phases quickly)
+if (q.has('mhp')) { const iv = setInterval(() => { const s = game.scene; if (s && s.sim) { s.sim.m.hp = Math.round(s.sim.m.maxHp * +q.get('mhp')); clearInterval(iv); } }, 200); }

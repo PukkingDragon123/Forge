@@ -3,6 +3,28 @@ import { prompt, ring } from './common.js';
 import { COLORS } from '../ui/font.js';
 import { bar } from '../ui/frames.js';
 import { ease } from '../core/math.js';
+import { Painter } from '../art/pixel.js';
+
+let _shell = null;
+/** Walnut shell sprite (26×12), drawn at 2×. */
+function shellCanvas() {
+  if (_shell) return _shell;
+  const p = new Painter(28, 14);
+  const rows = [[6, 14], [4, 18], [3, 20], [2, 22], [1, 24], [1, 24], [0, 26], [0, 26], [0, 26], [1, 24]];
+  rows.forEach(([o, w], j) => {
+    for (let x = 0; x < w; x++) {
+      const X = 1 + o + x, Y = 1 + j;
+      let c = j < 2 ? '#d8a070' : j < 5 ? '#b07845' : '#8a5a33';
+      if (j > 1 && ((x + j * 3) % 7 === 0 || (x * 5 + j) % 11 === 0)) c = '#6a4024';
+      p.set(X, Y, c);
+    }
+  });
+  p.hline(5, 9, 2, '#ffe0b0');
+  p.hline(1, 26, 11, '#4a2a14');
+  p.outline('#140c10');
+  _shell = p.toCanvas();
+  return _shell;
+}
 
 const KEYS = { strike: 'SPACE', block: 'SHIFT' };
 
@@ -116,7 +138,7 @@ export class ShellGame {
     this.swaps = []; for (let i = 0; i < 7; i++) { const a = this.rng ? this.rng.int(0, 2) : i % 3; let b = this.rng ? this.rng.int(0, 1) : 1; if (b >= a) b++; this.swaps.push([a, b]); }
     this.swapI = 0; this.swapT = 0; this.picked = -1; this.state = 'pending';
   }
-  slotX(s) { return this.cx + (s - 1) * 46; }
+  slotX(s) { return this.cx + (s - 1) * 64; }
   update(rdt) {
     this.t += rdt;
     if (this.phase === 'show' && this.t > 1.4) { this.phase = 'cover'; this.t = 0; }
@@ -143,47 +165,35 @@ export class ShellGame {
       if (s === a || s === b) {
         const to = s === a ? b : a;
         x = this.slotX(s) + (this.slotX(to) - this.slotX(s)) * k;
-        lift = Math.sin(k * Math.PI) * (s === a ? -10 : 6);
+        lift = Math.sin(k * Math.PI) * (s === a ? -14 : 8);
       }
     }
-    if (this.phase === 'show' || ((this.phase === 'reveal') && (i === this.picked || i === this.gem))) lift = -16;
-    if (this.phase === 'cover') lift = -16 * (1 - Math.min(1, this.t / 0.4));
+    if (this.phase === 'show' || ((this.phase === 'reveal') && (i === this.picked || i === this.gem))) lift = -24;
+    if (this.phase === 'cover') lift = -24 * (1 - Math.min(1, this.t / 0.4));
     return { x, y: this.cy + lift };
   }
   draw(ui) {
+    ui.panel('wood', this.cx - 110, this.cy - 46, 220, 92, { tone: 'dark' });
     for (let i = 0; i < 3; i++) {
       const p = this.shellPos(i);
       const base = { x: p.x, y: this.cy };
       if (i === this.gem && (this.phase === 'show' || this.phase === 'cover' || this.phase === 'reveal')) {
-        ui.icon('gem', base.x - 4, base.y + 2);
-        ui.icon('sparkle', base.x + 2, base.y - 1, { alpha: 0.7 });
+        ui.icon('gem', base.x - 8, base.y - 2, { scale: 2 });
+        ui.icon('sparkle', base.x + 6, base.y - 6, { alpha: 0.7 });
       }
       this.drawShell(ui, p.x, p.y, i);
     }
     if (this.phase === 'pick') {
-      ui.text('Which shell?', this.cx, this.cy + 26, { align: 'center', color: COLORS.gold, outline: '#140c10' });
+      ui.text('Which shell?', this.cx, this.cy + 30, { align: 'center', color: COLORS.gold, outline: '#140c10' });
       for (let i = 0; i < 3; i++) {
         const p = this.shellPos(i);
-        const h = ui.hit('shell' + i, p.x - 16, p.y - 14, 32, 26);
-        if (h.hover) ui.rect(p.x - 15, p.y + 12, 30, 1, '#ffd25e');
+        const h = ui.hit('shell' + i, p.x - 28, p.y - 18, 56, 30);
+        if (h.hover) ui.rect(p.x - 24, p.y + 10, 48, 1, '#ffd25e');
         if (h.clicked) { this.picked = i; this.phase = 'reveal'; this.t = 0; this.game.audio && this.game.audio.play(i === this.gem ? 'sparkle' : 'deny'); }
       }
     }
   }
   drawShell(ui, x, y) {
-    const c = ui.ctx;
-    x = Math.round(x); y = Math.round(y);
-    // walnut shell dome
-    const rows = [[6, 14], [4, 18], [3, 20], [2, 22], [1, 24], [1, 24], [0, 26], [0, 26], [0, 26], [1, 24]];
-    rows.forEach(([o, w], j) => {
-      c.fillStyle = '#140c10'; c.fillRect(x - 13 + o - 1, y - 8 + j, w + 2, 1);
-    });
-    rows.forEach(([o, w], j) => {
-      c.fillStyle = j < 2 ? '#d8a070' : j < 5 ? '#b07845' : '#8a5a33';
-      c.fillRect(x - 13 + o, y - 8 + j, w, 1);
-      if (j > 1) { c.fillStyle = '#6a4024'; c.fillRect(x - 13 + o + 4 + (j % 3), y - 8 + j, 1, 1); c.fillRect(x + 6 - (j % 2), y - 8 + j, 1, 1); }
-    });
-    c.fillStyle = '#140c10'; c.fillRect(x - 13, y + 2, 26, 1);
-    c.fillStyle = '#ffe0b0'; c.fillRect(x - 6, y - 6, 3, 1);
+    ui.img(shellCanvas(), Math.round(x - 26), Math.round(y - 16), { scale: 2 });
   }
 }

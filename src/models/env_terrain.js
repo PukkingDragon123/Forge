@@ -2,7 +2,7 @@
 // deep from their visible surface, then meshed with faces that point away from the camera culled.
 import * as THREE from 'three';
 import { VoxelGrid, meshVoxels, GLOW } from '../gfx/voxel.js';
-import { fbm2, hash3, noise2, clamp, shadeHex } from '../core/math.js';
+import { fbm2, hash3, noise2, clamp, shadeHex, mixHex } from '../core/math.js';
 
 const K_FLOOR = 1, K_BACK = 2, K_LEFT = 3, K_RIGHT = 4, K_CEIL = 5, K_FRONT = 6;
 export const KIND = { floor: K_FLOOR, back: K_BACK, left: K_LEFT, right: K_RIGHT, ceil: K_CEIL, front: K_FRONT };
@@ -17,7 +17,6 @@ const CULL = { [K_FLOOR]: 3, [K_BACK]: 5, [K_LEFT]: 1, [K_RIGHT]: 0, [K_CEIL]: 2
  *      floorZ:[za,zb] (limit floor fill), cullBack (default true) }
  */
 export function shellChunk(o) {
-  const T0 = performance.now();
   const S = o.S;
   const nx = Math.ceil((o.x1 - o.x0) / S), ny = Math.ceil((o.y1 - o.y0) / S), nz = Math.ceil((o.z1 - o.z0) / S);
   const g = new VoxelGrid(nx, ny, nz);
@@ -74,7 +73,6 @@ export function shellChunk(o) {
     for (let d = 0; d < thick; d++) put(i, j, kk + d, K_FRONT, d);
   }
   if (o.extra) o.extra(g, { S, wx, wy, wz, nx, ny, nz, toI: (x) => Math.floor((x - o.x0) / S), toJ: (y) => Math.floor((y - o.y0) / S), toK: (z) => Math.floor((z - o.z0) / S) });
-  const T1 = performance.now();
   const cullBack = o.cullBack !== false;
   const mesh = meshVoxels(g, {
     size: S, origin: [0, 0, 0], jitter: o.jitter ?? 0.07, seed: o.seed ?? 7, glowIntensity: o.glowIntensity ?? 2.2,
@@ -87,7 +85,6 @@ export function shellChunk(o) {
     castShadow: o.castShadow ?? false,
   });
   mesh.position.set(o.x0, o.y0, o.z0);
-  if (globalThis.__shellStats) { globalThis.__shellStats.ms += performance.now() - T0; globalThis.__shellStats.fill = (globalThis.__shellStats.fill || 0) + T1 - T0; globalThis.__shellStats.cells += nx * ny * nz; globalThis.__shellStats.n++; }
   return mesh;
 }
 
@@ -99,10 +96,12 @@ export function rockPainter(pal, opts = {}) {
   const moss = opts.moss ?? 0;
   const glowVeins = opts.glowVeins || null; // hex color for glowing cracks
   const strata = opts.strata ?? 1;
+  const lift = opts.lift ?? 0;
+  const mossLo = mixHex(pal.moss, D[1], 0.45), mossHi = mixHex(pal.moss, D[2], 0.2);
   return (x, y, z, kind, depth) => {
     const h = hash3(Math.floor(x * 10), Math.floor(y * 10), Math.floor(z * 10), seed);
     if (kind === 'floor' && depth === 0) {
-      if (moss && fbm2(x * 0.4, z * 0.4, 2, seed + 4) > 1 - moss * 0.6 && h > 0.15) return h > 0.93 ? shadeHex(pal.moss, 0.12) : pal.moss;
+      if (moss && fbm2(x * 0.4, z * 0.4, 2, seed + 4) > 1 - moss * 0.6 && h > 0.15) return h > 0.9 ? mossHi : mossLo;
       const n = fbm2(x * 0.5, z * 0.5, 2, seed + 1) + (h - 0.5) * 0.35;
       if (h > 0.95) return R[3]; // pebble
       if (h < 0.04) return R[1];
@@ -110,6 +109,7 @@ export function rockPainter(pal, opts = {}) {
     }
     if (kind === 'floor') return D[0];
     let t = 0.5 + (fbm2(x * 0.25 + z * 0.2, y * 0.9 * strata, 2, seed) - 0.5) * 1.1 + (h - 0.5) * 0.3;
+    t += lift;
     if (kind === 'ceil') t -= 0.15;
     if (depth > 0) t -= 0.25;
     if (glowVeins && depth === 0) {

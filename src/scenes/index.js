@@ -8,6 +8,7 @@ import { CombatScene } from './combat.js';
 import { MerchantScene, TreasureScene, CampScene } from './rooms.js';
 import { DescendScene, GameOverScene, VictoryScene } from './endings.js';
 import { BagOverlay } from './bag.js';
+import { PauseOverlay } from './pause.js';
 import { TestScene } from './test.js';
 import { ForgeTestScene } from './forgetest.js';
 
@@ -25,6 +26,7 @@ export function registerScenes(game) {
   game.register('gameover', GameOverScene);
   game.register('victory', VictoryScene);
   game.register('bag', BagOverlay);
+  game.register('pause', PauseOverlay);
   game.register('test', TestScene);
   game.register('forgetest', ForgeTestScene);
 }

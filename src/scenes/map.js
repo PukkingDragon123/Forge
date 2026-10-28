@@ -246,6 +246,7 @@ export class MapScene extends Scene {
     const run = this.run, map = this.map;
     const h = hud(ui, this.game);
     if (h.bagClicked) openBag(this.game);
+    if (this.game.input.actionPressed('back') && !this.game.overlays.length) this.game.pushOverlay('pause');
     const avail = this.available();
     let hovered = null;
     // edges to available nodes: dotted glowing path highlight in screen space

@@ -41,17 +41,18 @@ export class EventScene extends Scene {
     const A = this.set.anchors || {};
     const center = A.center ? A.center.clone() : new THREE.Vector3(0, 0, 0);
     this.center = center;
-    const pp = A.player ? A.player.clone() : center.clone().add(new THREE.Vector3(-1.4, 0, 0.5));
+    // frame the stage in the left ~60% of the screen (the storybook page covers the right)
+    const pp = new THREE.Vector3(center.x - 0.85, A.player ? A.player.y : center.y, center.z + 0.6);
     this.char = buildCharacter(run ? run.char : 'clover');
     this.char.group.position.copy(pp);
-    this.char.group.rotation.y = Math.PI / 2 - 0.35;
+    this.char.group.rotation.y = Math.PI / 2 - 0.5;
     this.world.scene.add(this.char.group);
     this.char.play('idle', { loop: true });
     this.monsters = [];
     this.dress(center);
 
     const cp = new THREE.Vector3().copy(center);
-    this.camBase = { pos: [cp.x + 0.9, cp.y + 2.1, cp.z + 5.6], look: [cp.x + 1.35, cp.y + 0.75, cp.z] };
+    this.camBase = { pos: [cp.x + 1.0, cp.y + 2.0, cp.z + 5.6], look: [cp.x + 1.55, cp.y + 0.7, cp.z - 0.2] };
     this.rig.cut(this.camBase.pos, this.camBase.look, 38);
 
     this.phase = 'intro';
@@ -72,7 +73,7 @@ export class EventScene extends Scene {
 
   dress(center) {
     const props = this.ev.props || [];
-    const slots = [[0.9, 0, -0.5], [1.9, 0, -1.0], [0.2, 0, -1.4], [2.6, 0, 0.0], [-0.4, 0, -1.8]];
+    const slots = [[0.5, 0, -0.6], [1.5, 0, -1.0], [-0.1, 0, -1.5], [1.9, 0, -0.1], [-0.6, 0, -1.9]];
     let si = 0;
     const npc = this.ev.npc && NPC_MONSTER[this.ev.npc];
     const place = (obj, s) => { obj.position.set(center.x + s[0], center.y + s[1], center.z + s[2]); this.extra.add(obj); };
@@ -83,7 +84,7 @@ export class EventScene extends Scene {
           const [id, sc] = NPC_MONSTER[name];
           const m = buildMonster(id);
           m.group.scale.setScalar(sc);
-          place(m.group, [1.3, 0, -0.2]);
+          place(m.group, [0.95, 0, -0.2]);
           m.group.rotation.y = -0.3;
           m.play('idle');
           this.monsters.push(m);
@@ -204,8 +205,8 @@ export class EventScene extends Scene {
     this.world.dust.update(dt);
     const b = this.camBase;
     const sway = Math.sin(this.time * 0.25) * 0.35;
-    const zoom = this.phase === 'qte' ? 1.4 : 0;
-    this.rig.aim([b.pos[0] + sway - zoom * 0.3, b.pos[1] - zoom * 0.4, b.pos[2] - zoom], b.look, this.phase === 'qte' ? 34 : 38, 1.5);
+    const q = this.phase === 'qte' ? 1 : 0;
+    this.rig.aim([b.pos[0] + sway - q * 0.5, b.pos[1] - q * 0.25, b.pos[2] - q * 0.9], [b.look[0] - q * 0.6, b.look[1], b.look[2]], q ? 34 : 38, 1.5);
     this.rig.update(dt);
     ambientDust(this.world, [this.center.x + 0.5, this.center.y + 1.4, this.center.z], [3, 1.2, 1.5], REGIONS[this.region].pal.glow2, 0.25);
     this.typed += rdt * 70;
@@ -232,7 +233,7 @@ export class EventScene extends Scene {
 
     if (this.phase === 'qte' && this.qte) {
       const lx = Math.round((ui.w - 262) / 2);
-      ui.text(this.qte.def.label || '', lx, 44, { align: 'center', color: COLORS.gold, outline: '#140c10' });
+      if (this.qte.def.kind === 'shells') ui.text(this.qte.def.label || '', lx, 44, { align: 'center', color: COLORS.gold, outline: '#140c10' });
       this.qte.obj.draw(ui);
       return;
     }
@@ -247,7 +248,7 @@ export class EventScene extends Scene {
     const textLines = ui.layout(fullText, 'body', textW).length;
     let body = 26 + textLines * 11 + 8;
     const choices = this.ev.choices;
-    if (this.phase === 'choose' || this.phase === 'intro') body += 8 + choices.length * 24;
+    if (this.phase === 'choose' || this.phase === 'intro') body += 8 + choices.reduce((a, c) => a + (c.hint ? 31 : 24), 0);
     if (this.phase === 'result') body += this.results.length * 11 + (this.gained.length ? 70 : 0) + 34;
     const ph = Math.min(ui.h - top - 30, body + 10);
     ui.panel('parchment', px, top, pw, ph, { seed: 3 });
@@ -268,9 +269,9 @@ export class EventScene extends Scene {
         const disabled = req !== true;
         const label = `${i + 1}. ${c.label}`;
         const clicked = ui.button('evc' + i, px + 12, y, pw - 24, 20, label, { style: disabled ? 'stone' : 'wood', disabled, tip: disabled ? { title: c.label, body: `{bad}${req}{/}` } : c.hint ? { title: c.label, body: c.hint } : undefined });
-        if (c.hint && !disabled) ui.text(c.hint, px + pw - 16, y + 7, { font: 'small', color: '#e8d3a3', align: 'right' });
+        if (c.hint) ui.text(disabled ? req : c.hint, px + pw / 2, y + 22, { font: 'small', color: disabled ? '#9a3a2a' : '#7a5a3a', align: 'center' });
         if ((clicked || game.input.keyPressed('Digit' + (i + 1))) && !disabled) this.choose(c);
-        y += 24;
+        y += c.hint ? 31 : 24;
       });
     }
 
