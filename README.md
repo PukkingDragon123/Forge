@@ -5,10 +5,11 @@ and woke the **Cursed Lord**: every weapon they wield now **shatters after battl
 slowly turning to stone. One explorer at a time descends the mine, digging ore, carving monster parts
 and forging a brand-new weapon for every fight, to break the curse at the bottom of the Forbidden Tomb.
 
-Inspired by Balatro (Chips × Mult combos), Slay the Spire (branching maps, distinct heroes) and
-Backpack Battles (shaped inventory). Everything (art, models, music and sound) is generated in code:
-low-poly anime characters and voxel caves rendered at low resolution through a pixel-art shader
-pipeline, under a fully hand-drawn-style pixel UI.
+Inspired by Balatro (Chips × Mult combos), Slay the Spire (branching paths, distinct heroes) and
+Backpack Battles (shaped inventory), and played like a cinematic, choice-driven adventure. Everything
+(art, models, music and sound) is generated in code: hand-painted 2D pixel-art stages lit by warm
+lamps and teal shadows, with sculpted, rigged low-poly 3D characters and monsters on top. There are
+almost no menus: choices are things in the world (tunnel mouths, chests, an anvil, a rug of goods).
 
 ## Play
 
@@ -22,9 +23,11 @@ npm run build    # writes dist/index.html, a single self-contained file
 
 ## How to play
 
-1. **The campfire.** Click one of the four explorers to see their passives, then *Descend*.
-2. **The map.** Each mine layer is a voxel cross-section. Pick a glowing room linked to yours. Tunnels
-   (minecart tracks, rope bridges, elevators, crawlways…) set the risks on the way.
+1. **The campfire.** Click one of the four explorers sitting around the stew pot to hear what they
+   can do, then *Descend*. The books, the scroll and the lantern are the codex, prologue and settings.
+2. **The crossroads.** There is no map. Each time the tunnel splits, every mouth hints at what lies
+   beyond (eyes in the dark, a trader's lantern, ore glints, woodsmoke) and the narrator reads it out.
+   Click a tunnel to take it. Its kind (minecart track, rope bridge, lift, crawlway…) sets the risks.
 3. **Travel.** Your explorer walks the tunnel. Click glinting things to inspect them, and react to
    QTEs (collapsing bridges, ambushes, minecart chases).
 4. **Mining.** You get 3 strikes with your old pick, plus whatever a freshly forged pickaxe adds.

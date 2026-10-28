@@ -17,8 +17,8 @@
 4. **Easy to read, deep to master.** Each card says exactly what it does. Depth comes from combining.
 
 ## Core loop
-Campfire (pick explorer) → Map (pick tunnel) → Travel (side-scroll cinematic, inspect, QTEs)
-→ Node: Mining / Monster / Elite / Treasure / Merchant / Event / Camp / Boss → back to Map.
+Campfire (pick explorer) → Crossroads (pick a tunnel mouth, cinematic) → Travel (side-scroll cinematic,
+inspect, QTEs) → Node: Mining / Monster / Elite / Treasure / Merchant / Event / Camp / Boss → Crossroads.
 Monster: **Forge** (pick blueprint + materials → score) → **Hammer** (rhythm) → **Combat**
 (auto-battle + crit/parry/special QTEs) → **Harvest** (carve parts) → **Shatter** (curse breaks weapon).
 

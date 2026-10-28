@@ -247,6 +247,7 @@ export class CombatScene extends Scene {
   }
 
   openForgeUI(emergency) {
+    this.titleCard = null; // the boss name card bows out when the workbench comes up
     this.phase = emergency ? 'emergency' : 'forge';
     this.forgeCtrl = openForge(this, {
       mode: 'weapon', monster: this.mid, emergency, anvil: this.anvilBase.clone(), rig: this.rig, world: this.W,
