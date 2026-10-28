@@ -18,7 +18,7 @@ import {
   chamberCanvas, lanternCanvas, glowCanvas, cartCanvas, crateCanvas, anvilCanvas, slateCanvas, noteCanvas, tagCanvas,
 } from './mining_art.js';
 import { openForge } from './forgeui.js';
-import { speech, prompt, ring, dim, bark } from './common.js';
+import { hud, speech, prompt, ring, dim, bark } from './common.js';
 import { finish, openBag, gameOver } from './flow.js';
 import { COLORS } from '../ui/font.js';
 import { save } from '../core/save.js';
@@ -472,7 +472,7 @@ export class MiningScene extends Scene {
     }
     // speech from the explorer
     if (this.say) { const h = this.headScreen(); speech(ui, h.x, h.y, this.say.text, { maxW: 180, alpha: clamp(this.say.t * 3, 0, 1) }); }
-    this.drawVitals(ui);
+    hud(ui, this.game, { bag: false });
     if (this.phase === 'prep' && !this.forge && !this.noteOpen) {
       const bob = Math.round(Math.sin(this.time * 3) * 2);
       this.tag(ui, BOARD.x + BOARD.w / 2, 2 + bob, 'Swing at the top stones');
@@ -485,15 +485,6 @@ export class MiningScene extends Scene {
     if (this.reveal) this.drawReveal(ui);
     if (this.qte) this.drawQte(ui);
     if (this.forge) this.forge.draw(ui);
-  }
-
-  drawVitals(ui) {
-    // just a heart and a purse: no panels
-    const run = this.game.run;
-    ui.icon('heart', 10, 10);
-    ui.text(`${run.hp}/${run.maxHp}`, 26, 11, { color: run.hp < run.maxHp * 0.3 ? '#ff7a6a' : '#ffd8c8', outline: '#140c10' });
-    ui.icon('coin', 82, 10);
-    ui.text(String(run.coins), 98, 11, { color: COLORS.gold, outline: '#140c10' });
   }
 
   drawAnvil(ui) {

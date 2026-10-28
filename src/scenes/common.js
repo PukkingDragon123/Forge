@@ -1,8 +1,7 @@
 // Shared scene UI: HUD, speech bubbles, banners, QTE prompts, world setup.
 import * as THREE from 'three';
 import { COLORS } from '../ui/font.js';
-import { bar, ribbon as ui_ribbon } from '../ui/frames.js';
-import { portrait } from '../art/sprites.js';
+import { ribbon as ui_ribbon } from '../ui/frames.js';
 import { CHARACTERS } from '../data/characters.js';
 import { REGIONS } from '../data/regions.js';
 import { CameraRig } from '../gfx/camera.js';
@@ -37,29 +36,20 @@ export function bark(charId, kind, rng = rnd) {
 export function hud(ui, game, opts = {}) {
   const run = game.run;
   if (!run) return {};
-  const c = CHARACTERS[run.char];
-  // portrait plate
-  ui.panel('leather', 4, 4, 128, 30, { stitch: false, rivets: false, tone: 'dark' });
-  ui.img(portrait(run.char, opts.expr || (run.hp < run.maxHp * 0.3 ? 'hurt' : 'neutral'), 24), 7, 7);
-  ui.text(c.name, 35, 8, { color: COLORS.white, outline: '#140c10', outlineShadow: false });
-  const hpw = 70;
-  ui.img(bar(hpw, 7, run.hp / run.maxHp, ['#7a1a22', '#d03a3a', '#ff8a7a']), 35, 20);
-  ui.text(`${run.hp}/${run.maxHp}`, 35 + hpw + 3, 20, { font: 'small', color: '#ffb0a0' });
-  if (ui.hit('hud-hp', 35, 18, hpw, 10).hover) ui.tooltip({ title: 'Health', body: 'Lose it all and the curse drags you back to the campfire.' });
-  // coins
-  ui.panel('leather', 134, 4, 50, 18, { stitch: false, rivets: false, tone: 'dark' });
-  ui.icon('coin', 138, 8);
-  ui.text(String(run.coins), 150, 9, { color: COLORS.gold, outline: '#140c10', outlineShadow: false });
-  // region + floor
-  const R = REGIONS[run.region];
-  const rt = `${R.name}`;
-  const rw = ui.measure(rt) + 16;
-  ui.panel('stone', ui.w - rw - 4, 4, rw, 18, { tone: ['gray', 'blue', 'gray', 'ember', 'ember', 'purple'][run.region] });
-  ui.text(rt, ui.w - rw / 2 - 4, 9, { align: 'center', color: '#f4ecd8', outline: '#140c10', outlineShadow: false });
+  // just a heart, a purse and a whisper of where you are: no panels, no portraits
+  const low = run.hp < run.maxHp * 0.3;
+  ui.icon('heart', 10, 10, low && Math.sin(performance.now() / 140) > 0.4 ? { alpha: 0.6 } : {});
+  ui.text(`${run.hp}/${run.maxHp}`, 26, 11, { color: low ? '#ff7a6a' : '#ffd8c8', outline: '#140c10' });
+  if (ui.hit('hud-hp', 8, 8, 64, 16, { cursor: false, sound: false }).hover) ui.tooltip({ title: 'Health', body: 'Lose it all and the curse drags you back to the campfire.' });
+  ui.icon('coin', 82, 10);
+  ui.text(String(run.coins), 98, 11, { color: COLORS.gold, outline: '#140c10' });
+  ui.text(REGIONS[run.region].name, ui.w - 10, 11, { align: 'right', color: '#e8d8c0', outline: '#140c10' });
   let bagClicked = false;
   if (opts.bag !== false) {
-    bagClicked = ui.button('hud-bag', 4, ui.h - 24, 52, 20, 'Bag', { icon: 'bag', style: 'wood', key: 'TAB' });
-    if (game.input.actionPressed('bag')) bagClicked = true;
+    const b = ui.hit('hud-bag', 6, ui.h - 34, 30, 30, { sound: false });
+    ui.icon('bag', 8, ui.h - 32 - (b.hover ? 2 : 0), { scale: 2 });
+    if (b.hover) ui.tooltip({ title: 'Backpack', body: 'Open your bag (TAB).' });
+    bagClicked = b.clicked || game.input.actionPressed('bag');
   }
   return { bagClicked };
 }

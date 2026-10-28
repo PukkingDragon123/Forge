@@ -12,7 +12,7 @@ import { CHARACTERS, CHARACTER_ORDER } from '../data/characters.js';
 import { BLUEPRINTS, RECIPES } from '../data/blueprints.js';
 import { MATERIALS } from '../data/materials.js';
 import { SYNERGIES } from '../systems/forge.js';
-import { logo, materialSprite, portrait } from '../art/sprites.js';
+import { logo, materialSprite } from '../art/sprites.js';
 import { COLORS } from '../ui/font.js';
 import { save } from '../core/save.js';
 import { clamp, ease } from '../core/math.js';
@@ -245,11 +245,10 @@ export class TitleScene extends Scene {
     const id = this.focus, C = CHARACTERS[id];
     const W = 236, H = 252, x = ui.w - W - 10, y = Math.max(8, ui.h / 2 - H / 2);
     ui.panel('leather', x, y, W, H, { tone: 'dark' });
-    ui.img(portrait(id, 'happy', 32), x + 10, y + 10);
-    ui.text(C.name, x + 48, y + 12, { color: C.color, outline: '#140c10', outlineShadow: false });
-    ui.text(C.title, x + 48, y + 24, { color: COLORS.white });
-    ui.icon('heart', x + 48, y + 35); ui.text(`${C.hp} HP`, x + 60, y + 36, { font: 'small', color: '#ffb0a0' });
-    ui.icon('coin', x + 100, y + 35); ui.text(`${C.coins}`, x + 112, y + 36, { font: 'small', color: COLORS.gold });
+    ui.text(C.name, x + 12, y + 12, { color: C.color, outline: '#140c10', outlineShadow: false });
+    ui.text(C.title, x + 12, y + 24, { color: COLORS.white });
+    ui.icon('heart', x + 12, y + 35); ui.text(`${C.hp} HP`, x + 24, y + 36, { font: 'small', color: '#ffb0a0' });
+    ui.icon('coin', x + 64, y + 35); ui.text(`${C.coins}`, x + 76, y + 36, { font: 'small', color: COLORS.gold });
     ui.text(C.blurb, x + 10, y + 50, { maxW: W - 20, color: '#d8c8b0' });
     let yy = y + 80;
     for (const p of C.passives) {

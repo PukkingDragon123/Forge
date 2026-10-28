@@ -1,6 +1,6 @@
 // Scene registry.
 import { TitleScene } from './title.js';
-import { MapScene } from './map.js';
+import { CrossroadsScene } from './crossroads.js';
 import { TravelScene } from './travel.js';
 import { EventScene } from './event.js';
 import { MiningScene } from './mining.js';
@@ -14,7 +14,7 @@ import { ForgeTestScene } from './forgetest.js';
 
 export function registerScenes(game) {
   game.register('title', TitleScene);
-  game.register('map', MapScene);
+  game.register('map', CrossroadsScene);
   game.register('travel', TravelScene);
   game.register('event', EventScene);
   game.register('mining', MiningScene);

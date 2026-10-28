@@ -61,14 +61,16 @@ export class Renderer {
   setScaleBias(b) { this.scaleBias = b | 0; this.resize(); }
 
   resize() {
+    // Fixed 960×540 stage scaled to fit the window (letterboxed). Whole-number scales are
+    // preferred when close, so pixels stay even; otherwise a crisp nearest-neighbour stretch.
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const W = Math.floor(window.innerWidth * dpr), H = Math.floor(window.innerHeight * dpr);
-    let s = Math.max(1, Math.floor(Math.min(W / BASE_W, H / BASE_H) + 0.0001));
-    if (this.scaleBias) s = Math.max(1, s + this.scaleBias);
-    const vw = Math.ceil(W / s), vh = Math.ceil(H / s);
+    const fit = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H);
+    const whole = Math.floor(fit * dpr) / dpr;
+    const s = whole >= 1 && fit - whole < 0.12 ? whole : fit;
+    const vw = BASE_W, vh = BASE_H;
     this.scale = s; this.vw = vw; this.vh = vh; this.dpr = dpr;
     this.gl.setSize(vw, vh, false);
-    const cssW = (vw * s) / dpr, cssH = (vh * s) / dpr;
+    const cssW = Math.round(vw * s), cssH = Math.round(vh * s);
     for (const c of [this.canvas3d, this.canvasUI]) {
       c.style.width = cssW + 'px';
       c.style.height = cssH + 'px';
