@@ -1,37 +1,45 @@
-// Mining spot: forge a pickaxe, then spend strikes digging down through a 7×7 voxel wall.
+// Mining spot: a hand-painted mine chamber. Your explorer (3D) stands at a rock face of chiselled
+// stones; strike the stones from the top down, read the clues in the rock, and watch the ore tumble
+// into the minecart. Swings are chalked on a slate, tools wait in a crate, the anvil forges a pick.
+// There are no panels: everything you touch is part of the room.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
-import { buildSet } from '../models/environments.js';
+import { ParticleSystem } from '../gfx/particles.js';
+import { pixelTexture } from '../gfx/materials.js';
+import { generateMine, MiningRun, MINE_W, MINE_H } from '../systems/mining.js';
+import { REGIONS } from '../data/regions.js';
+import { MATERIALS, RARITY } from '../data/materials.js';
+import { matOf } from '../systems/items.js';
+import { materialSprite } from '../art/sprites.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildWeaponMesh, crackWeapon, shatterPieces, updateShards } from '../models/weapons3d.js';
-import { materialSprite, itemSprite } from '../art/sprites.js';
-import { materialCard, drawCard } from '../ui/cards.js';
+import {
+  SCREEN_W, SCREEN_H, FLOOR_Y, BOARD, LANTERNS, PROPS, rockFace, cellAt, stoneCanvas, cavityCanvas, faceRim, chunkCanvas,
+  chamberCanvas, lanternCanvas, glowCanvas, cartCanvas, crateCanvas, anvilCanvas, slateCanvas, noteCanvas, tagCanvas,
+} from './mining_art.js';
 import { openForge } from './forgeui.js';
-import { makeWorld, hud, speech, prompt, ring, bark, dim } from './common.js';
+import { speech, prompt, ring, dim, bark } from './common.js';
 import { finish, openBag, gameOver } from './flow.js';
-import { generateMine, MiningRun, MINE_W, MINE_H } from '../systems/mining.js';
-import { matOf, itemTooltip } from '../systems/items.js';
-import { MATERIALS, RARITY } from '../data/materials.js';
-import { REGIONS } from '../data/regions.js';
-import { Debris } from '../gfx/particles.js';
 import { COLORS } from '../ui/font.js';
 import { save } from '../core/save.js';
+import { clamp, ease } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
-import { ease, clamp } from '../core/math.js';
-import { buildTile, buildOreHint, buildBacking, TILE } from './mining_wall.js';
 
+const PX = 0.01;
 const TOOL_IDS = ['blast', 'drill', 'scanner', 'radar', 'flare'];
 const TOOL_USE = { blast: 'blast', drill: 'drill', scanner: 'scan', radar: 'radar', flare: 'flare' };
-const TARGETED = { blast: true, drill: true, scan: true };
 const ORE_SFX = ['ore_common', 'ore_common', 'ore_rare', 'ore_epic', 'ore_legendary'];
+const RARITY_WORD = ['', 'Uncommon', 'Rare!', 'EPIC!', 'LEGENDARY!'];
+const HERO = { x: 168, y: FLOOR_Y + 4 };
 const PICK_TEXT = {
-  strikes: (v) => `{good}+${v} Strike${v > 1 ? 's' : ''}{/}`, magnetic: () => 'Magnetic: pulls adjacent metals', gemDupe: () => 'Crystal: first gem doubled',
-  cursed: () => '{curse}Cursed: 3×3 strikes, -1 quality{/}', lucky: () => '{gold}Lucky: rarer ores{/}', smelt: () => '{fire}Smelt: metals +1 quality{/}',
-  hard: () => 'Breaks hard rock in 1 hit', freeze: () => '{ice}Freezes hazards{/}', chain: () => '{shock}Chain: connected ores break{/}',
-  reveal: () => 'Glint: shows rarity', column: () => '{gold}Starfall: first strike breaks a column{/}', area: () => 'Also breaks the tile below',
-  preserve: () => 'Preserve: no quality loss', unlock: () => 'Opens treasure pockets', archaeo: () => 'Fossils +1 quality', seehaz: () => '{warn}Reveals hazards{/}',
-  quality: () => 'Gems +1 quality', melt: () => '{bad}Melts ice ores!{/}',
+  strikes: (v) => `+${v} swing${v > 1 ? 's' : ''}`, magnetic: () => 'Magnetic: pulls adjacent metals', gemDupe: () => 'Crystal: first gem doubled',
+  cursed: () => 'Cursed: 3×3 swings, -1 quality', lucky: () => 'Lucky: better ores', smelt: () => 'Smelt: metals +1 quality',
+  hard: () => 'Breaks hard rock in 1 hit', freeze: () => 'Freezes hazards', chain: () => 'Chain: linked ores break',
+  reveal: () => 'Glint: reveals rarity', column: () => 'Starfall: first swing breaks a column', area: () => 'Also breaks the stone below',
+  preserve: () => 'Preserve: no quality loss', unlock: () => 'Opens treasure pockets', archaeo: () => 'Fossils +1 quality', seehaz: () => 'Reveals hazards',
+  quality: () => 'Gems +1 quality', melt: () => 'Melts ice ores!',
 };
+const toWorld = (x, y) => ({ x: (x - SCREEN_W / 2) * PX, y: (SCREEN_H / 2 - y) * PX });
 
 export class MiningScene extends Scene {
   enter(params = {}) {
@@ -39,774 +47,563 @@ export class MiningScene extends Scene {
     this.node = params.node;
     this.region = run.region;
     this.pal = REGIONS[this.region].pal;
-    this.set = buildSet('wall', this.region, {});
-    this.W = makeWorld(this.set, { fogDensity: 0.035 });
-    if (this.set.attach) this.set.attach(this.W.scene); // real sets own their fog/background
-    this.world = { scene: this.W.scene, camera: this.W.rig.camera, post: { bloom: 0.8, vignette: 0.4 } };
-    const a = this.set.anchors || {};
-    this.origin = (a.gridOrigin || new THREE.Vector3(-1.12, 2.66, -1.0)).clone();
-    this.gz = this.origin.z;
-    this.floorY = this.set.floorY ?? 0;
-    this.center = new THREE.Vector3(this.origin.x + (MINE_W * TILE) / 2, this.origin.y - (MINE_H * TILE) / 2, this.gz);
-
-    // wall + session
     this.luck = run.char === 'clover' ? 1 : 0;
     this.genSeed = 'mine' + run.map.current + ':' + run.stats.floors;
     this.wall = generateMine(run.rng.fork(this.genSeed), this.region, { luck: this.luck });
-    this.pick = {};
-    this.pickName = null;
-    this.pickIds = null;
-    this.tileRoot = new THREE.Group();
-    this.W.scene.add(this.tileRoot);
-    const back = buildBacking(this.pal, MINE_W, MINE_H);
-    back.position.set(this.center.x, this.center.y, this.gz - 0.24);
-    this.W.scene.add(back);
-    this.buildTiles();
-
-    // lights: warm lantern by the explorer + cool rim on the wall
-    this.lantern = new THREE.PointLight(0xffb060, 5, 7, 1.6);
-    this.lantern.position.set(this.origin.x - 0.3, this.origin.y - 0.8, this.gz + 1.4);
-    this.W.scene.add(this.lantern);
-    this.workLight = new THREE.PointLight(0xffd8a0, 3.2, 5, 1.4);
-    this.workLight.position.set(this.center.x + 0.4, this.center.y + 0.9, this.gz + 1.3);
-    this.W.scene.add(this.workLight);
-    this.flareLight = new THREE.PointLight(0xfff0c0, 0, 9, 1.4);
-    this.flareLight.position.set(this.center.x, this.center.y + 0.4, this.gz + 1.2);
-    this.W.scene.add(this.flareLight);
-
-    // explorer
-    this.char = buildCharacter(run.char);
-    const px = this.origin.x - 0.62, pz = this.gz + 1.55;
-    const cpos = new THREE.Vector3(px, this.set.floorAt ? this.set.floorAt(px, pz) : this.floorY, pz);
-    this.char.group.position.copy(cpos);
-    if (this.char.showBackItem) this.char.showBackItem(false);
-    this.faceToward(this.center);
-    this.W.scene.add(this.char.group);
-    this.equipPick(['junk']);
-
-    this.debris = new Debris(600, 0.045);
-    this.W.scene.add(this.debris.object);
-
-    // camera: wide establishing shot → sweep to the wall
-    const rig = this.W.rig;
-    const sc = this.set.camera;
-    this.camHome = sc && a.gridOrigin ? { pos: [sc.pos[0] + 0.25, sc.pos[1] + 0.1, sc.pos[2] + 0.2], look: [sc.look[0] + 0.12, sc.look[1], sc.look[2]], fov: sc.fov } : { pos: [this.center.x + 0.3, this.center.y + 0.1, this.gz + 5.4], look: [this.center.x + 0.1, this.center.y, this.gz], fov: 42 };
-    rig.cut([this.center.x - 2.6, this.center.y + 1.6, this.gz + 7.5], [this.center.x, this.center.y - 0.4, this.gz], 46);
-    rig.moveTo(this.camHome.pos, this.camHome.look, this.camHome.fov, 2.0, 'inOutCubic');
-
-    this.phase = 'intro';
+    this.geom = rockFace(7 + run.stats.floors * 3 + this.region * 11);
+    this.pick = {}; this.pickName = null; this.pickIds = ['iron', 'oak'];
     this.mr = null;
+    this.phase = 'intro';
     this.busy = false;
     this.tool = null;
     this.tray = [];
     this.flyers = [];
-    this.reveals = [];
-    this.shown = new Set();
-    this.say = null;
+    this.parts = [];
+    this.rubble = [];
+    this.impacts = [];
+    this.shakes = {};
+    this.reveal = null;
     this.qte = null;
-    this.combo = 0;
+    this.say = null;
     this.forge = null;
     this.flareT = 0;
-    this.tip = !save.data.seen.tips.mining;
-    this.summary = false;
-    this.hover = null;
-
+    this.shakeT = 0;
+    this.cartBump = 0;
+    this.noteOpen = !save.data.seen.tips.mining;
+    this.shown = new Set();
+    this.buildWorld();
     const au = game.audio;
-    if (au) { au.music(REGIONS[this.region].music); this.amb = au.loop('cave'); }
-    this.co.start(function* () {
-      yield 1.6;
-      this.speak(bark(run.char, 'mine'), 2.4);
-      yield 0.4;
-      this.phase = 'prep';
-    }.bind(this));
+    au.music(REGIONS[this.region].music);
+    this.amb = au.loop(this.region === 4 ? 'lava' : 'cave');
+    this.co.start(function* () { yield 0.7; this.speak(bark(run.char, 'mine'), 2.6); this.phase = 'prep'; }.bind(this));
   }
+  exit() { this.amb && this.amb.stop(1); }
 
-  exit() { if (this.amb) this.amb.stop(1); }
+  buildWorld() {
+    const run = this.game.run;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#07090c');
+    const bg = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN_W * PX, SCREEN_H * PX), new THREE.MeshBasicMaterial({ map: pixelTexture(chamberCanvas(this.region, this.pal)) }));
+    scene.add(bg);
+    const cam = new THREE.OrthographicCamera(-4.8, 4.8, 2.7, -2.7, 0.1, 50);
+    cam.userData.viewHeight = SCREEN_H * PX;
+    cam.position.set(0, 0, 10); cam.lookAt(0, 0, 0);
+    // painted backdrop stays exactly as painted; the 3D explorer gets inked outlines and warm lamp light
+    this.world = { scene, camera: cam, post: { tone: 0, saturation: 1, contrast: 1, lift: [0, 0, 0], gain: [1, 1, 1], vignette: 0.22, dither: 0, bloom: 0.45, threshold: 0.8, outline: 0.75, edge: 0.35 } };
+    scene.add(new THREE.HemisphereLight(0x6a8a9a, 0x3a2216, 0.75));
+    const lamp = new THREE.PointLight(0xffb35a, 4.2, 9, 1.2);
+    const lw = toWorld(LANTERNS[0].x, LANTERNS[0].y + 10);
+    lamp.position.set(lw.x, lw.y, 1.8);
+    scene.add(lamp);
+    this.lamp = lamp;
+    const rim = new THREE.DirectionalLight(0xff9a50, 1.1);
+    rim.position.set(3, 1.2, -2);
+    scene.add(rim);
+    const fill = new THREE.DirectionalLight(0x5a8aa8, 0.45);
+    fill.position.set(-3, 0.5, 4);
+    scene.add(fill);
+    this.dust = new ParticleSystem(300);
+    this.sparks = new ParticleSystem(200, { additive: true });
+    scene.add(this.dust.object, this.sparks.object);
+    // the explorer, pick in hand, turned toward the rock face
+    const hero = buildCharacter(run.char);
+    const box = new THREE.Box3().setFromObject(hero.group);
+    const h = Math.max(0.3, box.max.y - box.min.y);
+    const scale = (run.char === 'durgan' ? 150 : run.char === 'clover' ? 165 : 196) * PX / h;
+    hero.group.scale.setScalar(scale);
+    const hw = toWorld(HERO.x, HERO.y);
+    hero.group.position.set(hw.x, hw.y - box.min.y * scale, 1);
+    hero.group.rotation.y = 1.0;
+    hero.play('idle', { loop: true });
+    scene.add(hero.group);
+    this.hero = hero;
+    this.heroH = h * scale;
+    this.equipPick();
+    this.shards = null;
+  }
+  equipPick() {
+    const mesh = buildWeaponMesh({ bp: 'pickaxe', ids: this.pickIds, el: {}, grade: this.pickName ? 2 : 0 });
+    this.pickMesh = mesh;
+    this.hero.hold(mesh);
+  }
+  headScreen() { return { x: HERO.x + 6, y: HERO.y - this.heroH / PX - 6 }; }
 
-  // ------------------------------------------------------------------ build helpers
-  buildTiles() {
-    for (const c of [...this.tileRoot.children]) { this.tileRoot.remove(c); disposeObj(c); }
-    this.objs = [];
-    for (let y = 0; y < MINE_H; y++) {
-      this.objs.push([]);
-      for (let x = 0; x < MINE_W; x++) {
-        const t = this.wall.tiles[y][x];
-        const o = { group: null, hint: null, shake: 0 };
-        this.objs[y].push(o);
-        if (!t.broken) this.makeTile(x, y);
-      }
-    }
-    this.refreshHints();
-  }
-  tilePos(x, y) { return new THREE.Vector3(this.origin.x + (x + 0.5) * TILE, this.origin.y - (y + 0.5) * TILE, this.gz); }
-  makeTile(x, y) {
-    const t = this.wall.tiles[y][x];
-    const o = this.objs[y][x];
-    if (o.group) { this.tileRoot.remove(o.group); disposeObj(o.group); }
-    const g = buildTile(t, this.pal, 7);
-    const p = this.tilePos(x, y);
-    g.position.set(p.x, p.y, this.gz - 0.16 + (hashJit(x, y) - 0.5) * 0.02);
-    this.tileRoot.add(g);
-    o.group = g; o.hint = null;
-    o.base = g.position.clone();
-  }
-  refreshHints() {
-    for (let y = 0; y < MINE_H; y++) for (let x = 0; x < MINE_W; x++) {
-      const t = this.wall.tiles[y][x], o = this.objs[y][x];
-      if (t.broken || !o.group || o.hint || t.t !== 'ore') continue;
-      if (!this.exposed(x, y)) continue;
-      const h = buildOreHint(t, 3);
-      h.position.set(0, 0, o.group.userData.depth * 0.04 + 0.04);
-      o.group.add(h);
-      o.hint = h;
-    }
-  }
-  exposed(x, y) {
-    if (this.mr) return this.mr.exposed(x, y);
-    const t = this.wall.tiles[y] && this.wall.tiles[y][x];
-    return !!t && !t.broken && y === 0;
-  }
-  faceToward(v) {
-    const p = this.char.group.position;
-    this.char.group.rotation.y = Math.atan2(v.x - p.x, v.z - p.z);
-  }
-  equipPick(ids) {
-    if (this.pickMesh) { this.char.hold(null); disposeObj(this.pickMesh); }
-    this.pickMesh = buildWeaponMesh({ bp: 'pickaxe', ids, el: {}, grade: ids[0] === 'junk' ? 0 : 2 });
-    this.char.hold(this.pickMesh);
-  }
+  exposed(x, y) { return this.mr ? this.mr.exposed(x, y) : y === 0 && !this.wall.tiles[0][x].broken; }
   speak(text, dur = 2) { if (text) this.say = { text, t: dur }; }
-  handPos() { return this.char.group.position.clone().add(new THREE.Vector3(0.15, 0.95, 0.1)); }
+  shake(p = 1) { this.shakeT = Math.max(this.shakeT, 0.25 * p); }
+  stoneCenter(x, y) { const c = this.geom.cells[y][x]; return { x: BOARD.x + c.cx, y: BOARD.y + c.cy }; }
 
   // ------------------------------------------------------------------ actions
   openPickForge() {
-    if (this.forge) return;
+    if (this.forge || this.pickName || this.phase !== 'prep') return;
     this.phase = 'forging';
-    const anvil = this.char.group.position.clone().add(new THREE.Vector3(0.4, 0.5, 0.5));
+    this.hero.play('hammer', { loop: true });
     this.forge = openForge(this, {
-      mode: 'pickaxe', anvil, rig: this.W.rig, world: this.W,
+      mode: 'pickaxe',
       onDone: (res) => {
         this.forge = null;
         this.phase = 'prep';
-        this.W.rig.moveTo(this.camHome.pos, this.camHome.look, this.camHome.fov, 0.8);
+        this.hero.play('idle', { loop: true });
         if (!res) return;
         this.pick = res.pick || {};
         this.pickName = res.name || 'Pickaxe';
-        this.pickIds = res.ids || ['iron'];
-        this.equipPick(this.pickIds);
-        this.game.run.stats.forged++;
+        this.pickIds = res.ids && res.ids.length ? res.ids : ['iron'];
+        this.equipPick();
+        this.hero.play('cheer');
         if (this.pick.lucky) {
-          // lucky pick: the wall shimmers into something richer
           this.wall = generateMine(this.game.run.rng.fork(this.genSeed + 'L'), this.region, { luck: this.luck + this.pick.lucky });
-          this.buildTiles();
-          this.W.sparks.emit({ pos: [this.center.x, this.center.y, this.gz + 0.2], posSpread: [1.1, 1.1, 0.05], count: 60, life: [0.6, 1.4], size: 1, color: ['#ffe08a', '#fff6c8', '#7fe3ff'], glow: 3, spread: 0.3 });
-          this.game.ui.toast('Lucky Pick: the wall shimmers!', { icon: 'star', color: COLORS.gold });
+          this.game.ui.toast('Lucky Pick: the rock face shimmers!', { icon: 'star', color: COLORS.gold });
         }
-        this.speak(`${this.pickName}! ${bark(this.game.run.char, 'forge')}`, 2.2);
+        this.speak(`${this.pickName}! ${bark(this.game.run.char, 'forge')}`, 2.4);
       },
     });
   }
-
   startDig() {
+    if (this.phase !== 'prep') return;
     this.phase = 'dig';
     this.mr = new MiningRun(this.wall, this.game.run.rng.fork(this.genSeed + 'dig'), this.pick, { char: this.game.run.char });
-    if (this.tip) { save.data.seen.tips.mining = true; save.write(); this.tip = false; }
-    this.refreshHints();
-    this.game.audio && this.game.audio.play('ui_pop');
+    if (this.noteOpen) this.closeNote();
   }
-
+  closeNote() { this.noteOpen = false; save.data.seen.tips.mining = true; save.write(); }
   strikeTile(x, y) {
-    if (this.busy || this.dead || !this.mr || this.mr.strikes <= 0 || !this.mr.exposed(x, y)) return;
+    if (this.phase === 'prep') this.startDig();
+    if (this.busy || !this.mr || this.mr.strikes <= 0 || !this.mr.exposed(x, y)) return;
     this.busy = true;
-    const run = this.game.run;
-    const target = this.tilePos(x, y);
-    this.faceToward(target);
-    this.char.play('mine', { loop: false });
-    const imp = this.char.impactTime ? Math.min(0.5, Math.max(0.12, this.char.impactTime('mine'))) : 0.22;
+    const hero = this.hero;
+    hero.play('mine', { restart: true });
+    this.game.audio.play('sword_swing', { pitch: 0.75 });
     this.co.start(function* () {
-      yield imp;
+      yield Math.max(0.12, hero.impactTime('mine'));
       const res = this.mr.strike(x, y);
-      this.impact(target, 1);
+      this.impact(x, y);
       this.combo = 0;
       yield* this.playEvents(res.events);
       this.afterAction();
     }.bind(this));
   }
-
   useTool(item, x, y) {
     if (this.busy || !this.mr) return;
     const use = TOOL_USE[item.id];
-    if (TARGETED[use] && use !== 'scan' && !this.mr.exposed(x, y)) { this.game.ui.toast('Place it on an exposed tile.', { icon: 'cross' }); return; }
+    if (use !== 'scan' && use !== 'radar' && use !== 'flare' && !this.mr.exposed(x, y)) { this.speak('I need an open stone for that.', 1.4); this.game.audio.play('deny'); return; }
     this.busy = true;
     this.game.run.removeItem(item);
     this.tool = null;
     const au = this.game.audio;
+    this.hero.play(use === 'blast' ? 'point' : 'cast');
     this.co.start(function* () {
-      if (use === 'blast') {
-        au && au.play('fire_whoosh');
-        this.speak('Fire in the hole!', 1.2);
-        yield 0.45;
-        const p = this.tilePos(x, y);
-        this.game.renderer.doFlash(0.55, [1, 0.8, 0.5]);
-        this.W.rig.shake(0.7);
-        this.game.hitStop(0.08);
-        au && au.play('rock_break', { vol: 1 });
-        au && au.play('cave_in', { vol: 0.6 });
-        this.W.sparks.emit({ pos: [p.x, p.y, p.z + 0.2], count: 70, radial: [1.5, 3.5], life: [0.3, 0.8], size: [1, 2], color: ['#ffd27a', '#ff8a3a', '#fff0b0'], colorEnd: '#ff3a1a', glow: 3, drag: 2, gravity: 2 });
-      } else if (use === 'drill') {
-        au && au.play('hard_clang', { pitch: 1.4 });
-        for (let i = 0; i < 6; i++) { const p = this.tilePos(x, Math.min(MINE_H - 1, y + (i >> 1))); this.W.sparks.emit({ pos: [p.x, p.y, p.z + 0.2], count: 8, radial: 1.5, life: 0.4, size: 1, color: '#ffe08a', glow: 3 }); this.W.rig.shake(0.15); yield 0.07; }
-      } else if (use === 'scan') {
-        au && au.play('zap', { pitch: 1.6 });
-      } else if (use === 'radar') {
-        au && au.play('blip'); yield 0.15; au && au.play('blip', { pitch: 1.3 });
-      } else if (use === 'flare') {
-        au && au.play('fire_whoosh', { pitch: 1.3 });
-        this.flareT = 6;
-      }
+      if (use === 'blast') { au.play('fire_whoosh'); this.speak('Fire in the hole!', 1.2); yield 0.45; this.game.renderer.doFlash(0.5, [1, 0.8, 0.5]); this.shake(2.5); this.game.hitStop(0.08); au.play('cave_in', { vol: 0.6 }); this.fxBurst(x, y, ['#ffd27a', '#ff8a3a', '#fff0b0'], 40, 'spark'); }
+      else if (use === 'drill') { au.play('hard_clang', { pitch: 1.4 }); for (let i = 0; i < 5; i++) { this.fxBurst(x, Math.min(MINE_H - 1, y + (i >> 1)), ['#ffe08a'], 8, 'spark'); this.shake(0.6); yield 0.07; } }
+      else if (use === 'scan') au.play('zap', { pitch: 1.6 });
+      else if (use === 'radar') { au.play('blip'); yield 0.15; au.play('blip', { pitch: 1.3 }); }
+      else if (use === 'flare') { au.play('fire_whoosh', { pitch: 1.3 }); this.flareT = 8; }
       const res = this.mr.useTool(use, x, y);
       this.combo = 0;
       yield* this.playEvents(res.events);
       this.afterAction();
     }.bind(this));
   }
-
   afterAction() {
-    this.refreshHints();
     this.busy = false;
+    this.hero.play('idle', { loop: true });
     if (this.mr.strikes <= 0 && this.phase === 'dig') {
       this.phase = 'done';
-      this.speak(this.hasTools() ? 'Out of swings… still got tools, though.' : 'That\'s all I can swing.', 2.2);
+      this.hero.play('shrug');
+      this.speak(this.hasTools() ? 'Out of swings… still got tools in the crate.' : 'That\'s all I can swing. To the cart!', 2.4);
     }
   }
   hasTools() { return this.game.run.bag.all().some((it) => TOOL_IDS.includes(it.id)); }
 
-  impact(p, power = 1) {
-    const rig = this.W.rig;
-    rig.shake(0.22 * power);
-    rig.fovPunch(-1.5 * power);
-    this.game.hitStop(0.05 * power);
-    const au = this.game.audio;
-    au && au.play('pick_strike', { pitch: 0.9 + rnd.next() * 0.2 });
-    this.W.sparks.emit({ pos: [p.x - 0.1, p.y + 0.05, p.z + 0.12], count: 14, vel: [-0.5, 0.8, 1.2], spread: 1.4, life: [0.2, 0.5], size: 1, color: ['#fff0b0', '#ffd27a'], glow: 3, gravity: 6, drag: 1 });
+  // ------------------------------------------------------------------ juice
+  impact(x, y) {
+    const c = this.stoneCenter(x, y);
+    this.shake(1);
+    this.game.hitStop(0.05);
+    this.game.audio.play('pick_strike', { pitch: 0.9 + rnd.next() * 0.2 });
+    this.impacts.push({ x: c.x + rnd.float(-6, 6), y: c.y + rnd.float(-6, 6), t: 0 });
+    this.game.ui.burst(c.x, c.y, 14, { colors: ['#fff6c8', '#ffd27a', '#ffffff'], speed: 130, gravity: 300, kind: 'spark', life: 0.5, up: 30 });
   }
-
-  breakFx(x, y, how = {}) {
-    const p = this.tilePos(x, y);
+  fxBurst(x, y, colors, n, kind) { const c = this.stoneCenter(x, y); this.game.ui.burst(c.x, c.y, n, { colors, speed: 140, gravity: 200, kind, life: 0.7 }); }
+  breakFx(x, y) {
     const t = this.wall.tiles[y][x];
-    const o = this.objs[y][x];
-    if (o.group) { this.tileRoot.remove(o.group); disposeObj(o.group); o.group = null; o.hint = null; }
-    const cols = t.t === 'hard' ? [this.pal.rock[0], this.pal.rock[1], this.pal.rock[2]] : [this.pal.rock[1], this.pal.rock[2], this.pal.rock[3]];
+    const c = this.stoneCenter(x, y);
+    const r = this.pal.rock;
+    const cols = t.t === 'hard' ? [r[1], r[2], r[3]] : [r[2], r[3], r[4]];
     if (t.t === 'ore' && MATERIALS[t.mat]) cols.push(MATERIALS[t.mat].color, MATERIALS[t.mat].color);
-    this.debris.spawn({ pos: [p.x, p.y, p.z + 0.1], count: 16, colors: cols, speed: 1.6, up: 2.2, life: 1.6, floor: this.floorY + 0.02, dir: [0, 0, 1.2], spread: 0.12, scale: [0.6, 1.5] });
-    this.W.dust.emit({ pos: [p.x, p.y, p.z + 0.15], posSpread: 0.12, count: 14, vel: [0, 0.2, 0.4], spread: 0.35, life: [0.8, 1.8], size: [1, 2], color: shadeColor(this.pal.rock[3]), alpha: 0.7, drag: 1.5 });
-    const au = this.game.audio;
-    au && au.play('rock_break', { pitch: 0.9 + rnd.next() * 0.25, vol: how.chain || how.magnet ? 0.6 : 1 });
-    if (how.chain) this.W.sparks.emit({ pos: [p.x, p.y, p.z + 0.2], count: 18, radial: 1.2, life: 0.35, size: 1, color: ['#ffe74a', '#ffffff', '#9a7aff'], glow: 4 });
-    if (how.magnet) this.W.sparks.emit({ pos: [p.x, p.y, p.z + 0.2], count: 10, vel: [-1.5, 0, 0.5], spread: 0.4, life: 0.4, size: 1, color: ['#ff5a5a', '#9ab0ff'], glow: 3 });
+    for (let i = 0; i < 13; i++) {
+      const a = rnd.float(-Math.PI, 0), sp = rnd.float(60, 200);
+      this.parts.push({ x: c.x + rnd.float(-16, 16), y: c.y + rnd.float(-14, 14), vx: Math.cos(a) * sp - 40, vy: Math.sin(a) * sp * 0.7, rot: 0, vr: rnd.float(-12, 12), img: chunkCanvas(rnd.pick(cols), rnd.int(1, 9), rnd.int(4, 10)), t: 0, floor: FLOOR_Y + rnd.float(2, 40) });
+    }
+    this.game.ui.burst(c.x, c.y, 18, { colors: ['#8a7a6a', '#a89888', '#6a5a4a'], speed: 50, gravity: -10, life: 1.2, drag: 2, size: 2 });
+    this.game.audio.play('rock_break', { pitch: 0.9 + rnd.next() * 0.25 });
   }
 
-  /** Coroutine: resolve rule events with juice. */
   *playEvents(events) {
-    const ui = this.game.ui, au = this.game.audio, run = this.game.run;
+    const ui = this.game.ui, au = this.game.audio;
     for (const ev of events) {
-      const sp = ev.x !== undefined ? this.screenOf(this.tilePos(ev.x, ev.y)) : { x: ui.w / 2, y: ui.h / 2 };
+      const sp = ev.x !== undefined ? this.stoneCenter(ev.x, ev.y) : { x: BOARD.x + BOARD.w / 2, y: BOARD.y + BOARD.h / 2 };
       switch (ev.type) {
-        case 'crack': {
-          const t = this.wall.tiles[ev.y][ev.x];
-          this.makeTile(ev.x, ev.y);
-          this.objs[ev.y][ev.x].shake = 0.25;
-          au && au.play('hard_clang');
-          ui.float('Crack!', sp.x, sp.y - 6, { color: '#c9c1b3', vy: -16, life: 0.8 });
-          void t;
-          yield 0.08;
-          break;
-        }
-        case 'break': this.breakFx(ev.x, ev.y, ev.how); yield ev.how.chain || ev.how.magnet ? 0.09 : 0.05; break;
+        case 'crack': this.shakes[ev.x + ',' + ev.y] = 0.3; au.play('hard_clang'); ui.float('Crack!', sp.x, sp.y - 8, { color: '#e8dcc8', vy: -18, life: 0.8 }); yield 0.1; break;
+        case 'break': this.breakFx(ev.x, ev.y); yield ev.how.chain || ev.how.magnet ? 0.09 : 0.05; if (ev.how.chain) this.fxBurst(ev.x, ev.y, ['#ffe74a', '#ffffff', '#9a7aff'], 14, 'spark'); if (ev.how.magnet) this.fxBurst(ev.x, ev.y, ['#ff5a5a', '#9ab0ff'], 10, 'spark'); break;
         case 'ore': case 'pocket': case 'dupe': {
           const it = ev.item;
           this.shown.add(it.uid);
-          const m = matOf(it);
-          const r = RARITY[m.rarity].order;
-          this.combo++;
-          au && au.play(ORE_SFX[r], { pitch: 1 + Math.min(10, this.combo - 1) * 0.07 });
-          if (ev.type === 'dupe') ui.float('×2!', sp.x, sp.y - 14, { big: true, scale: 2, top: '#e6fbff', bottom: '#7fe3ff' });
-          if (ev.type === 'pocket') { au && au.play('chest_open'); ui.float('Treasure pocket!', sp.x, sp.y - 16, { color: COLORS.gold }); }
-          const p = this.tilePos(ev.x, ev.y);
-          this.W.sparks.emit({ pos: [p.x, p.y, p.z + 0.2], count: 10 + r * 10, radial: [0.6, 1.4 + r * 0.4], life: [0.4, 1.0], size: 1, color: [m.color, m.color2 || '#ffffff', '#ffffff'], glow: 3 + r, gravity: 1.5, drag: 1.5 });
-          this.addFlyer(it, sp.x, sp.y);
-          if (r >= 2) { this.reveals.push({ item: it, t: 0 }); this.game.hitStop(0.12); this.W.rig.fovPunch(-3); }
+          const r = RARITY[matOf(it).rarity].order;
+          this.combo = (this.combo || 0) + 1;
+          au.play(ORE_SFX[r], { pitch: 1 + Math.min(10, this.combo - 1) * 0.07 });
+          if (ev.type === 'dupe') ui.float('×2!', sp.x, sp.y - 16, { big: true, scale: 2, top: '#e6fbff', bottom: '#7fe3ff' });
+          if (ev.type === 'pocket') { au.play('chest_open'); ui.float('Treasure pocket!', sp.x, sp.y - 18, { color: COLORS.gold }); }
+          ui.burst(sp.x, sp.y, 10 + r * 10, { colors: [matOf(it).color, matOf(it).color2 || '#ffffff', '#ffffff'], speed: 90 + r * 30, gravity: 60, kind: 'star', life: 0.9 });
+          if (r >= 2) { this.reveal = { item: it, t: 0, r }; this.game.hitStop(0.12); this.hero.play('cheer'); yield 1.0; }
+          this.flyers.push({ item: it, x0: sp.x, y0: sp.y, t: 0, dur: 0.7, spin: rnd.float(-8, 8) });
           yield 0.14;
           break;
         }
-        case 'lucky': ui.float('LUCKY!', sp.x, sp.y - 20, { big: true, scale: 2, top: '#fff6c8', bottom: '#ff8ab0' }); au && au.play('sparkle'); yield 0.1; break;
-        case 'melt': {
-          const p = this.tilePos(ev.x, ev.y);
-          this.W.dust.emit({ pos: [p.x, p.y, p.z + 0.2], count: 24, vel: [0, 0.8, 0.2], spread: 0.3, life: [0.8, 1.6], size: [1, 2], color: '#e8f0f8', alpha: 0.6 });
-          au && au.play('sizzle');
-          ui.float(`${MATERIALS[ev.mat].name} melted!`, sp.x, sp.y - 10, { color: COLORS.bad });
-          this.speak('Ah! Too hot for that one!', 1.6);
-          yield 0.2; break;
-        }
-        case 'frozen': {
-          const p = this.tilePos(ev.x, ev.y);
-          this.W.sparks.emit({ pos: [p.x, p.y, p.z + 0.2], count: 20, radial: 0.8, life: 0.7, size: 1, color: ['#e6fbff', '#7fe3ff'], glow: 2 });
-          au && au.play('ice_crack');
-          ui.float('Hazard frozen!', sp.x, sp.y - 10, { color: COLORS.ice });
-          yield 0.15; break;
-        }
-        case 'gas': {
-          const p = this.tilePos(ev.x, ev.y);
-          this.W.dust.emit({ pos: [p.x, p.y, p.z + 0.2], count: 40, vel: [0, 0.3, 0.6], spread: 0.5, life: [1.2, 2.4], size: [1, 3], color: ['#8fe04a', '#5a9a3a'], alpha: 0.65, drag: 0.8 });
-          au && au.play('gas');
-          ui.float('-1 Strike', sp.x, sp.y - 10, { color: COLORS.bad });
-          this.char.setExpression('hurt');
-          this.speak('*cough* *cough*', 1.4);
-          yield 0.35; break;
-        }
-        case 'critter': {
-          au && au.play('monster_growl', { pitch: 1.8 });
-          ui.float('A rat! -3', sp.x, sp.y - 10, { color: COLORS.bad });
-          this.hurt(ev.dmg);
-          this.char.play('hurt', { loop: false });
-          for (const it of this.mr.haul) if (!this.shown.has(it.uid)) { this.shown.add(it.uid); this.addFlyer(it, sp.x, sp.y); }
-          yield 0.3; break;
-        }
+        case 'lucky': ui.float('LUCKY!', sp.x, sp.y - 22, { big: true, scale: 2, top: '#fff6c8', bottom: '#ff8ab0' }); au.play('sparkle'); yield 0.1; break;
+        case 'melt': au.play('sizzle'); ui.float(`${MATERIALS[ev.mat].name} melted!`, sp.x, sp.y - 10, { color: COLORS.bad }); ui.burst(sp.x, sp.y, 20, { colors: ['#e8f0f8', '#c8d8e8'], speed: 40, gravity: -60, life: 1.2 }); this.speak('Ah! Too hot for that one!', 1.6); yield 0.2; break;
+        case 'frozen': au.play('ice_crack'); ui.float('Hazard frozen!', sp.x, sp.y - 10, { color: COLORS.ice }); ui.burst(sp.x, sp.y, 20, { colors: ['#e6fbff', '#7fe3ff'], speed: 70, gravity: 40, kind: 'star' }); yield 0.15; break;
+        case 'gas': au.play('gas'); ui.float('-1 swing', sp.x, sp.y - 12, { color: COLORS.bad }); ui.burst(sp.x, sp.y, 34, { colors: ['#8fe04a', '#5a9a3a', '#b0ff7a'], speed: 50, gravity: -30, life: 1.6, size: 2, drag: 1 }); this.hero.play('hurt'); this.speak('*cough* *cough*', 1.4); yield 0.35; break;
+        case 'critter': au.play('monster_growl', { pitch: 1.8 }); ui.float('A rat! -3', sp.x, sp.y - 12, { color: COLORS.bad }); this.hurt(ev.dmg); this.hero.play('hurt'); for (const it of this.mr.haul) if (!this.shown.has(it.uid)) { this.shown.add(it.uid); this.flyers.push({ item: it, x0: sp.x, y0: sp.y, t: 0, dur: 0.7, spin: 4 }); } yield 0.3; break;
         case 'cavein': yield* this.caveIn(ev); break;
-        case 'blast': case 'drill': break;
-        case 'scan': {
-          au && au.play('sparkle');
-          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const o = this.objs[ev.y + dy] && this.objs[ev.y + dy][ev.x + dx]; if (o) o.scan = 0.6; }
-          yield 0.2; break;
-        }
-        case 'radar': ui.float('Rare ore located!', sp.x, sp.y - 12, { color: '#7aff8a' }); au && au.play('qte_success'); yield 0.2; break;
-        case 'flare': ui.toast('The flare lights every clue!', { icon: 'flare' }); yield 0.1; break;
+        case 'scan': au.play('sparkle'); yield 0.2; break;
+        case 'radar': ui.float('Rare ore located!', sp.x, sp.y - 14, { color: '#9affb0' }); au.play('qte_success'); yield 0.2; break;
+        case 'flare': this.speak('The flare shows every clue!', 1.6); yield 0.1; break;
         default: break;
       }
     }
-    // anything collected without its own event (safety)
-    for (const it of this.mr.haul) if (!this.shown.has(it.uid)) { this.shown.add(it.uid); this.addFlyer(it, ui.w / 2, ui.h / 2); }
+    for (const it of this.mr.haul) if (!this.shown.has(it.uid)) { this.shown.add(it.uid); this.flyers.push({ item: it, x0: BOARD.x + BOARD.w / 2, y0: BOARD.y + BOARD.h / 2, t: 0, dur: 0.7, spin: 3 }); }
   }
 
   *caveIn(ev) {
     const au = this.game.audio, ui = this.game.ui;
-    au && au.play('rumble');
-    this.W.rig.shake(0.5);
+    au.play('rumble');
+    this.shake(2);
     this.speak('The ceiling!!', 1.2);
-    // rocks start to fall
-    const p = this.tilePos(ev.x, ev.y);
-    this.debris.spawn({ pos: [p.x, this.origin.y + 0.6, this.gz + 0.5], count: 26, colors: this.pal.rock.slice(1, 4), speed: 0.6, up: -1, life: 1.8, floor: this.floorY + 0.02, spread: 0.8, scale: [1, 2.2] });
-    this.qte = { t: 0, win: 0.85, done: false, ok: false };
-    au && au.play('qte_prompt');
+    for (let i = 0; i < 26; i++) this.parts.push({ x: rnd.float(60, 700), y: rnd.float(-60, -10), vx: rnd.float(-20, 20), vy: rnd.float(40, 140), rot: 0, vr: rnd.float(-6, 6), img: chunkCanvas(rnd.pick(this.pal.rock.slice(1, 4)), rnd.int(1, 9), rnd.int(6, 13)), t: 0, floor: FLOOR_Y + rnd.float(0, 40) });
+    this.qte = { t: 0, win: 0.9, done: false, ok: false };
+    au.play('qte_prompt');
     yield () => this.qte.done;
     const ok = this.qte.ok;
     this.qte = null;
-    if (ok) {
-      au && au.play('qte_success');
-      this.char.play('dodge', { loop: false });
-      ui.float('Dodged!', ui.w / 2, ui.h / 2 - 30, { big: true, scale: 2, top: '#e8ffe0', bottom: '#5fd17a' });
-    } else {
-      au && au.play('cave_in');
-      au && au.play('hurt');
-      this.W.rig.shake(0.9);
+    if (ok) { au.play('qte_success'); this.hero.play('dodge'); ui.float('Dodged!', HERO.x + 40, HERO.y - 150, { big: true, scale: 3, top: '#e8ffe0', bottom: '#5fd17a' }); }
+    else {
+      au.play('cave_in'); au.play('hurt');
+      this.shake(3);
       this.game.renderer.doFlash(0.35, [1, 0.3, 0.2]);
-      this.char.play('hurt', { loop: false });
-      this.char.setExpression('hurt');
-      ui.float(`-${ev.dmg}`, ui.w / 2, ui.h / 2 - 30, { big: true, scale: 3, top: '#ffd0c0', bottom: '#ff4d4d' });
+      this.hero.play('hurt');
+      ui.float(`-${ev.dmg}`, HERO.x + 30, HERO.y - 150, { big: true, scale: 3, top: '#ffd0c0', bottom: '#ff4d4d' });
       this.hurt(ev.dmg);
     }
     yield 0.3;
   }
+  hurt(n) { if (this.game.run.hurt(n)) { this.dead = true; this.co.start(function* () { yield 0.8; gameOver(this.game, 'Buried in a cave-in'); }.bind(this)); } }
 
-  hurt(n) {
-    const run = this.game.run;
-    if (run.hurt(n)) { this.dead = true; this.co.start(function* () { yield 0.8; gameOver(this.game, 'Buried in a cave-in'); }.bind(this)); }
-  }
-
-  addFlyer(item, x, y) {
-    const slot = this.tray.length + this.flyers.length;
-    this.flyers.push({ item, x0: x, y0: y, t: 0, dur: 0.75, slot });
-  }
-
-  // ------------------------------------------------------------------ end of dig
   packUp() {
-    if (this.busy || this.phase === 'shatter' || this.summary) return;
+    if (this.busy || this.phase === 'shatter' || this.phase === 'leaving') return;
     this.phase = 'shatter';
     const au = this.game.audio, run = this.game.run;
     this.co.start(function* () {
       if (this.pickName) {
-        // the curse claims the pickaxe too
         this.speak('Huh? The pick is… glowing?', 1.4);
-        const hp = this.handPos();
-        this.char.play('idleCombat', { loop: true });
-        for (let i = 0; i < 6; i++) {
-          if (this.pickMesh) crackWeapon(this.pickMesh, (i + 1) / 6);
-          this.W.sparks.emit({ pos: [hp.x, hp.y, hp.z], posSpread: 0.15, count: 6, radial: 0.4, life: 0.4, size: 1, color: ['#c86bff', '#ff5af0'], glow: 4 });
-          au && au.play('crack', { pitch: 1 + i * 0.08 });
-          yield 0.18;
-        }
-        if (this.pickMesh) this.shards = shatterPieces(this.pickMesh, this.W.scene, { force: 2 });
-        au && au.play('shatter');
+        for (let i = 0; i < 6; i++) { crackWeapon(this.pickMesh, (i + 1) / 6); au.play('crack', { pitch: 1 + i * 0.08 }); yield 0.18; }
+        au.play('shatter');
         this.game.renderer.doFlash(0.4, [0.8, 0.4, 1]);
-        this.W.rig.shake(0.5);
-        this.game.hitStop(0.1);
-        this.W.sparks.emit({ pos: [hp.x, hp.y, hp.z], count: 50, radial: [1, 2.6], life: [0.4, 1.0], size: [1, 2], color: ['#c86bff', '#ffffff', '#9aa3b2'], glow: 4, gravity: 4, drag: 1 });
-        this.debris.spawn({ pos: [hp.x, hp.y, hp.z], count: 14, colors: ['#9aa3b2', '#5b6170', '#c86bff'], speed: 1.4, up: 2, life: 1.4, floor: this.floorY + 0.02, scale: [0.4, 0.9] });
-        this.char.hold(null);
-        this.char.setExpression('sad');
+        this.shake(2);
+        this.pickMesh.updateWorldMatrix(true, true);
+        this.shards = shatterPieces(this.pickMesh, this.world.scene, { power: 1.4 });
+        this.hero.hold(null);
+        this.hero.play('defeat');
         this.speak(bark(run.char, 'shatter'), 2);
         run.stats.shattered = (run.stats.shattered || 0) + 1;
         save.data.stats.weaponsShattered++; save.write();
-        yield 1.2;
-        this.equipPick(['junk']);
-        this.char.play('idle', { loop: true });
-        this.char.setExpression('neutral');
+        yield 1.5;
       }
-      this.summary = true;
-      if (this.tray.length) { this.char.play('cheer', { loop: false }); au && au.play('coins'); }
+      if (this.tray.length) { au.play('coins'); this.hero.play('cheer'); this.cartBump = 1; yield 0.6; }
+      this.phase = 'leaving';
+      this.collect();
     }.bind(this));
   }
-
   collect() {
     const game = this.game, run = game.run;
     const items = this.mr ? this.mr.haul : [];
     for (const it of items) run.bag.toOverflow(it);
     run.stats.mined += items.length;
     save.data.stats.oresMined += items.length; save.write();
-    this.summary = false;
-    if (items.length) openBag(game, { title: 'Your Haul', onClose: () => finish(game) });
+    if (run.bag.overflow.length) openBag(game, { title: 'Your Haul', onClose: () => finish(game) });
     else finish(game);
   }
 
-  // ------------------------------------------------------------------ frame
-  screenOf(v) { return this.W.rig.project(v, this.game.ui.w, this.game.ui.h); }
-
+  // ------------------------------------------------------------------ update
   update(dt) {
-    const t = this.time;
-    this.W.rig.update(dt);
-    this.set.update && this.set.update(dt, t);
-    this.char.update(dt);
-    this.W.sparks.update(dt);
-    this.W.dust.update(dt);
-    this.debris.update(dt);
-    if (this.shards) updateShards(this.shards, dt, this.floorY + 0.02);
-    this.forge && this.forge.update(dt);
-    if (this.say && !this.forge) { this.say.t -= dt; if (this.say.t <= 0) this.say = null; }
-    // tile wobble
-    for (let y = 0; y < MINE_H; y++) for (let x = 0; x < MINE_W; x++) {
-      const o = this.objs[y][x];
-      if (o.group && o.shake > 0) { o.shake -= dt; o.group.position.x = o.base.x + Math.sin(t * 90) * 0.012 * (o.shake / 0.25); }
-      else if (o.group && o.base) o.group.position.x = o.base.x;
-      if (o.scan > 0) o.scan -= dt;
-    }
-    // glints for rare ores / pockets
-    const reveal = (this.pick.reveal || this.flareT > 0);
-    if (Math.random() < 0.35) {
-      const x = rnd.int(0, MINE_W - 1), y = rnd.int(0, MINE_H - 1);
-      const tl = this.wall.tiles[y][x];
-      if (!tl.broken && tl.glint > 0 && Math.random() < 0.3 + tl.glint * 0.2) {
-        const p = this.tilePos(x, y);
-        const col = reveal ? RARITY[['common', 'uncommon', 'rare', 'epic', 'legendary'][tl.t === 'pocket' ? 2 : tl.glint]].color : '#fff6e0';
-        this.W.sparks.emit({ pos: [p.x + rnd.float(-0.12, 0.12), p.y + rnd.float(-0.12, 0.12), this.gz + 0.06], count: 1, life: 0.5, size: 2, sizeEnd: 1, color: col, glow: 5 });
+    const inp = this.game.input;
+    this.shakeT = Math.max(0, this.shakeT - dt);
+    this.cartBump = Math.max(0, this.cartBump - dt * 2);
+    if (this.say) { this.say.t -= dt; if (this.say.t <= 0) this.say = null; }
+    if (this.flareT > 0) this.flareT -= dt;
+    for (const k in this.shakes) { this.shakes[k] -= dt; if (this.shakes[k] <= 0) delete this.shakes[k]; }
+    if (this.reveal) { this.reveal.t += dt; if (this.reveal.t > 1.1) this.reveal = null; }
+    for (let i = this.impacts.length - 1; i >= 0; i--) { this.impacts[i].t += dt; if (this.impacts[i].t > 0.25) this.impacts.splice(i, 1); }
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      const p = this.parts[i];
+      p.t += dt; p.vy += 620 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      if (p.y > p.floor && p.vy > 0) {
+        if (p.vy > 90) { p.y = p.floor; p.vy *= -0.32; p.vx *= 0.55; p.vr *= 0.5; }
+        else { this.parts.splice(i, 1); this.rubble.push({ x: Math.round(p.x), y: Math.round(p.floor), img: p.img }); if (this.rubble.length > 140) this.rubble.shift(); continue; }
       }
+      if (p.t > 4) this.parts.splice(i, 1);
     }
-    // flare light
-    if (this.flareT > 0) {
-      this.flareT -= dt;
-      this.flareLight.intensity = 9 * clamp(this.flareT / 1.5, 0, 1) * (0.85 + Math.random() * 0.15);
-    } else this.flareLight.intensity = 0;
-    this.lantern.intensity = 5 * (0.92 + Math.sin(t * 7) * 0.04 + Math.random() * 0.04);
-    // flyers → tray
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i];
       f.t += dt;
-      if (f.t >= f.dur) { this.flyers.splice(i, 1); this.tray.push(f.item); this.game.audio && this.game.audio.play('card_place', { vol: 0.5 }); }
+      if (f.t >= f.dur) { this.flyers.splice(i, 1); this.tray.push(f.item); this.cartBump = 0.6; this.game.audio.play('card_place', { vol: 0.5, pitch: 0.7 }); }
     }
-    for (const r of this.reveals) r.t += dt;
-    this.reveals = this.reveals.filter((r) => r.t < 1.3);
-    // QTE
-    if (this.qte && !this.qte.done) {
+    if (this.qte) {
       this.qte.t += dt;
-      const inp = this.game.input;
-      if (inp.actionPressed('strike') || inp.pressed) { this.qte.done = true; this.qte.ok = this.qte.t <= this.qte.win; inp.consume(); }
-      else if (this.qte.t > this.qte.win) { this.qte.done = true; this.qte.ok = false; }
+      if (!this.qte.done && (inp.actionPressed('strike') || inp.pressed)) { this.qte.done = true; this.qte.ok = this.qte.t <= this.qte.win; inp.consume(); }
+      if (!this.qte.done && this.qte.t > this.qte.win + 0.15) { this.qte.done = true; this.qte.ok = false; }
     }
-    // camera breathing toward hovered column
-    if (this.phase === 'dig' || this.phase === 'done') {
-      const hx = this.hover ? (this.hover.x - 3) * 0.04 : 0;
-      this.W.rig.aim([this.camHome.pos[0] + hx, this.camHome.pos[1], this.camHome.pos[2]], [this.camHome.look[0] + hx, this.camHome.look[1], this.camHome.look[2]], this.camHome.fov, 2.5);
-    }
+    if (this.forge) this.forge.update(dt);
+    // lamp flicker, 3D dust, the explorer
+    const fl = Math.sin(this.time * 7.3) * 0.25 + Math.sin(this.time * 17.1) * 0.15;
+    this.lamp.intensity = 4.2 + fl;
+    this.flicker = fl;
+    this.hero.update(dt);
+    if (this.shards) updateShards(this.shards, dt, toWorld(0, FLOOR_Y + 6).y);
+    this.dust.update(dt); this.sparks.update(dt);
+    if (Math.random() < 0.5) this.dust.emit({ pos: [rnd.float(-4.6, 4.6), rnd.float(-2.4, 2.6), 0.5], vel: [0.03, 0.015, 0], spread: 0.02, life: [3, 6], size: 1, color: '#e8d0a8', alpha: 0.5, fadeIn: 1 });
   }
 
-  tileRect(x, y) {
-    const a = this.screenOf(new THREE.Vector3(this.origin.x + x * TILE, this.origin.y - y * TILE, this.gz + 0.03));
-    const b = this.screenOf(new THREE.Vector3(this.origin.x + (x + 1) * TILE, this.origin.y - (y + 1) * TILE, this.gz + 0.03));
-    return { x: Math.round(a.x), y: Math.round(a.y), w: Math.round(b.x - a.x), h: Math.round(b.y - a.y) };
+  // ------------------------------------------------------------------ draw
+  clueText(t) {
+    const lines = [];
+    if (t.t === 'hard') lines.push(t.hits ? '{warn}Cracked hard rock: one more swing!{/}' : 'Hard rock: takes {warn}two swings{/}.');
+    for (const dir of Object.keys(t.veins || {})) lines.push(`A vein runs {gold}${dir}{/} toward ore.`);
+    if (t.crack) lines.push('{bad}Red hairline cracks{/}: a hazard is next door.');
+    if (t.glint) lines.push(this.pick.reveal || this.flareT > 0 ? `{${['common', 'uncommon', 'rare', 'epic', 'legendary'][Math.min(4, t.glint)]}}Glinting{/}: something precious inside!` : '{white}It glints{/}: something rare inside!');
+    if (t.t === 'ore' && (t.revealed || this.exposed(t.x, t.y))) lines.push(`{${MATERIALS[t.mat].rarity}}${MATERIALS[t.mat].name}{/}`);
+    if ((t.revealed || this.flareT > 0) && t.t === 'hazard') lines.push('{bad}Hazard!{/}');
+    return lines.join('\n');
+  }
+  tag(ui, x, y, text, color = '#3a2214') {
+    const w = ui.measure(text) + 16;
+    const c = tagCanvas(w);
+    const bx = Math.round(clamp(x - c.width / 2, 4, ui.w - c.width - 4)), by = Math.round(y);
+    ui.img(c, bx, by);
+    ui.text(text, bx + 10, by + 11, { color });
   }
 
   draw(ui) {
-    const game = this.game, run = game.run, inp = game.input;
-    const h = hud(ui, game);
-    if (h.bagClicked && !this.busy && this.phase !== 'forging' && !this.summary) openBag(game, { title: 'Backpack' });
+    const ctx = ui.ctx, inp = this.game.input;
+    const sx = this.shakeT > 0 ? Math.round((Math.random() - 0.5) * this.shakeT * 16) : 0;
+    const sy = this.shakeT > 0 ? Math.round((Math.random() - 0.5) * this.shakeT * 10) : 0;
+    const busyUI = this.forge || this.qte || this.reveal || this.phase === 'shatter' || this.phase === 'leaving';
+    ctx.save();
+    ctx.translate(sx, sy);
 
-    // ---- tile overlays (clue helpers, exposed brackets, reveals)
-    const digging = this.phase === 'dig' || this.phase === 'done';
-    this.hover = null;
-    const blockedByUI = ui.overUI() || game.overlays.length || this.forge || this.qte || this.summary || this.tip;
-    const seeHaz = this.pick.seehaz || this.flareT > 0;
-    const ctx = ui.ctx;
+    // ---- rock face
+    ui.img(faceRim(this.geom), BOARD.x - 8, BOARD.y - 8);
+    const canDig = (this.phase === 'dig' || this.phase === 'prep') && !this.busy && !busyUI && !this.dead;
+    const hb = ui.hit('rockface', BOARD.x, BOARD.y, BOARD.w, BOARD.h, { sound: false, cursor: false });
+    const hover = hb.hover ? cellAt(this.geom, inp.x - BOARD.x, inp.y - BOARD.y) : null;
     for (let y = 0; y < MINE_H; y++) for (let x = 0; x < MINE_W; x++) {
       const t = this.wall.tiles[y][x];
-      if (t.broken) continue;
-      const r = this.tileRect(x, y);
+      const c = this.geom.cells[y][x];
+      if (t.broken) { ui.img(cavityCanvas(this.geom, x, y, this.pal), BOARD.x + c.bx, BOARD.y + c.by); continue; }
       const exp = this.exposed(x, y);
-      const inside = inp.x >= r.x && inp.y >= r.y && inp.x < r.x + r.w && inp.y < r.y + r.h;
-      if (inside && !blockedByUI) this.hover = { x, y, r };
-      if (t.revealed && t.t === 'ore') ui.img(materialSprite(t.mat, 16), r.x + r.w / 2 - 8, r.y + r.h / 2 - 8, { alpha: 0.75 });
-      if ((t.revealed || seeHaz) && t.t === 'hazard') ui.icon('cross', r.x + r.w / 2 - 3, r.y + r.h / 2 - 3, { alpha: 0.85 });
-      if (t.marked) ring(ctx, r.x + r.w / 2, r.y + r.h / 2, r.w * 0.42 + Math.sin(this.time * 6) * 1.5, '#7aff8a', 1, 0.9);
-      const o = this.objs[y][x];
-      if (o.scan > 0) ui.rect(r.x + 1, r.y + Math.round((1 - o.scan / 0.6) * r.h), r.w - 2, 1, '#7affc8', 0.8);
-      if (digging && exp && this.mr && this.mr.strikes > 0) {
-        const a = 0.35 + Math.sin(this.time * 4 + x + y) * 0.15;
-        corners(ctx, r, '#ffe08a', a, 2);
+      const isHover = hover && hover.x === x && hover.y === y && canDig && (exp || (this.tool && TOOL_USE[this.tool.id] === 'scan'));
+      const sk = this.shakes[x + ',' + y] ? Math.round(Math.sin(this.time * 90) * 2) : 0;
+      ui.img(stoneCanvas(this.geom, t, this.pal, { exposed: exp, dim: !exp, flare: this.flareT > 0, hover: isHover }), BOARD.x + c.bx + sk, BOARD.y + c.by - (isHover ? 1 : 0));
+    }
+    if (hover && canDig) {
+      const t = this.wall.tiles[hover.y][hover.x];
+      const exp = this.exposed(hover.x, hover.y);
+      ui.cursor = exp || this.tool ? 'hand' : 'arrow';
+      if (!t.broken) {
+        const clue = this.clueText(t);
+        if (clue) ui.tooltip({ body: clue, w: 190 });
+      }
+      if (hb.clicked) {
+        if (this.tool) { if (this.phase === 'prep') this.startDig(); this.useTool(this.tool, hover.x, hover.y); }
+        else if (exp) this.strikeTile(hover.x, hover.y);
+        else if (!t.broken) { this.game.audio.play('deny'); this.speak('Can\'t reach that one yet. Dig down to it.', 1.6); }
       }
     }
-    const hv = this.hover;
-    if (hv) {
-      const t = this.wall.tiles[hv.y][hv.x];
-      const exp = this.exposed(hv.x, hv.y);
-      const toolTarget = this.tool && TARGETED[TOOL_USE[this.tool.id]];
-      if (digging && (exp || (toolTarget && TOOL_USE[this.tool.id] === 'scan'))) {
-        corners(ctx, hv.r, this.tool ? '#7affc8' : '#ffffff', 1, 3);
-        ui.cursor = 'hand';
-        if (this.tool && TOOL_USE[this.tool.id] === 'blast') { const big = { x: hv.r.x - hv.r.w, y: hv.r.y - hv.r.h, w: hv.r.w * 3, h: hv.r.h * 3 }; corners(ctx, big, '#ff8a3a', 0.8, 3); }
-        if (this.tool && TOOL_USE[this.tool.id] === 'drill') { const col = { x: hv.r.x, y: hv.r.y, w: hv.r.w, h: hv.r.h * Math.min(4, MINE_H - hv.y) }; corners(ctx, col, '#ffe08a', 0.8, 3); }
-      }
-      ui.tooltip(this.clueText(t, exp));
-      if (inp.pressed && !inp.consumed && digging && !this.busy) {
-        if (this.tool) { if (exp || TOOL_USE[this.tool.id] === 'scan') { inp.consume(); this.useTool(this.tool, hv.x, hv.y); } }
-        else if (exp && this.mr.strikes > 0) { inp.consume(); this.strikeTile(hv.x, hv.y); }
-        else if (!exp) { game.audio && game.audio.play('deny'); ui.float('Dig down to it first!', inp.x, inp.y - 8, { color: COLORS.dim, life: 0.8 }); }
-      }
-    }
-    if (inp.rpressed || inp.actionPressed('back')) this.tool = null;
-
-    // ---- speech bubble
-    if (this.say && !this.forge) {
-      const hp = this.screenOf(this.char.headPos ? this.char.headPos() : this.char.group.position.clone().add(new THREE.Vector3(0, 1.4, 0)));
-      speech(ui, hp.x, hp.y - 4, this.say.text, { maxW: 110, alpha: Math.min(1, this.say.t * 3) });
+    // impact stars
+    for (const im of this.impacts) {
+      const k = im.t / 0.25, r = Math.round(4 + k * 14);
+      ctx.globalAlpha = 1 - k;
+      ui.rect(im.x - r, im.y, r * 2 + 1, 1, '#fff6d0');
+      ui.rect(im.x, im.y - r, 1, r * 2 + 1, '#fff6d0');
+      ui.rect(im.x - 1, im.y - 1, 3, 3, '#ffffff');
+      ctx.globalAlpha = 1;
     }
 
-    if (!this.forge) { this.drawStrikes(ui); this.drawTools(ui); }
-    this.drawTray(ui);
-    this.drawFlyers(ui);
-    this.drawReveals(ui);
-
-    // ---- phase panels
-    if (this.phase === 'prep') this.drawPrep(ui);
-    if (this.phase === 'dig' && this.mr) {
-      if (ui.button('mine-leave', ui.w - 84, ui.h - 24, 80, 20, 'Pack Up', { style: 'stone', icon: 'bag', tip: 'Stop digging and keep what you found. Remaining strikes are lost.' })) this.packUp();
+    // ---- props
+    this.drawAnvil(ui);
+    this.drawCrate(ui);
+    this.drawCart(ui);
+    this.drawSlate(ui);
+    // rubble at the foot of the wall, then debris in flight
+    for (const r of this.rubble) ui.img(r.img, r.x - (r.img.width >> 1), r.y - r.img.height + 2);
+    for (const p of this.parts) {
+      ctx.save();
+      ctx.translate(Math.round(p.x), Math.round(p.y));
+      ctx.rotate(Math.round(p.rot * 4) / 4);
+      ctx.drawImage(p.img, -p.img.width / 2, -p.img.height / 2);
+      ctx.restore();
     }
-    if (this.phase === 'done' && !this.busy) {
-      const pulse = Math.sin(this.time * 5) > 0;
-      if (ui.button('mine-pack', ui.w - 94, ui.h - 26, 90, 22, 'Pack Up', { style: pulse ? 'gold' : 'wood', icon: 'bag' })) this.packUp();
-      ui.text('{gold}Out of strikes!{/}', ui.w / 2, ui.h - 74, { align: 'center', outline: '#140c10' });
-    }
-    if (this.tool) ui.text(`{#7affc8}Click a tile to use ${MATERIALS[this.tool.id].name}{/} {dim}(right-click to cancel){/}`, ui.w / 2, 40, { align: 'center', outline: '#140c10' });
-    if (this.forge) this.forge.draw(ui);
-    if (this.qte) this.drawQte(ui);
-    if (this.tip && (this.phase === 'prep' || this.phase === 'dig')) this.drawTip(ui);
-    if (this.summary) this.drawSummary(ui);
-  }
-
-  clueText(t, exp) {
-    const lines = [];
-    const veinDirs = Object.entries(t.veins || {});
-    if (t.t === 'hard') lines.push(t.hits ? '{warn}Cracked hard rock: one more hit!{/}' : 'Hard rock: takes {warn}2 strikes{/}.');
-    for (const [dir, col] of veinDirs) lines.push(`{${col}}•••{/} vein: ore lies {gold}${dir === 'up' ? 'above' : dir === 'down' ? 'below' : 'to the ' + dir}{/}.`);
-    if (t.crack) lines.push('{bad}Hairline cracks{/}: a hazard is next to this.');
-    if (t.glint) lines.push(this.pick.reveal || this.flareT > 0 ? `{${RARITY[['common', 'uncommon', 'rare', 'epic', 'legendary'][Math.min(4, t.glint)]].color}}Glinting{/}: something precious inside!` : '{white}It glints{/}: something rare inside!');
-    if (t.t === 'ore' && exp && MATERIALS[t.mat] && (t.revealed || this.flareT > 0)) lines.push(`Ore: {${MATERIALS[t.mat].rarity}}${MATERIALS[t.mat].name}{/}`);
-    else if (t.t === 'ore' && exp) lines.push('{gold}Ore pokes out of the rock!{/}');
-    if (t.revealed && t.t === 'hazard') lines.push('{bad}Hazard!{/}');
-    if (!lines.length) lines.push('Plain rock.');
-    lines.push(exp ? (this.phase === 'dig' ? '{good}Click to strike.{/}' : '{dim}Exposed — strikable.{/}') : '{dim}Not reachable yet: dig next to it.{/}');
-    return { title: t.t === 'hard' ? 'Hard Rock' : 'Rock', body: lines.join('\n'), w: 170 };
-  }
-
-  drawStrikes(ui) {
-    if (this.phase === 'intro') return;
-    const total = 3 + (this.pick.strikes || 0);
-    const left = this.mr ? this.mr.strikes : total;
-    const w = total * 11 + 54;
-    const x = Math.round(ui.w / 2 - w / 2), y = ui.h - 52;
-    ui.panel('leather', x, y, w, 20, { stitch: false, rivets: false, tone: 'dark' });
-    ui.text('Strikes', x + 6, y + 6, { color: COLORS.white, outline: '#140c10', outlineShadow: false });
-    for (let i = 0; i < total; i++) ui.icon('pickaxe', x + 46 + i * 11, y + 5, { alpha: i < left ? 1 : 0.25 });
-    if (this.pickName) ui.text(`{gold}${this.pickName}{/}`, ui.w / 2, y - 11, { align: 'center', outline: '#140c10', outlineShadow: false });
-  }
-
-  drawTools(ui) {
-    if (this.phase === 'intro' || this.summary) return;
-    const tools = this.game.run.bag.all().filter((it) => TOOL_IDS.includes(it.id));
-    if (!tools.length) return;
-    const cell = 22;
-    const x0 = Math.round(ui.w / 2 - (tools.length * (cell + 4)) / 2), y = ui.h - 28;
-    tools.forEach((it, i) => {
-      const x = x0 + i * (cell + 4);
-      const sel = this.tool === it;
-      ui.panel('slot', x, y, cell, cell, { tone: 'dark', glow: sel ? '#7affc8' : '' });
-      const spr = itemSprite(it.id, 11, 0);
-      ui.img(spr, x + Math.round((cell - spr.width) / 2), y + Math.round((cell - spr.height) / 2) - (sel ? 1 : 0));
-      const hh = ui.hit('mtool' + it.uid, x, y, cell, cell);
-      if (hh.hover) ui.tooltip(itemTooltip(it));
-      if (hh.clicked && (this.phase === 'dig' || this.phase === 'done') && !this.busy) {
-        const use = TOOL_USE[it.id];
-        if (!TARGETED[use]) this.useTool(it, 0, 0);
-        else this.tool = sel ? null : it;
-        this.game.audio && this.game.audio.play('click');
-      } else if (hh.clicked && (this.phase === 'prep' || this.phase === 'intro')) ui.toast('Start digging first.', { icon: 'pickaxe' });
+    // lanterns and their warm pools
+    LANTERNS.forEach((l, i) => {
+      const f = Math.floor(this.time * 9 + i * 2) % 4;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.55 + (this.flicker || 0) * 0.3;
+      ctx.drawImage(glowCanvas(70), l.x - 69, l.y - 60);
+      ctx.restore();
+      ui.img(lanternCanvas(f), l.x - 9, l.y - 14);
     });
-    ui.text('Tools {dim}(free){/}', x0 - 4, y + 7, { align: 'right', outline: '#140c10', outlineShadow: false });
-  }
+    ctx.restore();
 
-  drawTray(ui) {
-    if (this.phase === 'intro') return;
-    const cols = 4, cell = 22;
-    const n = Math.max(1, this.tray.length + this.flyers.length);
-    const rows = Math.max(2, Math.ceil(n / cols));
-    const w = cols * cell + 12, hgt = rows * cell + 22;
-    const x = ui.w - w - 4, y = 26;
-    this.trayBox = { x, y, w, h: hgt, cell, cols };
-    ui.panel('wood', x, y, w, hgt, { tone: 'dark', nails: false });
-    ui.text(`Haul {gold}${this.tray.length}{/}`, x + 6, y + 6, { outline: '#140c10', outlineShadow: false });
-    this.tray.forEach((it, i) => {
-      const cx = x + 6 + (i % cols) * cell, cy = y + 18 + Math.floor(i / cols) * cell;
-      ui.img(materialSprite(it.id, 20), cx + 1, cy + 1);
-      const hh = ui.hit('mtray' + it.uid, cx, cy, cell, cell, { cursor: 'arrow', sound: false });
-      if (hh.hover) ui.tooltip(itemTooltip(it));
-    });
-  }
-
-  drawFlyers(ui) {
-    if (!this.trayBox) return;
-    const B = this.trayBox;
+    // ore flying into the cart
     for (const f of this.flyers) {
-      const k = f.t / f.dur;
-      const tx = B.x + 6 + (f.slot % B.cols) * B.cell + 1, ty = B.y + 18 + Math.floor(f.slot / B.cols) * B.cell + 1;
-      // pop up first, then arc into the tray
-      const pop = Math.min(1, k / 0.3);
-      const fly = ease.inOutCubic(clamp((k - 0.3) / 0.7, 0, 1));
-      const x = f.x0 + (tx - f.x0) * fly;
-      const y = f.y0 - 18 * ease.outBack(pop) * (1 - fly) + (ty - f.y0) * fly - Math.sin(fly * Math.PI) * 30;
-      const s = fly < 1 ? 1 : 1;
-      const spr = materialSprite(f.item.id, 24);
-      if (k < 0.3) { const r = RARITY[matOf(f.item).rarity]; ring(ui.ctx, x + 12, y + 12, 6 + pop * 8, r.color, 1, 1 - pop); }
-      ui.img(spr, Math.round(x - 2), Math.round(y - 2), { scale: s });
-      if (rnd.chance(0.5)) ui.burst(x + 12, y + 12, 1, { colors: [matOf(f.item).color, '#ffffff'], speed: 15, gravity: 20, life: 0.4, kind: 'star' });
+      const k = ease.inOutCubic(Math.min(1, f.t / f.dur));
+      const tx = PROPS.cart.x + 66, ty = PROPS.cart.y + 14;
+      const x = f.x0 + (tx - f.x0) * k, y = f.y0 + (ty - f.y0) * k - Math.sin(k * Math.PI) * 90;
+      ui.img(materialSprite(f.item.id, 32), x - 16, y - 16, { rot: Math.round(f.t * f.spin * 4) / 4 });
+    }
+    // speech from the explorer
+    if (this.say) { const h = this.headScreen(); speech(ui, h.x, h.y, this.say.text, { maxW: 180, alpha: clamp(this.say.t * 3, 0, 1) }); }
+    this.drawVitals(ui);
+    if (this.phase === 'prep' && !this.forge && !this.noteOpen) {
+      const bob = Math.round(Math.sin(this.time * 3) * 2);
+      this.tag(ui, BOARD.x + BOARD.w / 2, 2 + bob, 'Swing at the top stones');
+    }
+    this.drawNote(ui);
+    if (this.tool && !busyUI) {
+      this.tag(ui, inp.x + 4, inp.y + 14, `${MATERIALS[this.tool.id].name}: click a stone`, '#14503a');
+      if (inp.rpressed) this.tool = null;
+    }
+    if (this.reveal) this.drawReveal(ui);
+    if (this.qte) this.drawQte(ui);
+    if (this.forge) this.forge.draw(ui);
+  }
+
+  drawVitals(ui) {
+    // just a heart and a purse: no panels
+    const run = this.game.run;
+    ui.icon('heart', 10, 10);
+    ui.text(`${run.hp}/${run.maxHp}`, 26, 11, { color: run.hp < run.maxHp * 0.3 ? '#ff7a6a' : '#ffd8c8', outline: '#140c10' });
+    ui.icon('coin', 82, 10);
+    ui.text(String(run.coins), 98, 11, { color: COLORS.gold, outline: '#140c10' });
+  }
+
+  drawAnvil(ui) {
+    const { x, y } = PROPS.anvil;
+    const can = this.phase === 'prep' && !this.pickName && !this.forge;
+    const canForge = can && this.game.run.bag.items.some((it) => matOf(it).pick && Object.keys(matOf(it).pick).length && matOf(it).kind !== 'tool');
+    const h = ui.hit('anvil', x, y, 72, 58, { sound: false, cursor: canForge ? 'hand' : 'arrow' });
+    ui.img(anvilCanvas(h.hover && canForge), x, y - (h.hover && canForge ? 1 : 0));
+    if (canForge && Math.sin(this.time * 4) > 0.6) ui.burst(x + 34 + rnd.float(-12, 12), y + 10, 1, { colors: ['#ffd27a', '#fff0b0'], speed: 30, gravity: 60, kind: 'spark', life: 0.4 });
+    if (h.hover && !this.forge) {
+      this.tag(ui, x + 36, y - 26, this.pickName ? this.pickName : canForge ? 'Forge a pickaxe' : can ? 'No pick materials' : 'Busy digging');
+      if (this.pickName) { const effs = Object.entries(this.pick).filter(([k, v]) => v && PICK_TEXT[k]).map(([k, v]) => PICK_TEXT[k](v)); if (effs.length) ui.tooltip({ title: this.pickName, body: effs.join('\n'), w: 170 }); }
+      else if (canForge) ui.tooltip({ body: 'Spend materials on a pickaxe: more swings and wild effects. The curse shatters it when you leave.', w: 180 });
+    }
+    if (h.clicked && canForge) this.openPickForge();
+  }
+
+  drawCrate(ui) {
+    const { x, y } = PROPS.crate;
+    const tools = this.game.run.bag.all().filter((it) => TOOL_IDS.includes(it.id)).slice(0, 4);
+    ui.img(crateCanvas('back'), x, y);
+    tools.forEach((it, i) => {
+      if (this.tool === it) return;
+      const tx = x + 8 + i * 20, ty = y - 6 + (i % 2) * 3;
+      const h = ui.hit('tool' + it.uid, tx, ty, 24, 28, { sound: false });
+      const lift = h.hover ? 5 : 0;
+      ui.img(materialSprite(it.id, 32), tx - 4, ty - lift, { rot: (i - 1.5) * 0.12 });
+      if (h.hover) this.tag(ui, tx + 12, ty - 30, MATERIALS[it.id].name);
+      if (h.clicked) {
+        if ((this.phase === 'dig' || this.phase === 'prep') && !this.busy) { this.tool = it; this.game.audio.play('card_pick'); this.hero.play('point'); }
+        else this.game.audio.play('deny');
+      }
+    });
+    ui.img(crateCanvas('front'), x, y);
+    if (!tools.length && ui.hit('crate', x, y + 18, 96, 44, { sound: false, cursor: false }).hover) this.tag(ui, x + 48, y - 8, 'No tools packed');
+    if (this.tool) {
+      const bob = Math.sin(this.time * 4) * 3;
+      ui.img(glowCanvas(18, '#9affc8'), x + 30, y - 46 + bob, { alpha: 0.6 });
+      ui.img(materialSprite(this.tool.id, 32), x + 32, y - 42 + bob);
     }
   }
 
-  drawReveals(ui) {
-    const r = this.reveals[0];
-    if (!r) return;
-    const k = r.t / 1.3;
-    const m = matOf(r.item);
-    const R = RARITY[m.rarity];
-    const cx = ui.w / 2, cy = ui.h / 2 - 20;
-    const a = k < 0.15 ? k / 0.15 : k > 0.8 ? (1 - k) / 0.2 : 1;
-    const ctx = ui.ctx;
-    // pixel sun rays
-    ctx.globalAlpha = a * 0.5;
-    ctx.fillStyle = R.color;
-    for (let i = 0; i < 12; i++) {
-      const ang = (i / 12) * Math.PI * 2 + r.t * 0.8;
-      for (let d = 30; d < 70; d += 3) ctx.fillRect(Math.round(cx + Math.cos(ang) * d), Math.round(cy + Math.sin(ang) * d), 2, 2);
+  drawCart(ui) {
+    const { x, y } = PROPS.cart;
+    const bump = Math.round(Math.sin(this.cartBump * 30) * this.cartBump * 3);
+    const canLeave = (this.phase === 'dig' || this.phase === 'done') && !this.busy;
+    const h = ui.hit('cart', x, y, 132, 86, { sound: false, cursor: canLeave ? 'hand' : 'arrow' });
+    ui.img(cartCanvas('back'), x, y + bump);
+    this.tray.forEach((it, i) => {
+      const row = Math.floor(i / 4), col = i % 4;
+      const px = x + 16 + col * 24 + (row % 2) * 12 - row, py = y + bump + 2 - row * 8 + ((i * 7) % 5);
+      ui.img(materialSprite(it.id, 32), px, py, { rot: ((i * 37) % 7 - 3) * 0.08 });
+    });
+    ui.img(cartCanvas('front'), x, y + bump);
+    if (this.phase === 'done' && Math.sin(this.time * 5) > 0) ui.img(glowCanvas(30, '#ffd27a'), x + 36, y + 2, { alpha: 0.35 });
+    if (h.hover) {
+      const worth = this.tray.reduce((a, it) => a + Math.round(matOf(it).value * [0.6, 0.8, 1, 1.25, 1.5][it.q]), 0);
+      this.tag(ui, x + 66, y - 30, canLeave ? (this.phase === 'done' ? 'Push off with the haul' : 'Pack up early?') : this.tray.length ? 'The haul' : 'Empty cart');
+      if (this.tray.length) ui.tooltip({ title: `Haul · ${worth} coins`, body: this.tray.map((it) => `{${matOf(it).rarity}}${matOf(it).name}{/}`).join('\n'), w: 160 });
+      if (h.clicked && canLeave) this.packUp();
     }
-    ctx.globalAlpha = 1;
-    const card = materialCard(r.item);
-    const s = 2;
-    ui.img(card, cx - (card.width * s) / 2, cy - (card.height * s) / 2 + (1 - ease.outBack(Math.min(1, k * 5))) * 20, { scale: s, alpha: a });
-    ui.ctx.globalAlpha = a;
-    ui.text(`${R.name.toUpperCase()}!`, cx, cy + 72, { align: 'center', color: R.color, outline: '#140c10', thick: true });
-    ui.ctx.globalAlpha = 1;
   }
 
-  drawPrep(ui) {
-    const w = 226, h = 96;
-    const tb = this.trayBox;
-    const x = ui.w - w - 4, y = tb ? tb.y + tb.h + 6 : 100;
-    ui.panel('parchment', x, y, w, h, { seed: 4 });
-    ui.text('Mining Spot', x + w / 2, y + 8, { align: 'center', color: '#3a2618' });
-    const effs = Object.entries(this.pick).filter(([k, v]) => v && PICK_TEXT[k]).map(([k, v]) => inkify(PICK_TEXT[k](v)));
-    if (this.pickName) {
-      ui.text(`{#7a3a10}${this.pickName}{/}`, x + 12, y + 22, { color: '#3a2618' });
-      ui.text(effs.join(' · ') || 'Sturdy.', x + 12, y + 33, { color: '#4a3220', maxW: w - 24, font: 'body' });
-    } else {
-      ui.text('Your trusty old pick: {#7a3a10}3 strikes{/}.\nForge a pickaxe from ore for more strikes\nand wild effects. It will shatter after.', x + 12, y + 22, { color: '#4a3220', maxW: w - 24 });
-    }
-    const canForge = !this.pickName && this.game.run.bag.all().some((it) => matOf(it).pick && Object.keys(matOf(it).pick).length);
-    if (ui.button('mine-forge', x + 12, y + h - 28, 100, 20, 'Forge Pickaxe', { style: 'iron', icon: 'hammer', disabled: !canForge, tip: this.pickName ? 'Already forged.' : canForge ? 'Spend materials on a pickaxe.' : 'No materials with pickaxe effects.' })) this.openPickForge();
-    if (ui.button('mine-start', x + w - 112, y + h - 28, 100, 20, 'Start Digging', { style: 'gold', icon: 'pickaxe' }) || this.game.input.actionPressed('confirm')) this.startDig();
+  drawSlate(ui) {
+    const { x, y } = PROPS.slate;
+    const total = this.mr ? this.mr.strikes + this.mr.used : 3 + (this.pick.strikes || 0);
+    const left = this.mr ? this.mr.strikes : total;
+    const sway = Math.round(Math.sin(this.time * 1.3) * 1);
+    ui.img(slateCanvas(total, left), x + sway, y);
+    if (ui.hit('slate', x, y + 10, 104, 62, { sound: false, cursor: false }).hover) this.tag(ui, x + 52, y + 74, `${left} swing${left === 1 ? '' : 's'} left`);
+  }
+
+  drawNote(ui) {
+    const { x, y } = PROPS.note;
+    const h = ui.hit('note', x, y, 48, 40, { sound: false });
+    ui.img(noteCanvas(48, 40, 7), x, y, { rot: -0.08 });
+    for (let i = 0; i < 4; i++) ui.rect(x + 9, y + 14 + i * 6, 22 + ((i * 7) % 9), 1, '#7a5634', 0.8);
+    if (h.clicked) { if (this.noteOpen) this.closeNote(); else this.noteOpen = true; this.game.audio.play('page'); }
+    if (!(h.hover || this.noteOpen) || this.forge) return;
+    const W = 250, H = 168, nx = ui.w - W - 6, ny = y + 34;
+    ui.img(noteCanvas(W, H, 11), nx, ny);
+    ui.text('Notes on the rock', nx + W / 2, ny + 14, { align: 'center', color: '#6a2a10' });
+    ui.text('Swing at the {#7a3a10}top row{/} first, then\nany stone that borders a hole.\n\n{#2a6a5a}Coloured veins{/} lead toward hidden ore.\nA {#8a6a10}glint{/} means something rare.\n{#a02020}Red hairline cracks{/}: hazard next door.\n{#5a5a6a}Hard rock{/} needs two swings.\nThe {#7a3a10}deeper{/} the stone, the better the ore.', nx + 14, ny + 30, { color: '#4a2c16', maxW: W - 28 });
+    if (this.noteOpen && !h.hover) ui.text('(click the note to put it away)', nx + W / 2, ny + H - 14, { align: 'center', font: 'small', color: '#7a5634' });
+  }
+
+  drawReveal(ui) {
+    const r = this.reveal, k = Math.min(1, r.t / 0.25), out = Math.max(0, (r.t - 0.8) / 0.3);
+    dim(ui, 0.4 * (1 - out));
+    const m = matOf(r.item), col = RARITY[m.rarity].color;
+    const cx = BOARD.x + BOARD.w / 2, cy = BOARD.y + BOARD.h / 2 - 10;
+    const s = Math.max(1, Math.round(ease.outBack(k) * 3));
+    ui.ctx.save();
+    ui.ctx.globalCompositeOperation = 'lighter';
+    ui.ctx.globalAlpha = 0.9 * (1 - out);
+    ui.ctx.drawImage(glowCanvas(56, col), cx - 56, cy - 56);
+    ui.ctx.restore();
+    ui.img(materialSprite(r.item.id, 32), cx - 16 * s, cy - 16 * s, { scale: s, alpha: 1 - out });
+    ui.big(RARITY_WORD[r.r], cx, cy - 70, { scale: 3, top: '#ffffff', bottom: col, alpha: 1 - out });
+    ui.text(m.name, cx, cy + 56, { align: 'center', color: col, outline: '#140c10' });
   }
 
   drawQte(ui) {
     const q = this.qte;
-    dim(ui, 0.25);
-    const cx = ui.w / 2, cy = ui.h / 2 - 10;
+    dim(ui, 0.2);
+    const cx = HERO.x + 40, cy = HERO.y - 110;
     const k = clamp(q.t / q.win, 0, 1);
-    ui.big('DODGE!', cx, cy - 26, { scale: 3, top: '#fff0d0', bottom: '#ff8a3a' });
-    prompt(ui, cx - 30, cy, 'SPACE', 'or click!', this.time, { mouse: 'mouseL' });
-    ui.panel('slot', cx - 50, cy + 18, 100, 7, { tone: 'dark' });
-    ui.rect(cx - 49, cy + 19, Math.round(98 * (1 - k)), 5, k > 0.7 ? '#ff5d5d' : '#ffe08a');
+    ui.big('DODGE!', cx, cy - 40, { scale: 3, top: '#fff0d0', bottom: '#ff8a3a' });
+    ring(ui.ctx, cx, cy + 12, 40 * (1 - k) + 8, k > 0.85 ? '#ff5d5d' : '#ffe08a', 2, 1);
+    ring(ui.ctx, cx, cy + 12, 8, '#ffffff', 1, 0.8);
+    prompt(ui, cx - 40, cy + 50, 'SPACE', 'or click!', this.time, { mouse: 'mouseL' });
   }
-
-  drawTip(ui) {
-    const w = 250, h = 104, x = Math.round(ui.w / 2 - w / 2), y = 40;
-    ui.panel('parchment', x, y, w, h, { seed: 9 });
-    ui.text('How to dig', x + w / 2, y + 8, { align: 'center', color: '#3a2618' });
-    ui.text('• Strike the {#7a3a10}top row{/}, then tiles next to holes.\n• {#7a3a10}Colored veins{/} point toward hidden ore.\n• {#7a3a10}Glints{/} mean something rare. Deeper = better.\n• {#a02020}Cracks{/} warn of hazards. Dark blocky rock\n  takes 2 strikes.', x + 10, y + 21, { color: '#4a3220', maxW: w - 20 });
-    if (ui.button('mine-tip', x + w - 64, y + h - 22, 56, 16, 'Got it', { style: 'wood', font: 'small' })) { this.tip = false; save.data.seen.tips.mining = true; save.write(); }
-  }
-
-  drawSummary(ui) {
-    dim(ui, 0.55);
-    const items = this.mr ? this.mr.haul : [];
-    const per = Math.min(items.length, 8);
-    const w = Math.max(200, per * 52 + 24), h = items.length > 8 ? 190 : 124;
-    const x = Math.round(ui.w / 2 - w / 2), y = Math.round(ui.h / 2 - h / 2);
-    ui.panel('leather', x, y, w, h);
-    ui.text(items.length ? 'Your Haul' : 'Nothing but dust…', x + w / 2, y + 10, { align: 'center', color: COLORS.gold, outline: '#140c10', outlineShadow: false });
-    items.forEach((it, i) => {
-      const cx = x + 12 + (i % 8) * 52, cy = y + 26 + Math.floor(i / 8) * 68;
-      if (Math.floor(i / 8) > 1) return;
-      const hh = ui.hit('msum' + it.uid, cx, cy, 48, 64, { sound: false });
-      drawCard(ui, materialCard(it), cx, cy, { hover: hh.hover });
-      if (hh.hover) ui.tooltip(itemTooltip(it));
-    });
-    if (ui.button('mine-collect', x + w / 2 - 50, y + h - 28, 100, 20, items.length ? 'Pack it up' : 'Move on', { style: 'gold', icon: 'bag' }) || this.game.input.actionPressed('confirm')) this.collect();
-  }
-}
-
-// bright UI colors are unreadable on parchment: swap them for ink tones
-const INK = { good: '#2a6a1a', shock: '#7a5a00', gold: '#8a4a00', fire: '#a83a0a', ice: '#1a5a8a', curse: '#6a2a90', warn: '#8a4a00', bad: '#a01818' };
-function inkify(str) { return str.replace(/\{(good|shock|gold|fire|ice|curse|warn|bad)\}/g, (m, k) => `{${INK[k]}}`); }
-
-function corners(ctx, r, color, alpha = 1, len = 3) {
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = color;
-  const { x, y, w, h } = r;
-  ctx.fillRect(x, y, len, 1); ctx.fillRect(x, y, 1, len);
-  ctx.fillRect(x + w - len, y, len, 1); ctx.fillRect(x + w - 1, y, 1, len);
-  ctx.fillRect(x, y + h - 1, len, 1); ctx.fillRect(x, y + h - len, 1, len);
-  ctx.fillRect(x + w - len, y + h - 1, len, 1); ctx.fillRect(x + w - 1, y + h - len, 1, len);
-  ctx.globalAlpha = 1;
-}
-function hashJit(x, y) { const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return s - Math.floor(s); }
-function shadeColor(hex) { return hex; }
-function disposeObj(o) {
-  o.traverse((c) => {
-    if (c.geometry) c.geometry.dispose();
-  });
 }

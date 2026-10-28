@@ -59,7 +59,7 @@ export function makeComposite() {
       outline: { value: 0.55 }, edge: { value: 0.35 }, useNormals: { value: 1 },
       depthSens: { value: 1.0 },
       bloom: { value: 0.7 },
-      exposure: { value: 1.0 }, contrast: { value: 1.06 }, saturation: { value: 1.12 },
+      exposure: { value: 1.0 }, tone: { value: 2.0 }, contrast: { value: 1.06 }, saturation: { value: 1.12 },
       lift: { value: new THREE.Vector3(0.012, 0.008, 0.03) },
       gain: { value: new THREE.Vector3(1.0, 0.98, 0.94) },
       vignette: { value: 0.35 },
@@ -74,7 +74,7 @@ export function makeComposite() {
       uniform vec2 resolution;
       uniform float cameraNear, cameraFar, ortho;
       uniform float outline, edge, useNormals, depthSens, bloom;
-      uniform float exposure, contrast, saturation, vignette, dither, levels;
+      uniform float exposure, tone, contrast, saturation, vignette, dither, levels;
       uniform vec3 lift, gain;
       uniform float fade, flash; uniform vec3 fadeColor, flashColor;
       uniform float time;
@@ -103,6 +103,12 @@ export function makeComposite() {
       vec3 aces(vec3 x) {
         const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
         return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+      }
+      // gentle shoulder: keeps lamp-lit colours rich instead of ACES' washed, grey highlights
+      vec3 softTone(vec3 x) {
+        vec3 k = vec3(0.7);
+        vec3 o = max(x - k, 0.0);
+        return min(x, k) + o / (1.0 + o / (1.0 - k));
       }
       vec3 toSRGB(vec3 c) {
         return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
@@ -141,7 +147,7 @@ export function makeComposite() {
         col += (texture2D(tBloomA, vUv).rgb * 0.6 + texture2D(tBloomB, vUv).rgb * 0.8) * bloom;
 
         col *= exposure;
-        col = aces(col);
+        col = tone > 1.5 ? softTone(col) : tone > 0.5 ? aces(col) : clamp(col, 0.0, 1.0);
         col = toSRGB(col);
         // grade
         col = col * gain + lift * (1.0 - col);

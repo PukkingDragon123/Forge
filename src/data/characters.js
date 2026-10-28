@@ -3,7 +3,7 @@ export const CHARACTERS = {
   bran: {
     id: 'bran', name: 'Bran', title: 'The Blacksmith', hp: 80, coins: 15,
     color: '#e07a3a', ribbon: 'red',
-    blurb: 'Big hands, bigger heart. Has never met an ore he couldn\'t make sing.',
+    blurb: 'A young blacksmith with a big heart and bigger hammer. Has never met an ore he couldn\'t make sing.',
     passives: [
       { name: 'Master Smith', icon: 'hammer', text: 'Metal ores give {chips}×1.5 Chips{/}. Alloy bonuses are {good}doubled{/}.' },
       { name: 'Perfect Rhythm', icon: 'star', text: 'Wider Perfect windows. Each Perfect strike adds {mult}+1 Mult{/}.' },
@@ -12,7 +12,7 @@ export const CHARACTERS = {
     start: ['iron', 'iron', 'iron', 'copper', 'copper', 'coal', 'tin'],
     blueprints: ['sword', 'hammer', 'axe'],
     playstyle: 'Big alloys, perfect hammering, sustain by salvaging.',
-    model: { skin: '#e8a878', hair: '#5a2a1a', cloth: '#7a4a2a', apron: '#4a3020', accent: '#c8743a', eyes: '#3a2a1a' },
+    model: { skin: '#f0c09a', hair: '#7a3a1e', cloth: '#e8dcc8', apron: '#5a3a24', accent: '#c8743a', eyes: '#3a7a5a' },
     barks: {
       start: ['Right. Let\'s make something worth breaking.', 'Hammer\'s warm. Let\'s go.'],
       mine: ['Ooh, listen to that ring!', 'That\'s good iron, that is.'],

@@ -177,13 +177,14 @@ export class Renderer {
     u.depthSens.value = p.depthSens ?? 1;
     u.bloom.value = bloom;
     u.exposure.value = p.exposure ?? 1;
-    u.contrast.value = p.contrast ?? 1.08;
-    u.saturation.value = p.saturation ?? 1.22;
-    u.vignette.value = p.vignette ?? 0.35;
-    u.dither.value = p.dither ?? 1;
-    u.levels.value = p.levels ?? 40;
-    if (p.lift) u.lift.value.set(...p.lift); else u.lift.value.set(0.02, 0.012, 0.05); // cool violet shadows
-    if (p.gain) u.gain.value.set(...p.gain); else u.gain.value.set(1.04, 0.99, 0.9); // warm storybook highlights
+    u.tone.value = p.tone ?? 2;
+    u.contrast.value = p.contrast ?? 1.05;
+    u.saturation.value = p.saturation ?? 1.1;
+    u.vignette.value = p.vignette ?? 0.28;
+    u.dither.value = p.dither ?? 0.55;
+    u.levels.value = p.levels ?? 56;
+    if (p.lift) u.lift.value.set(...p.lift); else u.lift.value.set(0.0, 0.022, 0.04); // deep teal shadows
+    if (p.gain) u.gain.value.set(...p.gain); else u.gain.value.set(1.05, 0.99, 0.87); // warm firelit highlights
     u.fade.value = p.fade ?? 0;
     if (p.fadeColor) u.fadeColor.value.set(...p.fadeColor); else u.fadeColor.value.set(0.027, 0.024, 0.043);
     this.flash = Math.max(0, this.flash - dt * 4);
