@@ -89,7 +89,7 @@ function sackSculpt(kit, mat, pos, s = 1, seed = 7) {
     fs.push(capsule(P(Math.cos(a) * 0.025, 0.38, Math.sin(a) * 0.025), P(Math.cos(a) * 0.075, h, Math.sin(a) * 0.075), 0.03 * s, 0.016 * s));
   }
   const f = floor(noisy(union(0.045 * s, ...fs), 0.008 * s, 16 / s, seed), pos[1]);
-  addSculpt(kit, [{ f, m: 'c' }], P(-0.27, -0.01, -0.27), P(0.27, 0.53, 0.27), 0.022 * s, { c: mat }, {}, { jitter: 0.14, seed });
+  addSculpt(kit, [{ f, m: 'c' }], P(-0.27, -0.01, -0.27), P(0.27, 0.53, 0.27), 0.03 * s, { c: mat }, {}, { jitter: 0.14, seed });
   kit.add(new THREE.TorusGeometry(0.06 * s, 0.015 * s, 4, 9), M.rope(), { pos: P(0, 0.36, 0), rot: [Math.PI / 2, 0, 0], uv: 'keep' });
   kit.add(tube([P(0.05, 0.36, 0.035), P(0.1, 0.3, 0.1), P(0.1, 0.21, 0.16)], 0.008 * s, 6, 3), M.rope(), { uv: 'raw' });
 }
@@ -831,7 +831,7 @@ const BUILDERS = {
       const trunk = [capsule([0, 0, 0], [0, 0.3, 0], 0.2, 0.175)];
       for (let i = 0; i < 5; i++) { const a = i * 1.26 + 0.3; trunk.push(capsule([Math.cos(a) * 0.3, 0.01, Math.sin(a) * 0.3], [Math.cos(a) * 0.14, 0.16, Math.sin(a) * 0.14], 0.035, 0.07)); }
       const stumpF = noisy(union(0.06, ...trunk), 0.012, 14, 4);
-      addSculpt(kit, [{ f: floor(keep((x, y, z) => Math.max(stumpF(x, y, z), y - 0.3), stumpF)), m: 'bark' }], [-0.36, -0.01, -0.36], [0.36, 0.31, 0.36], 0.028, { bark: M.bark('#5a3a22') }, {}, { jitter: 0.14 });
+      addSculpt(kit, [{ f: floor(keep((x, y, z) => Math.max(stumpF(x, y, z), y - 0.3), stumpF)), m: 'bark' }], [-0.36, -0.01, -0.36], [0.36, 0.31, 0.36], 0.036, { bark: M.bark('#5a3a22') }, {}, { jitter: 0.14 });
       const top = new THREE.CircleGeometry(0.17, 9); top.rotateX(-Math.PI / 2);
       kit.add(top, M.end(), { pos: [0, 0.302, 0], uv: 'keep' });
       // the anvil silhouette: horn, waist, heel
@@ -1050,7 +1050,7 @@ const BUILDERS = {
       }
       parts.push({ f: ellipsoid([0, 1.8, 0.07], [0.12, 0.14, 0.1]), m: 'shadow' });
       parts.push({ f: keep((x, y, z) => Math.max(folded(x, y, z) - 0.016, y - 0.62 - (noise3(x * 8, y * 8, z * 8, 4) - 0.5) * 0.4), folded, 0.02), m: 'moss' });
-      addSculpt(kit, parts, [-0.52, 0.3, -0.4], [0.52, 2.2, 0.45], 0.045, { stone: M.stone(stoneTint(t0), 4), shadow: flatMat('#14121a'), moss: M.cloth('#5a7a3a') }, { per: { shadow: { uv: 'raw' } } }, { k: 0.02, jitter: 0.15 });
+      addSculpt(kit, parts, [-0.52, 0.3, -0.4], [0.52, 2.2, 0.45], 0.05, { stone: M.stone(stoneTint(t0), 4), shadow: flatMat('#14121a'), moss: M.cloth('#5a7a3a') }, { per: { shadow: { uv: 'raw' } } }, { k: 0.02, jitter: 0.15 });
       for (const sx of [-0.045, 0.045]) kit.add(chamferBox(0.035, 0.018, 0.02, 0.004), glowMat(eye, 2.6), { pos: [sx, 1.84, 0.175], uv: 'raw' });
       kit.add(lathe([[0.001, 1.22], [0.035, 1.21], [0.035, 1.17], [0.001, 1.16]], 6), flatMat('#c8a040'), { pos: [0, 0, 0.34], uv: 'raw' });
       stick(kit, [0, 1.04, 0.34], [0, 1.17, 0.34], 0.018, M.leather('#5a3a2a'), 6, 1, 3);
@@ -1075,7 +1075,7 @@ const BUILDERS = {
         sphere([0, 0.7, 0.72], 0.13), ellipsoid([0, 0.72, 0.5], [0.27, 0.06, 0.12]),
         capsule([-0.2, 0.74, 0.44], [0.08, 0.79, 0.14], 0.055, 0.045), capsule([0.2, 0.74, 0.44], [-0.08, 0.79, 0.14], 0.055, 0.045),
         ellipsoid([-0.08, 0.68, -0.9], [0.06, 0.09, 0.05]), ellipsoid([0.08, 0.68, -0.9], [0.06, 0.09, 0.05]));
-      addSculpt(kit, [{ f: floor(noisy(fig, 0.008, 14, 2), 0.635), m: 'lid' }], [-0.32, 0.62, -1.0], [0.32, 0.9, 0.9], 0.032, { lid }, {}, { jitter: 0.12 });
+      addSculpt(kit, [{ f: floor(noisy(fig, 0.008, 14, 2), 0.635), m: 'lid' }], [-0.32, 0.62, -1.0], [0.32, 0.9, 0.9], 0.04, { lid }, {}, { jitter: 0.12 });
       kit.add(extrude(shape([[-0.035, 0], [0.035, 0], [0.025, -0.8], [0, -0.88], [-0.025, -0.8]]), 0.02, 0.004), M.metal('#5a5470', 0.2), { pos: [0, 0.79, 0.16], rot: [Math.PI / 2, 0, 0] });
       for (const sx of [-0.045, 0.045]) kit.add(chamferBox(0.03, 0.012, 0.02, 0.003), glowMat(rune, 2.6), { pos: [sx, 0.76, 0.84], rot: [-0.6, 0, 0], uv: 'raw' });
       for (const sx of [-1, 1]) for (let k = 0; k < 4; k++) kit.add(chamferBox(0.01, 0.05, 0.32, 0.004), glowMat(rune, 2.2), { pos: [sx * 0.493, 0.33, -0.75 + k * 0.5], uv: 'raw' });
@@ -1120,7 +1120,7 @@ const BUILDERS = {
       addSculpt(kit, [
         ...fs.map((f) => ({ f: ground(f), m: 'bone' })), { f: ground(skull), m: 'bone' },
         { f: sphere([sx - 0.035, 0.088, sz + 0.12], 0.02), m: 'dark' }, { f: sphere([sx + 0.035, 0.088, sz + 0.12], 0.02), m: 'dark' },
-      ], [-0.36, -0.01, -0.26], [0.4, 0.22, 0.3], 0.014, { bone: M.bone(), dark: flatMat('#1a1418') }, { per: { dark: { uv: 'raw' } } }, { k: 0.006, jitter: 0.1 });
+      ], [-0.36, -0.01, -0.26], [0.4, 0.22, 0.3], 0.017, { bone: M.bone(), dark: flatMat('#1a1418') }, { per: { dark: { uv: 'raw' } } }, { k: 0.006, jitter: 0.1 });
       return kit.build();
     });
   },
@@ -1378,7 +1378,7 @@ const BUILDERS = {
       addSculpt(kit, [
         { f: floor(mound), m: 'rock' },
         { f: noisy(ellipsoid([0, 0.205, 0], [0.12, 0.04, 0.12]), 0.01, 20, 4), m: 'glow' },
-      ], [-0.5, -0.02, -0.5], [0.5, 0.42, 0.5], 0.036, { rock: M.stone('#5a4038', 8), glow: glowTexMat(TEX.coals(), '#ffffff', 2.4) }, { per: { glow: { ppm: 96 } } }, { k: 0.02, jitter: 0.2 });
+      ], [-0.5, -0.02, -0.5], [0.5, 0.42, 0.5], 0.045, { rock: M.stone('#5a4038', 8), glow: glowTexMat(TEX.coals(), '#ffffff', 2.4) }, { per: { glow: { ppm: 96 } } }, { k: 0.02, jitter: 0.2 });
       for (let i = 0; i < 5; i++) { const a = i * 1.3; kit.add(rockGeo(0.07, 0.05, 0.06, 150 + i, 9), M.stone('#4a3634', 7), { pos: [Math.cos(a) * 0.44, 0, Math.sin(a) * 0.44] }); }
       return kit.build();
     }));
@@ -1464,7 +1464,7 @@ const BUILDERS = {
           fs.push(...chainParts([p, [p[0] + 0.08, p[1] - 0.14, p[2] + 0.06], [p[0] + 0.1, p[1] - 0.26, p[2] + 0.04]], [radii[i] * 0.5, radii[i] * 0.3, 0.008]));
         }
       }
-      addSculpt(kit, fs.map((f) => ({ f: noisy(f, 0.008, 16, 4), m: 'bark' })), [-0.1, -0.25, -0.35], [L + 0.12, 0.9, 0.35], 0.03, { bark: M.bark(c) }, {}, { jitter: 0.15, k: 0.03 });
+      addSculpt(kit, fs.map((f) => ({ f: noisy(f, 0.008, 16, 4), m: 'bark' })), [-0.1, -0.25, -0.35], [L + 0.12, 0.9, 0.35], 0.04, { bark: M.bark(c) }, {}, { jitter: 0.15, k: 0.03 });
       return kit.build();
     });
   },
@@ -1570,7 +1570,7 @@ const BUILDERS = {
         { f: noisy(ellipsoid(P(0, -0.085, 0.07), [0.12, 0.09, 0.07]), 0.012, 30, 3), m: 'beard' },
         { f: sphere(P(-0.042, 0.03, 0.1), 0.014), m: 'eye' }, { f: sphere(P(0.042, 0.03, 0.1), 0.014), m: 'eye' },
         { f: capsule(P(-0.07, 0.07, 0.095), P(-0.015, 0.06, 0.11), 0.012), m: 'beard' }, { f: capsule(P(0.07, 0.07, 0.095), P(0.015, 0.06, 0.11), 0.012), m: 'beard' },
-      ], P(-0.16, -0.2, -0.14), P(0.16, 0.15, 0.2), 0.016, { skin: M.leather('#f0bc94'), beard: M.fur('#8a5a3a'), eye: flatMat('#140c10') }, { per: { eye: { uv: 'raw' } } }, { k: 0.012, jitter: 0.1 });
+      ], P(-0.16, -0.2, -0.14), P(0.16, 0.15, 0.2), 0.02, { skin: M.leather('#f0bc94'), beard: M.fur('#8a5a3a'), eye: flatMat('#140c10') }, { per: { eye: { uv: 'raw' } } }, { k: 0.012, jitter: 0.1 });
       const hat = { pos: P(0, 0.03, 0), rot: [0.3, 0, 0.3] };
       kit.add(wobble(lathe([[0.001, 0.07], [0.16, 0.065], [0.175, 0.05], [0.165, 0.04], [0.13, 0.05], [0.13, 0.14], [0.08, 0.19], [0.001, 0.2]], 10), 0.006, 2), M.metal('#c8902a', 0.15), { ...hat, uv: 'box' });
       kit.add(lathe([[0.001, 0], [0.04, 0], [0.045, 0.03], [0.001, 0.035]], 8), M.metal(IRON_D), { pos: P(0.03, 0.17, 0.15), rot: [1.6, 0, 0.3], uv: 'box' });
@@ -1619,7 +1619,7 @@ const BUILDERS = {
           const r = 0.02 + (th / (Math.PI * 4.6)) * (SR - 0.035), a = -th + 1.2;
           const zs = ST * Math.sqrt(Math.max(0, 1 - (r / SR) ** 2));
           pts.push([SC[0] + Math.cos(a) * r, SC[1] + Math.sin(a) * r, SC[2] + side * (zs + 0.004)]);
-          radii.push(0.014 + (r / SR) * 0.016);
+          radii.push(0.017 + (r / SR) * 0.016);
         }
         groove.push(...chainParts(pts, radii));
       }
@@ -1629,7 +1629,7 @@ const BUILDERS = {
       const rawUV = { per: { eyeW: { uv: 'raw' }, eye: { uv: 'raw' }, blush: { uv: 'raw' } } };
       addSculpt(kit, parts, [-0.55, -0.02, -0.24], [0.6, 0.72, 0.24], 0.026, snailMats, rawUV, { k: 0.01, jitter: 0.12 });
       addSculpt(kit, eyes, [0.42, 0.22, -0.16], [0.58, 0.66, 0.16], 0.011, snailMats, rawUV, { k: 0.006, jitter: 0.08 });
-      addSculpt(kit, [{ f: floor(shellF), m: 'shell' }], [SC[0] - SR - 0.02, 0, -ST - 0.02], [SC[0] + SR + 0.02, SC[1] + SR + 0.02, ST + 0.02], 0.014, snailMats, {},
+      addSculpt(kit, [{ f: floor(shellF), m: 'shell' }], [SC[0] - SR - 0.02, 0, -ST - 0.02], [SC[0] + SR + 0.02, SC[1] + SR + 0.02, ST + 0.02], 0.02, snailMats, {},
         { jitter: 0.1, paint: (x, y, z, m) => (grooves(x, y, z) < 0.003 ? 'suture' : m) });
       kit.add(prism(6, 0.04, 0.05, { tip: 0.05 }), glowMat('#b06bff', 2.6), { pos: [-0.12, 0.6, 0.0], uv: 'raw' });
       kit.add(prism(5, 0.025, 0.03, { tip: 0.03, seed: 3 }), glowMat('#6ad8ff', 2.4), { pos: [-0.01, 0.585, 0.04], rot: [0.3, 0, -0.5], uv: 'raw' });
@@ -1673,7 +1673,7 @@ const BUILDERS = {
       const kit = new Kit();
       const lumps = [ellipsoid([0, 0, 0], [0.28, 0.17, 0.23])];
       for (let i = 0; i < 14; i++) { const a = hash2(i, 1, 4) * Math.PI * 2, r = hash2(i, 2, 4) * 0.2; lumps.push(sphere([Math.cos(a) * r, 0.17 * Math.sqrt(Math.max(0, 1 - (r / 0.26) ** 2)) - 0.01, Math.sin(a) * r * 0.85], 0.035)); }
-      addSculpt(kit, [{ f: floor(noisy(union(0.015, ...lumps), 0.006, 40, 3)), m: 'gold' }], [-0.32, -0.01, -0.27], [0.32, 0.22, 0.27], 0.022, { gold: M.gold() }, { ppm: 96 }, { jitter: 0.1 });
+      addSculpt(kit, [{ f: floor(noisy(union(0.015, ...lumps), 0.006, 40, 3)), m: 'gold' }], [-0.32, -0.01, -0.27], [0.32, 0.22, 0.27], 0.03, { gold: M.gold() }, { ppm: 96 }, { jitter: 0.1 });
       for (let i = 0; i < 9; i++) {
         const a = hash2(i, 1, 3) * Math.PI * 2, r = 0.22 + hash2(i, 2, 3) * 0.12;
         kit.add(lathe([[0.001, 0], [0.032, 0], [0.032, 0.008], [0.001, 0.008]], 8), flatMat(i % 2 ? GOLD : '#f4cc5a'), { pos: [Math.cos(a) * r, 0.005 + hash2(i, 4, 3) * 0.02, Math.sin(a) * r], rot: [hash2(i, 5, 3) * 0.5, 0, hash2(i, 6, 3) * 0.5], uv: 'raw' });
