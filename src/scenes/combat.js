@@ -142,9 +142,10 @@ export class CombatScene extends Scene {
     const hx = this.heroFightX, mh = (this.mon.height || 1) + (this.mon.fly || 0);
     const mid = (hx + this.monHome.x) / 2;
     const span = this.monHome.x - hx + Math.max(0.6, mh * 0.4);
-    const ty = Math.max(0.75, mh * 0.45);
-    const dist = Math.max(4.2, span * 1.25 + mh * 0.65);
-    return { pos: [mid - 0.25, ty + dist * 0.2, this.heroHome.z + dist], look: [mid, ty * 0.85, 0], fov: 38 };
+    const ty = Math.max(0.75, mh * 0.48);
+    const dist = Math.max(4.2, span * 1.25 + 0.4, mh * 1.9);
+    const lift = mh > 2 ? 0.1 : 0.2;
+    return { pos: [mid - 0.25, ty + dist * lift, this.heroHome.z + dist], look: [mid, ty * (mh > 2 ? 0.95 : 0.85), 0], fov: 38 };
   }
   goFightShot(dur = 1) { const s = this.fightShot(); return this.rig.moveTo(s.pos, s.look, s.fov, dur, 'inOutCubic'); }
   walkTo(x, z, dur = 0.6) {
@@ -509,6 +510,7 @@ export class CombatScene extends Scene {
     const ui = this.game.ui, rig = this.rig;
     const hw = this.hitWorld();
     const p = this.screen(hw);
+    p.y = Math.max(p.y, 70);
     const jx = rnd.float(-12, 12);
     if (e.dot) {
       const col = EL_COLOR[e.element] || COLORS.text;
@@ -581,7 +583,12 @@ export class CombatScene extends Scene {
     const rig = this.rig;
     this.mon.setPhase && this.mon.setPhase(e.phase + 1);
     this.showTitle(e.text, null, 2.6);
-    if (e.event === 'shatter') { this.co.start(this.lordShatterSeq.bind(this)); return; }
+    if (e.event === 'shatter') {
+      // a killing blow can cross the threshold: victory follows in the same batch, so skip the cutscene
+      if (this.sim.m.dead) return;
+      this.co.start(this.lordShatterSeq.bind(this));
+      return;
+    }
     this.mon.play('roar', { onDone: () => this.mon.play('idle') });
     this.sfx('boss_roar'); rig.shake(0.8); rig.fovPunch(5);
     this.game.renderer.doFlash(0.3, [1, 0.6, 0.9]);
@@ -702,7 +709,8 @@ export class CombatScene extends Scene {
     this.tele = null; this.critRing = null;
     this.slowmo(0.2, 0.7);
     const hw = this.hitWorld();
-    rig.moveTo([hw.x - 1.6, hw.y + 0.4, hw.z + 2.6 + (this.mon.height || 1) * 0.6], [hw.x, hw.y, 0], 34, 0.5, 'outCubic');
+    const mh0 = this.mon.height || 1;
+    rig.moveTo([hw.x + 1.0 + mh0 * 0.3, hw.y + 0.5 + mh0 * 0.2, hw.z + 2.4 + mh0 * 0.9], [hw.x - 0.35, hw.y, 0], 34, 0.5, 'outCubic');
     this.game.renderer.doFlash(0.45, [1, 1, 1]);
     rig.shake(0.7);
     this.mon.play('die');
@@ -757,9 +765,9 @@ export class CombatScene extends Scene {
     this.harvest = { picks, left: picks, cards: drops.map((id) => ({ id, state: 'down', item: null, flip: 0, lift: 0 })), cut: null, contT: 0 };
     const hw = this.hitWorld();
     const mh = this.mon.height || 1;
-    this.walkTo(Math.max(this.heroHome.x, this.monFront() - 0.75), this.heroHome.z + 0.25, 0.5);
+    this.walkTo(Math.max(this.heroHome.x, this.monFront() - 0.55), this.heroHome.z - 0.15, 0.5);
     this.co.start(function* (s) { yield 0.5; s.face(1); s.hero.play('harvest', { loop: true }); }, this);
-    this.rig.moveTo([hw.x + 0.8, Math.max(1.0, mh * 0.75), hw.z + 2.5 + mh * 0.8], [hw.x - 0.25, Math.max(0.35, mh * 0.3), 0], 36, 0.9);
+    this.rig.moveTo([hw.x + 1.2 + mh * 0.2, Math.max(1.4, mh * 0.95), hw.z + 3.3 + mh * 0.9], [hw.x - 0.35, Math.max(0.3, mh * 0.3), 0], 36, 0.9);
     this.sfx('page_turn');
   }
 
@@ -848,8 +856,9 @@ export class CombatScene extends Scene {
     this.hero.play('victory', { loop: true, expr: false });
     this.hero.setExpression('surprised');
     yield 0.35;
-    const wp = this.wmesh.getWorldPosition(V3());
-    this.rig.moveTo([wp.x + 0.75, wp.y + 0.2, wp.z + 2.1], [wp.x + 0.1, wp.y - 0.15, wp.z], 34, 0.8, 'inOutCubic');
+    const hp = this.heroHead();
+    const hx = this.hero.group.position.x;
+    this.rig.moveTo([hx + 0.9, hp.y * 0.75 + 0.35, this.heroHome.z + 2.2 + hp.y * 0.9], [hx + 0.1, hp.y * 0.72, 0], 34, 0.8, 'inOutCubic');
     yield 0.6;
     this.caption = 'The curse stirs…';
     yield* this.shatterWeapon(1.5);
@@ -944,10 +953,14 @@ export class CombatScene extends Scene {
     this.tele = null; this.critRing = null;
     this.mon.play('special', { onDone: () => this.mon.play('idle') });
     this.sfx('curse_hum'); this.rig.shake(0.6);
-    const h = this.hero.group.position;
-    this.rig.moveTo([h.x + 0.4, 1.15, h.z + 2.0], [h.x + 0.2, 0.95, 0], 34, 0.5, 'outCubic');
+    const hp = this.heroHead();
+    const hx = this.hero.group.position.x;
+    this.hero.play('victory', { loop: true, expr: false });
+    this.hero.setExpression('surprised');
+    this.rig.moveTo([hx + 0.9, hp.y * 0.75 + 0.35, this.heroHome.z + 2.2 + hp.y * 0.9], [hx + 0.1, hp.y * 0.72, 0], 34, 0.5, 'outCubic');
     yield 0.6;
     if (this.wmesh) yield* this.shatterWeapon(0.7);
+    this.hero.play('idle', { loop: true });
     this.hero.setExpression('angry');
     this.say(this.run.char === 'durgan' ? 'THEN I\'LL MAKE ANOTHER!' : 'Then I\'ll forge another!', 1.8);
     yield 1.4;
@@ -992,7 +1005,7 @@ export class CombatScene extends Scene {
     for (const s of this.slashes) this.drawSlash(ui, s);
     for (const b of this.bubbles) {
       const pos = b.who === 'hero' ? this.screen(this.heroHead().add(V3(0, 0.25, 0))) : this.screen(this.monTop());
-      speech(ui, pos.x, pos.y, b.text, { alpha: b.t < 0.12 ? b.t / 0.12 : b.t > b.dur - 0.25 ? Math.max(0, (b.dur - b.t) / 0.25) : 1 });
+      speech(ui, pos.x, Math.max(pos.y, 64), b.text, { alpha: b.t < 0.12 ? b.t / 0.12 : b.t > b.dur - 0.25 ? Math.max(0, (b.dur - b.t) / 0.25) : 1 });
     }
 
     if (showHud) {

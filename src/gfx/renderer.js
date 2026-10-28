@@ -5,7 +5,7 @@ import { makeBrightPass, makeBlur, makeComposite } from './post.js';
 export const LAYER_SOLID = 0;
 export const LAYER_FX = 1;
 
-const BASE_W = 640, BASE_H = 360;
+const BASE_W = 960, BASE_H = 540;
 
 export class Renderer {
   constructor(stage) {
@@ -177,13 +177,13 @@ export class Renderer {
     u.depthSens.value = p.depthSens ?? 1;
     u.bloom.value = bloom;
     u.exposure.value = p.exposure ?? 1;
-    u.contrast.value = p.contrast ?? 1.06;
-    u.saturation.value = p.saturation ?? 1.12;
+    u.contrast.value = p.contrast ?? 1.08;
+    u.saturation.value = p.saturation ?? 1.22;
     u.vignette.value = p.vignette ?? 0.35;
     u.dither.value = p.dither ?? 1;
-    u.levels.value = p.levels ?? 28;
-    if (p.lift) u.lift.value.set(...p.lift); else u.lift.value.set(0.012, 0.008, 0.03);
-    if (p.gain) u.gain.value.set(...p.gain); else u.gain.value.set(1.0, 0.98, 0.94);
+    u.levels.value = p.levels ?? 40;
+    if (p.lift) u.lift.value.set(...p.lift); else u.lift.value.set(0.02, 0.012, 0.05); // cool violet shadows
+    if (p.gain) u.gain.value.set(...p.gain); else u.gain.value.set(1.04, 0.99, 0.9); // warm storybook highlights
     u.fade.value = p.fade ?? 0;
     if (p.fadeColor) u.fadeColor.value.set(...p.fadeColor); else u.fadeColor.value.set(0.027, 0.024, 0.043);
     this.flash = Math.max(0, this.flash - dt * 4);
