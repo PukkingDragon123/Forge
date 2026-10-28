@@ -1,4 +1,5 @@
 // Hand-authored pixel fonts + rich text renderer.
+import { LARGE } from './font_large.js';
 // Rich text: "{chips}+8 Chips{/} and {#ff0}yellow{/} {@coin}" — named colors, hex colors, inline icons.
 
 const BODY = {
@@ -193,7 +194,7 @@ const SMALL = {
   },
 };
 
-export const FONTS = { body: BODY, small: SMALL };
+export const FONTS = { body: BODY, small: SMALL, large: LARGE };
 
 // ---------- named colors used across UI rich text ----------
 export const COLORS = {
@@ -300,8 +301,13 @@ export function charWidth(font, ch) {
   return g ? g.w + f.spacing : 0;
 }
 
-function iconSize(name) {
-  const ic = iconProvider && iconProvider(name);
+/** Inline icons: the compact set for body/small text, the detailed set beside 'large' text. */
+function iconFor(name, font) {
+  if (!iconProvider) return null;
+  return (font !== 'large' && iconProvider(name + ':s')) || iconProvider(name);
+}
+function iconSize(name, font) {
+  const ic = iconFor(name, font);
   return ic ? ic.w + 1 : 0;
 }
 
@@ -310,7 +316,7 @@ export function measure(str, font = 'body') {
   let w = 0, best = 0;
   for (const r of parseRich(String(str), COLORS.text)) {
     if (r.t === 'br') { best = Math.max(best, w); w = 0; }
-    else if (r.t === 'icon') w += iconSize(r.name);
+    else if (r.t === 'icon') w += iconSize(r.name, font);
     else for (const ch of r.s) w += charWidth(font, ch);
   }
   return Math.max(best, w) - FONTS[font].spacing;
@@ -328,7 +334,7 @@ export function layout(str, font = 'body', maxW = Infinity, baseColor = COLORS.t
   }
   const lines = [[]];
   let w = 0;
-  const tokW = (t) => (t.t === 'icon' ? iconSize(t.name) : t.t === 'sp' ? charWidth(font, ' ') : [...t.s].reduce((a, c) => a + charWidth(font, c), 0));
+  const tokW = (t) => (t.t === 'icon' ? iconSize(t.name, font) : t.t === 'sp' ? charWidth(font, ' ') : [...t.s].reduce((a, c) => a + charWidth(font, c), 0));
   for (const t of tokens) {
     if (t.t === 'br') { lines.push([]); w = 0; continue; }
     const tw = tokW(t);
@@ -351,7 +357,7 @@ function drawRuns(ctx, runs, x, y, font, overrideColor) {
   let cx = x;
   for (const r of runs) {
     if (r.t === 'icon') {
-      const ic = iconProvider && iconProvider(r.name);
+      const ic = iconFor(r.name, font);
       if (ic) {
         if (!overrideColor) ctx.drawImage(ic.canvas, cx, Math.round(y + f.cap / 2 - ic.h / 2));
         cx += ic.w + 1;

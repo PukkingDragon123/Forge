@@ -1,5 +1,6 @@
 // Hand-authored pixel icons. Rows are palette-indexed; most icons get an automatic dark outline.
 import { fromStrings, Painter, withOutline, makeCanvas } from '../art/pixel.js';
+import { LARGE, shadeIcon, upscaleIcon, inkWeight } from './icons_large.js';
 
 export const PAL = {
   k: '#140c10', K: '#2a1d22', w: '#fff6e0', W: '#ffffff',
@@ -601,14 +602,29 @@ const DEFS = {
 
 const cache = new Map();
 
+/**
+ * icon('coin') → detailed 16 px icon (auto-shaded silhouette, or a Scale2x upgrade of the compact one).
+ * icon('coin:s') → compact ~9 px icon for inline body/small text.
+ */
 export function icon(name) {
   let c = cache.get(name);
   if (c) return c;
-  const def = DEFS[name];
-  if (!def) return null;
-  const [rows, outline = true] = def;
-  let canvas = fromStrings(rows, PAL);
-  if (outline) canvas = withOutline(canvas, PAL.k);
+  const small = name.endsWith(':s');
+  const base = small ? name.slice(0, -2) : name;
+  const def = DEFS[base];
+  let canvas = null;
+  if (small) {
+    if (!def) return null;
+    const [rows, outline = true] = def;
+    canvas = fromStrings(rows, PAL);
+    if (outline) canvas = withOutline(canvas, '#1c100c');
+  } else if (LARGE[base]) {
+    canvas = shadeIcon(LARGE[base]);
+  } else if (def) {
+    const [rows, outline = true] = def;
+    canvas = upscaleIcon(fromStrings(rows, PAL));
+    if (outline) canvas = inkWeight(withOutline(canvas, '#1c100c'));
+  } else return null;
   c = { canvas, w: canvas.width, h: canvas.height };
   cache.set(name, c);
   return c;
@@ -629,11 +645,15 @@ export function keycap(label, pressed = false) {
   const w = Math.max(9, tw + 6), h = 11;
   const p = new Painter(w, h);
   const top = pressed ? 2 : 0;
-  p.rect(1, 1 + top, w - 2, h - 2 - top, '#2a1d22');
-  p.rect(1, 0 + top, w - 2, h - 3 - (pressed ? 1 : 0), '#e9dcc0');
-  p.rect(2, 1 + top, w - 4, h - 5 - (pressed ? 1 : 0), '#f8f0dc');
-  p.hline(2, w - 3, h - 3, pressed ? '#2a1d22' : '#b8a888');
-  p.outline('#140c10');
+  // parchment key cap on a gold-rimmed base, like the kit's small buttons
+  p.rect(1, 1 + top, w - 2, h - 1 - top, '#7a3c0c');
+  p.hline(1, w - 2, h - 1, '#4a2206');
+  p.rect(1, top, w - 2, h - 3 - (pressed ? 1 : 0), '#dcb67e');
+  p.rect(2, top + 1, w - 4, h - 5 - (pressed ? 1 : 0), '#f6e6c0');
+  p.hline(2, w - 3, top, '#fff4d8');
+  p.hline(2, w - 3, h - 4 - (pressed ? 1 : 0) + 0, '#c49660');
+  p.set(1, top, '#ffc848'); p.set(w - 2, top, '#ffc848');
+  p.outline('#1c100c');
   const c = p.toCanvas();
   const out = { canvas: c, w: c.width, h: c.height, label, textY: 3 + top, textX: Math.floor((c.width - tw) / 2) };
   capCache.set(k, out);

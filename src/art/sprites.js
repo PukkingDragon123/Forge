@@ -9,6 +9,7 @@ import { SHAPES, cellsSize } from '../data/shapes.js';
 import { CHARACTERS } from '../data/characters.js';
 import { NODE_TYPES } from '../data/regions.js';
 import { icon } from '../ui/icons.js';
+import { paintWeapon } from './weapon_art.js';
 
 const cache = new Map();
 const memo = (key, fn) => { let v = cache.get(key); if (!v) { v = fn(); cache.set(key, v); } return v; };
@@ -302,7 +303,31 @@ STYLES.gem = (p, W, H, m, r) => {
   const T = tones(m.color);
   const cx = W / 2, cy = H * 0.52;
   const cut = { ruby: 'oval', sapphire: 'pear', emerald: 'step', topaz: 'rhombus', diamond: 'brilliant', moonstone: 'cabochon', amber: 'blob', soulstone: 'pear' }[m.id] || 'oval';
-  if (cut === 'oval' || cut === 'cabochon' || cut === 'blob') {
+  if (cut === 'oval') {
+    // oval brilliant: girdle polygon, table, star + kite facets lit by facet direction, inner fire
+    const rx = W * 0.4, ry = H * 0.36, n = 12;
+    const ring = [], mid = [], tab = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      ring.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]);
+      const a2 = a + Math.PI / n;
+      mid.push([cx + Math.cos(a2) * rx * 0.78 - 0.4, cy + Math.sin(a2) * ry * 0.78 - 0.4]);
+      tab.push([cx - W * 0.04 + Math.cos(a) * rx * 0.48, cy - H * 0.04 + Math.sin(a) * ry * 0.48]);
+    }
+    p.poly(ring, T[2]);
+    const lightOf = (a) => Math.cos(a - (Math.PI * 1.25)); // facing upper-left = 1
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, a = ((i + 0.5) / n) * Math.PI * 2, l = lightOf(a);
+      p.poly([ring[i], ring[j], mid[i]], T[l > 0.6 ? 4 : l > 0.1 ? 3 : l > -0.5 ? 2 : 1]);
+      p.poly([mid[i], ring[j], mid[j], tab[j]], T[l > 0.5 ? 3 : l > -0.2 ? 2 : l > -0.7 ? 3 : 4]); // inner reflections flip
+      p.poly([tab[i], mid[i], tab[j]], T[l > 0.3 ? 5 : l > -0.4 ? 3 : 4]);
+    }
+    p.poly(tab, T[3]);
+    // table glare + fire
+    p.poly([tab[7], tab[8], [cx - W * 0.04, cy - H * 0.04]], T[4]);
+    sparkle(p, Math.round(cx - rx * 0.42), Math.round(cy - ry * 0.45), '#ffffff', W > 24);
+    p.set(Math.round(cx + rx * 0.35), Math.round(cy + ry * 0.3), T[5]);
+  } else if (cut === 'cabochon' || cut === 'blob') {
     lump(p, cx, cy, W * 0.36, H * 0.4, T, 3, { wobble: cut === 'blob' ? 0.35 : 0.04, spec: false });
     // inner reflection band
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -526,16 +551,36 @@ STYLES.shell = (p, W, H, m, r) => {
     p.set(Math.round(cx - W * 0.2), Math.round(cy - H * 0.22), T[5]);
     return;
   }
-  // beetle / crab carapace: oval with center split and iridescent highlight
-  lump(p, cx, cy, W * 0.4, H * 0.42, T, 6, { wobble: 0.05, spec: false });
-  p.vline(Math.round(cx), Math.round(cy - H * 0.38), Math.round(cy + H * 0.4), T[0]);
+  // beetle / crab carapace: pronotum plate over two domed elytra with striations and an iridescent sheen
+  const ry = H * 0.42, top = cy - ry, pro = cy - ry * 0.42;
+  const half = (y) => { const t = (y - cy) / ry; return t < -1 || t > 1 ? -1 : W * 0.4 * Math.sqrt(1 - t * t) * (1 - 0.12 * t); };
+  const IR = [tones(m.color), tones(m.color2 || shadeHex(m.color, 0.2)), tones(mixHex(m.color, '#b06aff', 0.45))];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    if (!p.alpha(x, y)) continue;
-    const dx = (x + 0.5 - cx) / (W * 0.4), dy = (y + 0.5 - cy) / (H * 0.42);
-    const band = Math.abs((dx + 0.35) * (dx + 0.35) + (dy + 0.4) * (dy + 0.4) - 0.2);
-    if (band < 0.06) p.set(x, y, A[4]);
+    const hw = half(y + 0.5);
+    if (hw < 0 || Math.abs(x + 0.5 - cx) > hw) continue;
+    let col;
+    if (y + 0.5 < pro) {
+      // pronotum: one wide dome with a notched front edge
+      const nx = (x + 0.5 - cx) / (W * 0.4), ny = (y + 0.5 - (top + pro) / 2) / ((pro - top) / 2);
+      if (y + 0.5 < top + 1.5 && Math.abs(nx) < 0.18) continue; // head notch
+      const i = -nx * 0.5 - ny * 0.65 + 0.57;
+      col = T[toneIdx(i, -0.15)];
+      if (y + 0.5 > pro - 1.2) col = T[0];
+    } else {
+      // each elytron is its own dome
+      const side = x + 0.5 < cx ? -1 : 1;
+      const ex = cx + side * W * 0.2, nx = (x + 0.5 - ex) / (W * 0.2), ny = (y + 0.5 - (cy + ry * 0.2)) / (ry * 0.8);
+      const nz = Math.sqrt(Math.max(0, 1 - nx * nx * 0.7 - ny * ny * 0.7));
+      const i = nx * L[0] + ny * L[1] + nz * L[2];
+      const sheen = Math.abs(nx + ny * 0.6 + 0.35) < 0.18;
+      const R = sheen ? IR[2] : i > 0.55 ? IR[1] : IR[0];
+      col = R[toneIdx(i)];
+      if (Math.abs(x + 0.5 - cx) < 0.8) col = T[0]; // suture
+      else if (W >= 24 && Math.abs(Math.abs(x + 0.5 - cx) - W * 0.12 * (1 - Math.max(0, (y - cy) / ry) * 0.5)) < 0.5 && y > pro + 2) col = R[Math.max(0, toneIdx(i) - 2)]; // striation
+    }
+    p.set(x, y, col);
   }
-  p.hline(Math.round(cx - W * 0.3), Math.round(cx + W * 0.3), Math.round(cy - H * 0.3), T[1]); // pronotum line
+  p.set(Math.round(cx - W * 0.24), Math.round(pro + H * 0.12), T[5]); p.set(Math.round(cx + W * 0.12), Math.round(pro + H * 0.1), IR[1][5]);
   if (m.id === 'crab_shell') for (let i = 0; i < 4; i++) prism(p, cx + (i - 1.5) * W * 0.16, cy - H * 0.12 + Math.abs(i - 1.5) * 2, W * 0.1, H * 0.26, tones(m.color2), (i - 1.5) * 0.8, { glow: true });
 };
 
@@ -582,17 +627,39 @@ STYLES.silk = (p, W, H, m, r) => {
 
 STYLES.core = (p, W, H, m, r) => {
   const lava = m.id === 'lava_core';
-  const shell = tones(lava ? m.color2 : m.color2 || '#5a4a3a'), glow = tones(m.color);
+  const glow = tones(m.color);
   const cx = W / 2, cy = H / 2;
-  if (lava) lump(p, cx, cy, W * 0.4, H * 0.4, shell, 5, { wobble: 0.25, spec: false });
-  else facetDome(p, cx, cy + H * 0.04, W * 0.42, H * 0.4, shell, r, { n: 8, h: 0.9 });
-  // glowing cracks / core
-  for (let k = 0; k < 4; k++) {
-    let x = cx, y = cy; const a = k * 1.6 + r.float(-0.3, 0.3);
-    for (let s = 0; s < W * 0.4; s++) { x += Math.cos(a) * 0.8 + r.float(-0.5, 0.5); y += Math.sin(a) * 0.8 + r.float(-0.5, 0.5); if (p.alpha(Math.round(x), Math.round(y))) p.set(Math.round(x), Math.round(y), glow[s < W * 0.15 ? 5 : 4]); }
+  if (lava) {
+    // molten rock: cooled crust plates with glowing lava between them
+    const S = tones(m.color2 || '#3a2a26');
+    lump(p, cx, cy, W * 0.42, H * 0.4, S, 5, { wobble: 0.22, spec: false });
+    const pts = Array.from({ length: 9 }, () => [cx + r.float(-W * 0.4, W * 0.4), cy + r.float(-H * 0.38, H * 0.38)]);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!p.alpha(x, y)) continue;
+      const d = pts.map(([px2, py2]) => Math.hypot(x + 0.5 - px2, y + 0.5 - py2)).sort((a, b) => a - b);
+      const gap = d[1] - d[0];
+      if (gap < 0.9) p.set(x, y, glow[gap < 0.45 ? 5 : 4]);
+      else if (gap < 1.7) p.set(x, y, mixHex(glow[2], S[1], 0.4));
+    }
+    p.set(Math.round(cx - W * 0.2), Math.round(cy - H * 0.2), S[5]);
+    return;
   }
-  lump(p, cx, cy, W * 0.12, H * 0.12, glow, 8, { wobble: 0.1, bias: 0.6 });
-  p.set(Math.round(cx), Math.round(cy), '#fffbe0');
+  // golem core: faceted rune-stone held in a riveted iron band, glowing seams
+  const shell = tones(m.color2 || '#5a4a3a');
+  facetDome(p, cx, cy, W * 0.4, H * 0.42, shell, r, { n: 9, h: 0.9 });
+  for (let k = 0; k < 3; k++) {
+    let x = cx, y = cy; const a = k * 2.1 + r.float(-0.3, 0.3);
+    for (let s2 = 0; s2 < W * 0.36; s2++) { x += Math.cos(a) * 0.8 + r.float(-0.4, 0.4); y += Math.sin(a) * 0.8 + r.float(-0.4, 0.4); if (p.alpha(Math.round(x), Math.round(y))) p.set(Math.round(x), Math.round(y), glow[s2 < W * 0.12 ? 5 : 4]); }
+  }
+  const IRN = tones('#6a6e7a');
+  const bh = Math.max(2, Math.round(H * 0.1));
+  for (let y = Math.round(cy - bh / 2); y < Math.round(cy + bh / 2); y++) for (let x = Math.round(cx - W * 0.46); x <= Math.round(cx + W * 0.46); x++) {
+    const t = (y - (cy - bh / 2)) / bh;
+    p.set(x, y, IRN[t < 0.34 ? 4 : t > 0.7 ? 1 : 3]);
+  }
+  for (const rx2 of [-0.3, 0, 0.3]) { const x = Math.round(cx + rx2 * W); p.set(x, Math.round(cy - bh / 2) + (bh > 2 ? 1 : 0), IRN[5]); }
+  lump(p, cx, cy - H * 0.2, W * 0.1, H * 0.09, glow, 8, { wobble: 0.1, bias: 0.6 });
+  p.set(Math.round(cx), Math.round(cy - H * 0.2), '#fffbe0');
 };
 
 STYLES.essence = (p, W, H, m, r) => {
@@ -979,7 +1046,7 @@ function paintMaterial(m, W, H) {
 }
 
 // ------------------------------------------------------------------ PUBLIC: materials & items
-export function materialSprite(id, size = 24) {
+export function materialSprite(id, size = 32) {
   return memo(`mat|${id}|${size}`, () => {
     const m = MATERIALS[id];
     if (!m) return makeCanvas(size, size);
@@ -992,7 +1059,7 @@ export function materialSprite(id, size = 24) {
 }
 
 /** Item art sized to its polyomino (rot 0 base, then rotated). Transparent outside occupied cells. */
-export function itemSprite(id, cell = 20, rot = 0) {
+export function itemSprite(id, cell = 32, rot = 0) {
   return memo(`item|${id}|${cell}|${rot}`, () => {
     const m = MATERIALS[id];
     const shapeId = (m && m.shape) || 'o1';
@@ -1016,209 +1083,9 @@ export function itemSprite(id, cell = 20, rot = 0) {
 }
 
 // ------------------------------------------------------------------ WEAPONS
-const METAL_PRIORITY = ['stariron', 'mithril', 'magmasteel', 'cursedore', 'gold', 'silver', 'bronze_ancient', 'obsidian', 'iron', 'lodestone', 'copper', 'tin', 'junk'];
-const BLADE_COLOR = {
-  stariron: '#4a4a8a', mithril: '#9ae8ff', magmasteel: '#ff7a3a', cursedore: '#8a4ac0', gold: '#ffd04a', silver: '#e8eef8',
-  bronze_ancient: '#c89a4a', obsidian: '#3a2a4a', iron: '#a8acb4', lodestone: '#5a5a6a', copper: '#d88a4a', tin: '#c4c8d0', junk: '#8a7a6a',
-  steel: '#c8d2de', bronze: '#d0a050', electrum: '#f0e08a',
-};
-const EL_COLOR = { fire: '#ff7a2a', ice: '#9af0ff', shock: '#ffe74a', poison: '#8fe04a', curse: '#c86bff', holy: '#fff3b0', bleed: '#ff4f6a' };
-
-function weaponLook(w) {
-  const ids = w.ids || [];
-  const has = (id) => ids.includes(id);
-  let blade = null;
-  if (has('iron') && has('coal')) blade = 'steel';
-  else if (has('gold') && has('silver')) blade = 'electrum';
-  else if ((has('copper') && has('tin'))) blade = 'bronze';
-  if (!blade) blade = METAL_PRIORITY.find(has) || null;
-  let bladeHex = blade ? BLADE_COLOR[blade] : null;
-  const gem = ids.find((id) => MATERIALS[id] && MATERIALS[id].kind === 'gem');
-  const crystal = ids.find((id) => MATERIALS[id] && MATERIALS[id].kind === 'crystal');
-  const boneish = ids.find((id) => MATERIALS[id] && MATERIALS[id].tags.includes('bone'));
-  if (!bladeHex) bladeHex = gem ? MATERIALS[gem].color : crystal ? MATERIALS[crystal].color : boneish ? '#e8dcc0' : ids[0] && MATERIALS[ids[0]] ? MATERIALS[ids[0]].color : '#a8acb4';
-  let grip = '#6a3a22';
-  if (has('spider_silk')) grip = '#f0f0ff';
-  else if (has('rat_tail') || has('mimic_tongue') || has('toad_tongue')) grip = '#c86a8a';
-  else if (has('bat_wing')) grip = '#3a2a3a';
-  else if (has('salamander_scale') || has('wyrm_scale')) grip = '#a83a2a';
-  else if (boneish) grip = '#d8cca8';
-  const fangs = ids.filter((id) => MATERIALS[id] && MATERIALS[id].tags.includes('fang')).length;
-  const els = Object.entries(w.el || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k]) => k);
-  return {
-    blade: bladeHex, metalId: blade, gem: gem ? MATERIALS[gem].color : crystal ? MATERIALS[crystal].color : null,
-    guard: has('gold') || (w.grade ?? 0) >= 4 ? '#ffd04a' : blade === 'copper' || blade === 'bronze' ? '#b06a3a' : '#7a7a86',
-    grip, fangs, els, feather: has('feather'), core: has('golem_core') || has('lava_core'), stars: blade === 'stariron', glow: blade === 'magmasteel' || blade === 'cursedore',
-    bone: !!boneish && !blade, junk: blade === 'junk',
-  };
-}
-
-/** Forged weapon sprite. w = {bp, ids, el, grade, recipe?} */
-export function weaponSprite(w, size = 48) {
+export function weaponSprite(w, size = 96) {
   const key = `wpn|${w.bp}|${(w.ids || []).join(',')}|${JSON.stringify(w.el || {})}|${w.grade ?? 1}|${w.recipe || ''}|${size}`;
-  return memo(key, () => {
-    const S = size;
-    const p = new Painter(S, S);
-    const look = weaponLook(w);
-    const BT = tones(look.blade), GT = tones(look.guard), HT = tones(look.grip), WD = tones('#8a5a33');
-    const k = S / 48;
-    const r = new RNG(key);
-    // axis from butt (bottom-left) to tip (top-right)
-    const bx = 5 * k, by = S - 5 * k, tx = S - 4 * k, ty = 4 * k;
-    const bp = w.bp;
-    const AX = (t) => [lerp(bx, tx, t), lerp(by, ty, t)];
-    const elSide = [];
-    // --- grips / shafts
-    const shaft = (t0, t1, rad, T, wrapEvery = 0) => {
-      const [x0, y0] = AX(t0), [x1, y1] = AX(t1);
-      axisPaint(p, x0, y0, x1, y1, rad + 1, (t, d, len, u) => {
-        if (t < 0 || t > 1 || Math.abs(d) > rad) return null;
-        if (wrapEvery && Math.floor(u / (wrapEvery * k)) % 2 === 0 && Math.abs(d) < rad) return T[d < -rad * 0.2 ? 4 : 2];
-        return T[d < -rad * 0.3 ? 4 : d > rad * 0.4 ? 1 : 3];
-      });
-    };
-    const pommel = (t, rad, T) => { const [x, y] = AX(t); lump(p, x, y, rad, rad, T, 3, { wobble: 0 }); };
-    const crossGuard = (t, half, thick, T) => {
-      const [cx, cy] = AX(t);
-      // perpendicular to axis: direction (1,1)/√2
-      axisPaint(p, cx - half * 0.707, cy - half * 0.707, cx + half * 0.707, cy + half * 0.707, thick + 1, (tt, d) => (tt >= 0 && tt <= 1 && Math.abs(d) <= thick ? T[d < 0 ? 4 : 2] : null));
-      if (look.gem) lump(p, cx, cy, Math.max(1.4, 2 * k), Math.max(1.4, 2 * k), tones(look.gem), 2, { wobble: 0, bias: 0.3 });
-    };
-    // --- blades
-    const blade = (t0, t1, width, curve = 0, o = {}) => {
-      const [x0, y0] = AX(t0), [x1, y1] = AX(t1);
-      axisPaint(p, x0, y0, x1, y1, width * 2 + 2, (t, d, len) => {
-        if (t < 0 || t > 1) return null;
-        const taper = o.leaf ? Math.sin(Math.min(1, t * 1.15) * Math.PI) * 1.1 + 0.15 : t > 0.82 ? (1 - t) / 0.18 : 1;
-        const wv = width * taper;
-        const dd = d - curve * Math.sin(t * Math.PI) * width;
-        if (dd < -wv || dd > wv) return null;
-        if (look.fangs && dd > wv - 1.2 && Math.floor(t * len / (3 * k)) % 2 === 0 && t > 0.15 && t < 0.85) return null; // serrated back
-        let i = dd < -wv * 0.35 ? 4 : dd > wv * 0.45 ? 1 : 3;
-        if (Math.abs(dd) < 0.6 && o.fuller !== false && t < 0.75) i = 2; // fuller groove
-        if (dd < -wv + 0.8) i = 5; // lit edge
-        if (look.junk && hash2(Math.round(t * 40), Math.round(d), 3) > 0.8) i = Math.max(0, i - 2);
-        return BT[i];
-      });
-      elSide.push([t0, t1, width]);
-    };
-
-    if (bp === 'sword' || bp === 'dagger') {
-      const isD = bp === 'dagger';
-      const g = isD ? 0.36 : 0.26;
-      shaft(0.06, g - 0.03, 1.6 * k, HT, 2);
-      pommel(0.06, 2.4 * k, GT);
-      blade(g + 0.02, isD ? 0.82 : 1.0, (isD ? 3 : 3.2) * k);
-      crossGuard(g, (isD ? 6 : 8) * k, 1.6 * k, GT);
-    } else if (bp === 'axe') {
-      shaft(0.05, 0.92, 1.5 * k, WD, 0);
-      shaft(0.08, 0.3, 1.7 * k, HT, 2);
-      // bearded axe head: polygon in local coords (a = along shaft toward tip, q = perpendicular, +q = lower-right)
-      const [hx, hy] = AX(0.8);
-      const toXY = (a, q) => [hx + a * 0.707 + q * 0.707, hy - a * 0.707 + q * 0.707];
-      const poly = [[4, 0], [6, 7], [5, 11], [0, 12], [-6, 10], [-9, 6], [-3, 4], [-3, 0]].map(([a, q]) => toXY(a * k, q * k));
-      p.poly(poly, BT[3]);
-      // shade: edge band bright, inner cheek darker
-      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-        if (!p.alpha(x, y)) continue;
-        const dx = x + 0.5 - hx, dy = y + 0.5 - hy;
-        const a = (dx - dy) * 0.707 / k, q = (dx + dy) * 0.707 / k;
-        if (q < -0.5 || q > 13 || a < -10 || a > 7) continue;
-        const c = p.get(x, y);
-        if (c[0] !== hexToRgb(BT[3])[0] || c[1] !== hexToRgb(BT[3])[1]) continue;
-        if (q > 9) p.set(x, y, BT[5]);
-        else if (q > 7.5) p.set(x, y, BT[4]);
-        else if (a < -5) p.set(x, y, BT[2]);
-        else if (q < 2) p.set(x, y, BT[1]);
-        if (look.fangs && q > 9.5 && Math.floor(a / 2) % 2 === 0) p.clear(x, y);
-      }
-      // back spike
-      const [sx, sy] = AX(0.84);
-      p.line(Math.round(sx), Math.round(sy), Math.round(sx - 4 * k), Math.round(sy - 4 * k), BT[2]);
-      elSide.push([0.62, 0.95, 6 * k]);
-    } else if (bp === 'hammer') {
-      shaft(0.05, 0.78, 1.6 * k, WD, 0);
-      shaft(0.06, 0.28, 1.8 * k, HT, 2);
-      const [hx, hy] = AX(0.82);
-      // big block head perpendicular to the shaft
-      const hw = 11 * k, hh = 6.5 * k;
-      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-        const dx = x + 0.5 - hx, dy = y + 0.5 - hy;
-        const along = (dx - dy) * 0.707, perp = (dx + dy) * 0.707;
-        if (Math.abs(perp) > hw || Math.abs(along) > hh) continue;
-        const corner = Math.abs(perp) > hw - 1.2 && Math.abs(along) > hh - 1.2;
-        if (corner) continue;
-        let i = along > hh - 1.6 ? 5 : along < -hh + 1.6 ? 1 : perp < -hw + 1.6 ? 4 : 3;
-        if (Math.abs(perp) < 1.2) i = Math.max(0, i - 1);
-        p.set(x, y, BT[i]);
-      }
-      if (look.core) lump(p, hx, hy, 2.6 * k, 2.6 * k, tones('#ffb84a'), 4, { wobble: 0, bias: 0.5 });
-      else if (look.gem) lump(p, hx, hy, 2 * k, 2 * k, tones(look.gem), 4, { wobble: 0, bias: 0.3 });
-      elSide.push([0.7, 0.95, 8 * k]);
-    } else if (bp === 'spear') {
-      shaft(0.02, 0.74, 1.2 * k, WD, 0);
-      shaft(0.3, 0.42, 1.5 * k, HT, 2);
-      blade(0.72, 1.0, 3.6 * k, 0, { leaf: true, fuller: false });
-      const [cx, cy] = AX(0.72);
-      lump(p, cx, cy, 1.8 * k, 1.8 * k, GT, 1, { wobble: 0 });
-    } else if (bp === 'staff') {
-      shaft(0.02, 0.8, 1.3 * k, WD, 0);
-      shaft(0.4, 0.5, 1.6 * k, HT, 2);
-      const [ox, oy] = AX(0.88);
-      // claw prongs holding an orb
-      for (const s of [-1, 1]) p.line(Math.round(ox - 4 * k * 0.707 + s * 4 * k * 0.707), Math.round(oy + 4 * k * 0.707 + s * 4 * k * 0.707), Math.round(ox + s * 5 * k * 0.707), Math.round(oy + s * 5 * k * 0.707 - 3 * k), WD[4]);
-      const orbHex = look.gem || (look.els[0] ? EL_COLOR[look.els[0]] : look.blade);
-      lump(p, ox, oy, 4.4 * k, 4.4 * k, tones(orbHex), 7, { wobble: 0.05, bias: 0.25 });
-      elSide.push([0.8, 0.98, 5 * k]);
-    } else if (bp === 'pickaxe') {
-      shaft(0.04, 0.84, 1.5 * k, WD, 0);
-      shaft(0.06, 0.3, 1.7 * k, HT, 2);
-      const [hx, hy] = AX(0.84);
-      // curved pick head (perpendicular arc)
-      for (let i = 0; i < 120; i++) {
-        const t = i / 119 * 2 - 1; // -1..1 across
-        const perp = t * 13 * k, along = -(1 - t * t) * 4 * k + 2 * k;
-        const x = hx + (perp + along) * 0.707, y = hy + (perp - along) * 0.707;
-        const rad = (1 - Math.abs(t) * 0.75) * 2.3 * k;
-        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) if (dx * dx + dy * dy <= rad * rad) p.set(Math.round(x + dx), Math.round(y + dy), BT[dx + dy < -rad * 0.4 ? 4 : dx + dy > rad * 0.5 ? 1 : 3]);
-      }
-      elSide.push([0.75, 0.95, 6 * k]);
-    }
-    // --- feather tuft at the pommel
-    if (look.feather) { const [x, y] = AX(0.02); p.line(Math.round(x), Math.round(y), Math.round(x - 3 * k), Math.round(y + 4 * k), '#c8b8a0'); p.line(Math.round(x + 1), Math.round(y), Math.round(x - 1 * k), Math.round(y + 5 * k), '#8a7a6a'); }
-    // --- star-iron specks / glow veins
-    if (look.stars || look.glow) {
-      const col = look.stars ? '#ffe08a' : look.blade === BLADE_COLOR.cursedore ? '#ff9aff' : '#ffe08a';
-      for (let i = 0; i < 6 * k; i++) { const t = r.float(0.4, 0.92); const [x, y] = AX(t); const o = r.float(-1.5, 1.5) * k; if (p.alpha(Math.round(x + o), Math.round(y + o))) p.set(Math.round(x + o), Math.round(y + o), col); }
-    }
-    finish(p, '#140c10');
-    // --- element overlays (after outline so they sit on top / outside)
-    const [et0, et1, ew] = elSide[0] || [0.5, 0.95, 4 * k];
-    look.els.slice(0, 3).forEach((el, n) => {
-      const C = EL_COLOR[el];
-      const T = tones(C);
-      const cnt = Math.round((5 + Math.min(6, (w.el || {})[el] || 1)) * k);
-      for (let i = 0; i < cnt; i++) {
-        const t = lerp(et0 + 0.05, et1 - 0.04, (i + n * 0.33) / cnt);
-        const [x, y] = AX(t);
-        // above-left side of the blade = (-1,-1) direction
-        const side = (i + n) % 2 ? 1 : -1;
-        const off = ew + 1.5 * k;
-        const ox = Math.round(x + side * off * 0.707), oy = Math.round(y + side * off * 0.707);
-        if (el === 'fire') { p.set(ox, oy, T[3]); p.set(ox, oy - 1, T[4]); if (i % 2) p.set(ox + 1, oy - 2, T[5]); }
-        else if (el === 'ice') { p.set(ox, oy, T[4]); if (i % 2) { p.set(ox - 1, oy, T[3]); p.set(ox, oy - 1, '#ffffff'); } }
-        else if (el === 'shock') { if (i % 2) { p.set(ox, oy, T[5]); p.set(ox + 1, oy + 1, T[4]); p.set(ox, oy + 2, T[3]); } }
-        else if (el === 'poison') { if (side > 0) { p.set(ox, oy + 1, T[4]); p.set(ox, oy + 2, T[3]); } else p.set(ox, oy, T[2]); }
-        else if (el === 'curse') { if (i % 2) { const [bx2, by2] = AX(t); p.set(Math.round(bx2), Math.round(by2), T[4]); } else p.set(ox, oy, T[3]); }
-        else if (el === 'holy') { if (i % 3 === 0) sparkle(p, ox, oy, '#fff6c8'); }
-        else if (el === 'bleed') { if (side > 0 && i % 2) { p.set(ox, oy, T[3]); p.set(ox, oy + 1, T[2]); } }
-      }
-    });
-    // --- grade: masterwork sparkle, crude chips
-    if ((w.grade ?? 1) >= 4) { const [x, y] = AX(0.9); sparkle(p, Math.round(x - 3 * k), Math.round(y - 3 * k), '#fff6c8', true); }
-    if ((w.grade ?? 1) <= 0) { for (let i = 0; i < 3; i++) { const [x, y] = AX(0.5 + i * 0.12); p.clear(Math.round(x + 2 * k), Math.round(y + 2 * k)); } }
-    return p.toCanvas();
-  });
+  return memo(key, () => paintWeapon(w, size));
 }
 
 // ------------------------------------------------------------------ PORTRAITS
@@ -1236,55 +1103,64 @@ export function portrait(charId, expr = 'neutral', size = 32) {
 const FACE_ROWS = [5, 7, 8, 8.5, 9, 9, 9, 9, 9, 9, 8.5, 8, 7, 6, 4.5, 3];
 
 function face(p, top, SK, o = {}) {
-  FACE_ROWS.forEach((hw, i) => {
+  (o.rows || FACE_ROWS).forEach((hw, i) => {
     const y = top + i;
     const x0 = Math.round(16 - hw), x1 = Math.round(16 + hw) - 1;
     for (let x = x0; x <= x1; x++) {
       let t = 3;
       if (x <= x0 + 1) t = 4;
       if (x >= x1 - 1) t = 2;
-      if (i >= FACE_ROWS.length - 3 && x > 16) t = 2;
-      if (i === FACE_ROWS.length - 1) t = 2;
+      const n = (o.rows || FACE_ROWS).length;
+      if (i >= n - 3 && x > 16) t = 2;
+      if (i === n - 1) t = 2;
       p.set(x, y, SK[t]);
     }
   });
 }
 
+/** Small grounded eyes (2px, no sparkle), a shadowed lid line and defined brows. o.glint = hooded faint glints. */
 function eyes(p, y, expr, E, o) {
-  const w = o.w || 3, h = o.h || 4, lx = 16 - o.gap / 2 - w, rx = 16 + o.gap / 2;
-  const lash = o.lash || '#1a1012';
+  const lx = 16 - o.gap / 2 - 2, rx = 16 + o.gap / 2;
+  const iris = '#22140f', lid = o.lid;
   for (const [side, x0] of [[-1, lx], [1, rx]]) {
-    if (expr === 'happy') { // closed smiling arcs ^ ^
-      p.set(x0, y + 2, lash); for (let x = 1; x < w; x++) p.set(x0 + x, y + 1, lash); p.set(x0 + w, y + 2, lash);
-      continue;
-    }
-    if (expr === 'hurt' && side < 0) { p.set(x0, y, lash); p.set(x0 + 1, y + 1, lash); p.set(x0 + 2, y + 2, lash); p.set(x0 + 1, y + 3, lash); p.set(x0, y + 4 > y + h ? y + 3 : y + 3, lash); continue; }
-    let top = y, hh = h;
-    if (expr === 'smug') { top = y + Math.ceil(h / 2); hh = h - Math.ceil(h / 2); }
-    if (expr === 'angry') { top = y + 1; hh = h - 1; }
-    if (expr === 'surprised') { top = y - 1; hh = h + 1; }
-    // lash line (extends outward one pixel)
-    for (let x = -1; x <= w; x++) { if ((x === -1 && side > 0) || (x === w && side < 0)) continue; p.set(x0 + x, top, lash); }
-    for (let yy = 1; yy < hh; yy++) for (let x = 0; x < w; x++) {
-      let c = yy === 1 ? E[1] : yy >= hh - 1 ? E[4] : E[2];
-      if (expr === 'surprised') c = (x === Math.floor(w / 2) && yy > 1 && yy < hh - 1) ? '#1a1012' : '#f4f0f0';
-      p.set(x0 + x, top + yy, c);
-    }
-    if (expr !== 'surprised' && hh > 2) p.set(side < 0 ? x0 : x0, top + 1, '#ffffff');
-    if (hh > 3 && expr !== 'surprised') p.set(x0 + w - 1, top + hh - 2, E[5]);
-    if (expr === 'sad') p.set(x0 + (side < 0 ? 0 : w - 1), top + hh, '#9ad8ff');
+    if (lid) { p.set(x0, y, lid); p.set(x0 + 1, y, lid); p.set(side < 0 ? x0 - 1 : x0 + 2, y + 1, lid); }
+    if (o.glint) { if (expr !== 'happy' && !(expr === 'hurt' && side < 0)) p.set(x0 + (side < 0 ? 1 : 0), y + 1, o.glint); continue; }
+    if (expr === 'happy' || (expr === 'hurt' && side < 0)) { p.set(x0, y + 2, iris); p.set(x0 + 1, y + 2, iris); p.set(side < 0 ? x0 - 1 : x0 + 2, y + 1, iris); continue; }
+    const rows = expr === 'surprised' ? [0, 1, 2] : expr === 'angry' || expr === 'smug' ? [2] : [1, 2];
+    for (const r of rows) { p.set(x0, y + r, r === rows[rows.length - 1] && rows.length > 1 ? E[1] : iris); p.set(x0 + 1, y + r, r === rows[0] ? iris : E[1]); }
+    if (expr === 'sad') p.set(x0 + (side < 0 ? 0 : 1), y + 4, '#8ab8d0');
   }
   // brows
   const by = y - 2 - (expr === 'surprised' ? 1 : 0);
   const bc = o.brow;
-  if (o.noBrows && !['angry', 'sad', 'surprised', 'smug'].includes(expr)) return;
-  if (expr === 'angry' || expr === 'hurt') { p.line(lx - 1, by, lx + w - 1, by + 2, bc); p.line(rx + w, by, rx, by + 2, bc); }
-  else if (expr === 'sad') { p.line(lx, by + 2, lx + w, by, bc); p.line(rx - 1, by, rx + w - 1, by + 2, bc); }
-  else { for (let x = 0; x < w + (o.thick ? 1 : 0); x++) { p.set(lx + x - (o.thick ? 1 : 0), by, bc); p.set(rx + x, by - (expr === 'smug' && x > 0 ? 1 : 0), bc); } }
+  if (o.noBrows) return;
+  const bw = 3;
+  if (expr === 'angry' || expr === 'hurt') { p.line(lx - 1, by, lx + 2, by + 2, bc); p.line(rx + 2, by, rx - 1, by + 2, bc); }
+  else if (expr === 'sad') { p.line(lx - 1, by + 2, lx + 2, by, bc); p.line(rx - 1, by, rx + 2, by + 2, bc); }
+  else for (let x = 0; x < bw; x++) {
+    p.set(lx - 1 + x, by + (x === 0 ? 1 : 0), bc); p.set(rx + x, by - (expr === 'smug' && x > 0 ? 1 : 0) + (x === 2 ? 1 : 0), bc);
+    if (o.thick) { p.set(lx + x, by + 1, bc); }
+  }
+}
+
+/** Nose with a shadow plane on the unlit side and a warm tip. */
+function nose(p, y, SK) { p.set(17, y, SK[1]); p.set(17, y + 1, SK[1]); p.set(16, y + 1, SK[4]); p.set(15, y + 2, SK[1]); p.set(16, y + 2, SK[0]); }
+
+/** Warm firelit rim on the left edge, cool shadow on the right. */
+function rimLight(p) {
+  const add = [];
+  for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
+    if (!p.alpha(x, y)) continue;
+    const c = p.get(x, y), hex = '#' + c.slice(0, 3).map((v) => v.toString(16).padStart(2, '0')).join('');
+    if (!p.alpha(x - 1, y) || !p.alpha(x - 1, y - 1)) add.push([x, y, mixHex(hex, '#ffb36a', 0.4)]);
+    else if (!p.alpha(x + 1, y) || !p.alpha(x + 2, y)) add.push([x, y, mixHex(hex, '#2a3058', 0.38)]);
+    else if (x > 19) add.push([x, y, mixHex(hex, '#3a3a68', 0.12)]);
+  }
+  for (const [x, y, c] of add) p.set(x, y, c);
 }
 
 function mouth(p, y, expr, o = {}) {
-  const d = '#5a1a20', t = '#e8707a';
+  const d = '#4a2420', t = '#a85a50';
   const x = 16;
   if (expr === 'happy') { p.hline(x - 2, x + 1, y, d); p.hline(x - 1, x, y + 1, t); p.set(x - 2, y + 1, d); p.set(x + 1, y + 1, d); if (o.fang) p.set(x, y, '#ffffff'); }
   else if (expr === 'angry') { p.hline(x - 2, x + 1, y + 1, d); p.set(x - 2, y, d); p.set(x + 1, y, d); }
@@ -1295,7 +1171,6 @@ function mouth(p, y, expr, o = {}) {
   else { p.hline(x - 1, x, y, d); if (o.fang) p.set(x, y + 1, '#ffffff'); }
 }
 
-function blush(p, y, gap) { for (const x of [16 - gap / 2 - 4, 16 + gap / 2 + 2]) { p.set(x, y, '#ff8a8a', 150); p.set(x + 1, y, '#ff8a8a', 150); } }
 
 function bust(p, y0, CL, w) {
   for (let y = y0; y < 32; y++) {
@@ -1311,31 +1186,41 @@ function drawPortrait(id, expr) {
   const p = new Painter(32, 32);
   const SK = ptones(md.skin), HR = ptones(md.hair), CL = tones(md.cloth), AP = tones(md.apron), AC = tones(md.accent), EY = tones(md.eyes);
   if (id === 'bran') {
-    bust(p, 25, CL, 30);
-    p.rect(13, 22, 6, 3, SK[2]); // neck
-    for (let y = 26; y < 32; y++) for (let x = 11; x < 21; x++) p.set(x, y, AP[x < 13 ? 4 : x > 18 ? 2 : 3]); // apron bib
-    for (const sx of [10, 21]) for (let y = 25; y < 32; y++) p.set(sx + (y < 27 ? (sx < 16 ? -1 : 1) : 0), y, AP[1]);
-    p.set(12, 28, '#d8b060'); p.set(19, 28, '#d8b060');
-    // back hair (short, spiky at sides)
-    for (const [x, y] of [[6, 11], [7, 10], [25, 11], [24, 10], [6, 13], [25, 13]]) { p.set(x, y, HR[2]); p.set(x, y + 1, HR[1]); }
-    face(p, 8, SK);
-    // sideburns + stubble
-    for (let y = 14; y < 20; y++) { p.set(7, y, HR[2]); p.set(24, y, HR[1]); }
-    const stub = mixHex(md.skin, md.hair, 0.42);
-    for (let y = 19; y < 24; y++) for (let x = 8; x < 24; x++) if (p.alpha(x, y) && (y > 20 || x < 10 || x > 21) && ((x + y) & 1)) p.set(x, y, stub);
-    // bandana
-    for (let y = 5; y < 12; y++) for (let x = 6; x < 26; x++) {
-      const dx = (x + 0.5 - 16) / 10, dy = (y - 11.5) / 7;
-      if (dx * dx + dy * dy > 1) continue;
-      p.set(x, y, AC[y < 7 ? 4 : y > 10 ? 1 : x < 11 ? 3 : 2]);
+    const SH = ptones('#cdb894'), LA = ptones('#6e4428'), HB = ptones('#8e3c22');
+    // linen shirt over broad shoulders, open collar
+    for (let y = 24; y < 32; y++) {
+      const hw = Math.min(15.5, 7 + (y - 24) * 3);
+      for (let x = Math.round(16 - hw); x < Math.round(16 + hw); x++) {
+        let t = x < 8 ? 4 : x > 23 ? 1 : x > 19 ? 2 : 3;
+        if ((x === 6 || x === 25) && y > 27) t -= 1; // sleeve seams
+        p.set(x, y, SH[t]);
+      }
     }
-    p.hline(7, 24, 11, AC[1]);
-    for (const [x, y] of [[11, 7], [16, 6], [20, 8], [14, 9]]) p.set(x, y, '#fff0d0'); // polka dots
-    p.set(25, 10, AC[3]); p.set(26, 11, AC[2]); p.set(27, 12, AC[1]); p.set(26, 9, AC[2]); p.set(27, 9, AC[1]); // knot tails
-    eyes(p, 14, expr, EY, { w: 3, h: 3, gap: 6, brow: HR[0], thick: true });
-    p.set(16, 18, SK[1]); p.set(15, 18, SK[2]); // nose
+    p.rect(13, 21, 6, 4, SK[2]); p.set(18, 21, SK[1]); p.set(18, 22, SK[1]);
+    for (let y = 24; y < 28; y++) { const o = y - 24; for (let x = 14 + (o >> 1); x < 18 - (o >> 1); x++) p.set(x, y, SK[o < 2 ? 2 : 1]); p.set(13 + (o >> 1), y, SH[1]); p.set(18 - (o >> 1), y, SH[1]); }
+    // leather apron bib with straps and stitching
+    for (let y = 27; y < 32; y++) for (let x = 10; x < 22; x++) p.set(x, y, LA[x < 12 ? 4 : x > 19 ? 2 : 3]);
+    for (let x = 11; x < 21; x += 2) p.set(x, 28, LA[1]);
+    for (const [sx, d] of [[10, -1], [21, 1]]) for (let y = 24; y < 28; y++) { p.set(sx + d * (27 - y > 1 ? 1 : 0), y, LA[2]); }
+    p.set(11, 30, '#c8a060'); p.set(20, 30, '#a07a40');
+    // ears + strong jaw
+    p.set(6, 14, SK[3]); p.set(6, 15, SK[2]); p.set(25, 14, SK[1]); p.set(25, 15, SK[1]);
+    face(p, 8, SK, { rows: [5, 7, 8, 8.5, 9, 9, 9, 9, 9, 9, 9, 8.5, 8, 7, 5.5, 4] });
+    for (let y = 18; y < 23; y++) p.set(Math.round(16 + [9, 9, 8.5, 8, 7][y - 18]) - 2, y, SK[1]); // jaw shadow plane
+    // short tousled auburn hair
+    for (let y = 2; y < 13; y++) for (let x = 5; x < 27; x++) {
+      const dx = (x + 0.5 - 16) / 10.5, dy = (y - 10) / 7.5;
+      if (dx * dx + dy * dy > 1) continue;
+      const strand = Math.floor((x * 0.8 + y * 0.6) / 2) & 1;
+      p.set(x, y, HB[x < 11 ? 4 - strand : x > 21 ? 1 + strand : 3 - strand]);
+    }
+    for (const [x, y] of [[11, 2], [15, 2], [19, 2], [22, 3]]) p.set(x, y, HB[3]);
+    // fringe sweeping right over the forehead
+    [3, 4, 3, 2, 4, 5, 3, 2, 4, 3, 2, 3, 2, 1, 2, 1].forEach((h, i) => { const x = 8 + i; for (let y = 10; y < 10 + h; y++) p.set(x, y, HB[y === 9 + h ? 1 : x < 12 ? 4 : 3]); });
+    for (let y = 12; y < 17; y++) { p.set(7, y, HB[2]); p.set(24, y, HB[1]); } // short sideburns
+    eyes(p, 14, expr, EY, { gap: 6, brow: HB[0], thick: true, lid: SK[1] });
+    nose(p, 16, SK);
     mouth(p, 21, expr);
-    if (expr !== 'angry') blush(p, 19, 6);
   } else if (id === 'elio') {
     bust(p, 25, CL, 26);
     p.hline(10, 21, 25, AC[3]); p.set(16, 27, AC[4]); p.set(16, 28, AC[2]); // collar trim + clasp
@@ -1354,9 +1239,10 @@ function drawPortrait(id, expr) {
     for (let x = 2; x < 30; x++) for (let y = 9; y < 12; y++) { const e = Math.abs(x + 0.5 - 16) / 14; if ((y === 11 && e > 0.8) || (y === 9 && e > 0.9)) continue; p.set(x, y, CL[y === 9 ? 4 : y === 11 ? 1 : 2]); }
     p.hline(7, 24, 8, AC[3]); p.hline(8, 23, 7, AC[1]);
     for (const [x, y, k] of [[20, 3, 5], [14, 5, 4], [23, 1, 4]]) p.set(x, y, AC[k]);
-    eyes(p, 15, expr, EY, { w: 3, h: 5, gap: 4, brow: HR[0], noBrows: true });
+    for (let y = 12; y < 18; y++) for (let x = 7; x < 25; x++) if (p.alpha(x, y)) { const c = p.get(x, y); p.set(x, y, mixHex('#' + c.slice(0, 3).map((v) => v.toString(16).padStart(2, '0')).join(''), '#1e1a34', 0.55 - (y - 12) * 0.07)); }
+    eyes(p, 15, expr, EY, { gap: 4, brow: HR[0], noBrows: true, glint: '#d8c890' });
+    nose(p, 18, SK);
     mouth(p, 22, expr);
-    if (expr !== 'angry') blush(p, 20, 4);
     // Kindle, the little flame buddy
     lump(p, 27, 25, 2.4, 2.6, tones('#ff9a3a'), 1, { wobble: 0, bias: 0.4 });
     p.set(27, 21, '#ffe08a'); p.set(26, 22, '#ffb84a'); p.set(28, 22, '#ff9a3a');
@@ -1391,7 +1277,7 @@ function drawPortrait(id, expr) {
       const x = 16 + s * (9 + i * 0.75), y = 8 - i * 1.0 + (i > 5 ? (i - 5) * 0.8 : 0);
       p.set(Math.round(x), Math.round(y), i > 5 ? '#fff6e0' : '#e8dcc0'); p.set(Math.round(x), Math.round(y) + 1, '#b8a888'); if (i < 4) p.set(Math.round(x) - s, Math.round(y) + 1, '#d8ccb0');
     }
-    eyes(p, 14, expr, EY, { w: 2, h: 2, gap: 6, brow: HR[1], thick: true });
+    eyes(p, 14, expr, EY, { gap: 6, brow: HR[1], thick: true, lid: SK[1] });
   } else if (id === 'clover') {
     const FUR = ptones(md.hair);
     // ears: left upright, right floppy
@@ -1410,12 +1296,13 @@ function drawPortrait(id, expr) {
     for (let y = 22; y < 27; y++) for (let x = 7; x < 26; x++) { const t = Math.abs((x - 16) / 9); if (y - 22 > 4 - t * 2) continue; p.set(x, y, AP[y === 22 ? 4 : y > 25 ? 1 : x < 12 ? 3 : 2]); }
     for (let y = 26; y < 32; y++) for (let k = 0; k < 4; k++) p.set(22 + k + Math.floor((y - 26) / 2), y, AP[k === 0 ? 4 : k === 3 ? 1 : 2]);
     p.set(10, 24, '#ffd23a'); // scarf pin
-    eyes(p, 14, expr, EY, { w: 3, h: 4, gap: 4, brow: FUR[0], noBrows: true });
-    p.set(16, 19, '#e898a8'); // nose
+    eyes(p, 15, expr, EY, { gap: 6, brow: FUR[1], lid: SK[1] });
+    p.set(15, 18, '#b07a7a'); p.set(16, 18, '#8a5a5a'); p.set(16, 19, SK[1]); // nose
+    for (let y = 27; y < 32; y++) for (let x = 9; x < 23; x += 3) p.set(x + (y & 1), y, CL[1]); // padded vest quilting
     mouth(p, 21, expr, { fang: true });
-    if (expr !== 'angry') blush(p, 19, 4);
   }
-  if (expr === 'hurt') { p.set(25, 12, '#9ad8ff'); p.set(25, 13, '#9ad8ff'); p.set(26, 13, '#d8f4ff'); }
+  if (expr === 'hurt') { p.set(25, 12, '#8ab8d0'); p.set(25, 13, '#8ab8d0'); }
+  rimLight(p);
   finish(p, '#140c10', { selout: false });
   return p.toCanvas();
 }
@@ -1433,14 +1320,15 @@ const LETTERS = {
 };
 export function logo(scale = 1) {
   return memo(`logo|${scale}`, () => {
-    const C = 4; // cell px
+    const C = 5; // cell px
     const word = 'FORGLITE';
+    const JIT = [0, -2, 1, -1, 2, 0, -2, 1]; // hand-stamped: each letter sits a little off the line
     const gap = 3;
     let totalW = 0;
     for (const ch of word) totalW += LETTERS[ch][0].length * C + gap;
     totalW -= gap;
-    const W = totalW + 12, H = 56;
-    const ox = 6, oy = 6;
+    const W = totalW + 12, H = 66;
+    const ox = 6, oy = 8;
     const mask = new Painter(W, H); // letter coverage
     const letterOf = new Int16Array(W * H).fill(-1);
     let cx = ox;
@@ -1451,7 +1339,7 @@ export function logo(scale = 1) {
       rows.forEach((row, ry) => [...row].forEach((v, rx) => {
         if (v !== '#') return;
         for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) {
-          const px = cx + rx * C + x, py = oy + ry * C + y;
+          const px = cx + rx * C + x, py = oy + JIT[li] + ry * C + y;
           // chamfer convex corners
           const up = ry > 0 && rows[ry - 1][rx] === '#', dn = ry < 6 && rows[ry + 1][rx] === '#';
           const lf = rx > 0 && row[rx - 1] === '#', rt = rx < row.length - 1 && row[rx + 1] === '#';
@@ -1480,19 +1368,20 @@ export function logo(scale = 1) {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       if (!inL(x, y)) continue;
       const li = letterOf[y * W + x];
-      const t = (y - letterTop) / letterH;
-      let col = grad[Math.min(grad.length - 1, Math.floor(t * grad.length))];
+      const t = (y - letterTop - JIT[li]) / letterH;
+      let col = grad[clamp(Math.floor(t * grad.length), 0, grad.length - 1)];
       // bevel: lit top/left edges, dark bottom/right
       if (!inL(x, y - 1)) col = '#fffbe8';
       else if (!inL(x - 1, y)) col = mixHex(col, '#ffffff', 0.35);
       else if (!inL(x, y + 1)) col = mixHex(col, '#2a0a06', 0.55);
       else if (!inL(x + 1, y)) col = mixHex(col, '#3a0a06', 0.35);
-      // hot streaks
+      // hot streaks + hammer dimples on the stamped faces
       if (hash2(x >> 1, y, 7) > 0.93) col = mixHex(col, '#ffffff', 0.4);
+      else if (inL(x, y - 2) && inL(x - 2, y) && inL(x + 2, y) && inL(x, y + 2) && hash2(x >> 2, y >> 2, li + 3) > 0.7 && ((x + y) & 3) === 0) col = mixHex(col, '#7a2412', 0.35);
       out.set(x, y, col);
     }
     // rivets in letter corners
-    [0, 2, 4, 7].forEach((li) => { const x = starts[li] + 2, y = oy + 2 + (li % 2) * 20; if (inL(x, y) && inL(x + 1, y + 1)) { out.set(x, y, '#fff6e0'); out.set(x + 1, y, '#a05a20'); out.set(x, y + 1, '#a05a20'); out.set(x + 1, y + 1, '#5a2a10'); } });
+    [0, 2, 4, 7].forEach((li) => { const x = starts[li] + 2, y = oy + JIT[li] + 2 + (li % 2) * 25; if (inL(x, y) && inL(x + 1, y + 1)) { out.set(x, y, '#fff6e0'); out.set(x + 1, y, '#a05a20'); out.set(x, y + 1, '#a05a20'); out.set(x + 1, y + 1, '#5a2a10'); } });
     // curse crack through R and G
     let kx = starts[2] + 2, ky = oy + 3;
     const crack = [];
@@ -1528,7 +1417,7 @@ export function logo(scale = 1) {
 }
 
 // ------------------------------------------------------------------ MAP NODE BADGES
-export function nodeBadge(type, size = 17) {
+export function nodeBadge(type, size = 28) {
   return memo(`badge|${type}|${size}`, () => {
     const nt = NODE_TYPES[type] || NODE_TYPES.monster;
     const p = new Painter(size, size);
