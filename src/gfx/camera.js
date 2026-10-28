@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { damp, ease as E, noise2 } from '../core/math.js';
 
 export class CameraRig {
+  static shakeSetting = 1;
   constructor(fov = 40, near = 0.1, far = 200) {
     this.camera = new THREE.PerspectiveCamera(fov, 16 / 9, near, far);
     this.pos = new THREE.Vector3(0, 2, 6);
@@ -12,7 +13,7 @@ export class CameraRig {
     this.tPos = this.pos.clone(); this.tLook = this.look.clone(); this.tFov = fov; this.tRoll = 0;
     this.lambda = 3.5;
     this.trauma = 0;
-    this.shakeScale = 1;
+    this.shakeScale = CameraRig.shakeSetting ?? 1;
     this.sway = 0.02;
     this.punch = 0;
     this.time = 0;

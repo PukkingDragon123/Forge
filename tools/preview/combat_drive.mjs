@@ -18,6 +18,7 @@ const keyList = keys ? keys.split(',') : [];
 for (let i = 0; i < +secs; i++) {
   await page.waitForTimeout(1000);
   for (const k of keyList) { const [at, key] = k.split(':'); if (+at === i) await page.keyboard.press(key); }
+  for (const e of (process.env.EVALS || '').split(';;').filter(Boolean)) { const j = e.indexOf(':'); if (+e.slice(0, j) === i) await page.evaluate(e.slice(j + 1)); }
   console.log(i, await state());
   if (i % +every === every - 1) {
     await page.evaluate(() => { window.__renderEvery = 1; });

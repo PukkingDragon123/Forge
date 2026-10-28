@@ -2,6 +2,7 @@
 // Click an explorer to see their abilities; descend to start a run.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
+import { CameraRig } from '../gfx/camera.js';
 import { buildSet } from '../models/environments.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildProp } from '../models/props.js';
@@ -338,7 +339,7 @@ export class TitleScene extends Scene {
     slider('Master', 'master', y + 32);
     slider('Music', 'music', y + 50);
     slider('Effects', 'sfx', y + 68);
-    if (ui.button('set-shake', x + 14, y + 88, W - 28, 18, `Screen shake: ${s.shake ? 'On' : 'Off'}`, { style: 'wood' })) { s.shake = s.shake ? 0 : 1; save.write(); }
+    if (ui.button('set-shake', x + 14, y + 88, W - 28, 18, `Screen shake: ${s.shake ? 'On' : 'Off'}`, { style: 'wood' })) { s.shake = s.shake ? 0 : 1; save.write(); CameraRig.shakeSetting = s.shake; this.w.rig.shakeScale = s.shake; }
     if (ui.button('set-px', x + 14, y + 110, W - 28, 18, `Pixel size: ${['Auto', 'Chunky', 'Fine'][s.pixelScale || 0]}`, { style: 'wood' })) {
       s.pixelScale = ((s.pixelScale || 0) + 1) % 3; save.write();
       this.game.renderer.setScaleBias(s.pixelScale === 1 ? 1 : s.pixelScale === 2 ? -1 : 0);

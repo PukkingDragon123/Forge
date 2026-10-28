@@ -226,7 +226,7 @@ export class MapScene extends Scene {
     if (this.titleT < 2.2) { this.titleT += dt; this.camY += (this.camTargetY - this.camY) * Math.min(1, dt * 1.2); }
     else this.camY += (this.camTargetY - this.camY) * Math.min(1, dt * 5);
     const sway = Math.sin(this.time * 0.25) * 0.6;
-    this.rig.aim([sway, this.camY + 1.6, 21], [sway * 0.4, this.camY - 0.4, 0], 28, 6);
+    if (!this.leaving) this.rig.aim([sway, this.camY + 1.6, 21], [sway * 0.4, this.camY - 0.4, 0], 28, 6);
     this.rig.update(dt);
     // ambience: drips, dust, glowing motes on available paths
     if (Math.random() < 0.5) this.dust.emit({ pos: [0, this.camY, 1.5], posSpread: [7, 4, 0.5], vel: [0.05, 0.02, 0], spread: 0.03, life: [3, 6], size: 1, color: '#c8b8a0', alpha: 0.4, fadeIn: 1 });
@@ -334,7 +334,11 @@ export class MapScene extends Scene {
     const h = this.hero.group;
     this.hero.play && this.hero.play('walk', { loop: true });
     h.rotation.y = p.x > h.position.x ? Math.PI / 2 : -Math.PI / 2;
-    this.tw.to(h.position, { x: h.position.x + Math.sign(p.x - h.position.x || 1) * 0.6 }, 0.6, { ease: 'linear' });
-    this.co.start(function* () { yield 0.55; travel(this.game, edge, node); }.bind(this));
+    const dir = Math.sign(p.x - h.position.x || 1);
+    this.tw.to(h.position, { x: h.position.x + dir * 0.6 }, 0.6, { ease: 'linear' });
+    // swoop the camera down into the tunnel mouth
+    const hp = h.position;
+    this.rig.moveTo([hp.x + dir * 0.8, hp.y + 0.9, 6.5], [hp.x + dir * 1.2, hp.y + 0.25, 0], 22, 0.75, 'inCubic');
+    this.co.start(function* () { yield 0.6; travel(this.game, edge, node); }.bind(this));
   }
 }

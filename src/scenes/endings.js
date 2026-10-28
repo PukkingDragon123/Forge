@@ -38,7 +38,7 @@ export class DescendScene extends Scene {
         const wall = R - 1 + fbm3(x * 0.2, y * 0.1, z * 0.2, 2, 4) * 2.5;
         if (d < wall - 2 || d > wall + 1 || dz > 2) continue;
         let col = pal.rock[1 + Math.floor(fbm3(x * 0.15, y * 0.2, z * 0.15, 2, 9) * 3.99)];
-        if (hash3(x, y, z, 3) > 0.985) { g.set(x, y, z, pal.accent[hash3(x, y, z, 5) > 0.5 ? 0 : 1], GLOW); continue; }
+        if (hash3(x, y, z, 3) > 0.994) { g.set(x, y, z, pal.accent[hash3(x, y, z, 5) > 0.5 ? 0 : 1], GLOW); continue; }
         g.set(x, y, z, col);
       }
     }

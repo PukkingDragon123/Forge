@@ -76,6 +76,14 @@ if (serve) {
   const result = await esbuild.build({ ...common, write: false, minify: true, outfile: 'dist/game.js', define: { DEV: 'false' } });
   const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
   writeFileSync('dist/index.html', shell(`<script>${js}</script>`));
+  // claude.ai artifact flavour: the host supplies the document skeleton, so only head content + body
+  const art = shell(`<script>${js}</script>`)
+    .replace(/^<!doctype html>\s*<html[^>]*>\s*<head>\s*/i, '')
+    .replace(/<meta charset="utf-8">\s*<meta name="viewport"[^>]*>\s*/i, '')
+    .replace(/<\/head>\s*<body>\s*/i, '')
+    .replace(/\s*<\/body>\s*<\/html>\s*$/i, '')
+    .replace('html, body {', ':root { color-scheme: dark; }\n  html, body {');
+  writeFileSync('dist/forglite-artifact.html', art);
   const kb = (readFileSync('dist/index.html').length / 1024).toFixed(0);
   console.log(`dist/index.html written (${kb} KB)`);
 }

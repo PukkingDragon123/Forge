@@ -242,7 +242,7 @@ export class CombatScene extends Scene {
     const a = this.anvilBase;
     yield this.walkTo(a.x + 0.04, a.z - 0.5, dur);
     this.hero.group.rotation.y = 0.15;
-    this.rig.moveTo([a.x + 0.55, 1.5, a.z + 2.7], [a.x - 0.1, 0.65, a.z - 0.25], 38, 0.8);
+    this.rig.moveTo([a.x + 0.75, 1.75, a.z + 3.4], [a.x - 0.1, 0.6, a.z - 0.3], 38, 0.8);
   }
 
   openForgeUI(emergency) {
@@ -258,10 +258,16 @@ export class CombatScene extends Scene {
     this.forgeCtrl = null;
     if (emergency) { this.equip(w || FISTS); this.co.start(this.resumeAfterEmergency.bind(this)); return; }
     if (!w) {
-      this.phase = 'choice';
-      this.hero.setExpression('sad');
-      this.say('Nothing solid to forge with…', 2);
-      this.goFightShot(0.8);
+      this.phase = 'cutscene';
+      this.co.start(function* (s) {
+        yield s.walkTo(s.heroHome.x, s.heroHome.z, 0.5);
+        s.face(1);
+        s.hero.play('idle', { loop: true });
+        s.hero.setExpression('sad');
+        s.say('Nothing solid to forge with…', 2);
+        s.goFightShot(0.8);
+        s.phase = 'choice';
+      }, this);
       return;
     }
     this.equip(w);
@@ -668,8 +674,12 @@ export class CombatScene extends Scene {
   }
   *fleeSeq(ok) {
     if (!ok) {
+      const mg = this.mon.group.position;
+      const dash = Math.max(0, this.monFront() - (this.hero.group.position.x + 0.7));
+      this.tw.to(mg, { x: this.monHome.x - dash }, 0.18, { ease: 'inQuad' });
       this.mon.play('attack', { onDone: () => this.mon.play('idle') });
-      yield 0.15;
+      yield 0.2;
+      this.tw.to(mg, { x: this.monHome.x }, 0.6, { ease: 'outCubic', delay: 0.3 });
       const dmg = Math.max(1, Math.round(monsterStats(this.mid, this.run.region).dmg * 1.6));
       const dead = this.run.hurt(dmg);
       const h = this.screen(this.heroHead());
