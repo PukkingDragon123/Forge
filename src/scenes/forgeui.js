@@ -16,7 +16,7 @@ import { weaponSprite, materialSprite } from '../art/sprites.js';
 import { COLORS, bigText } from '../ui/font.js';
 import { slate, tag, scrap, CHALK } from '../ui/frames.js';
 import { glowCanvas } from '../art/handpaint.js';
-import { benchCanvas, BENCH_H, moldCanvas, bookCanvas, BOOK, leafCanvas, ribbonCanvas, plaqueCanvas, anvilFaceCanvas } from '../art/forge_art.js';
+import { benchCanvas, BENCH_H, moldCanvas, bookCanvas, BOOK, leafCanvas, ribbonCanvas, plaqueCanvas, anvilFaceCanvas, indexTabCanvas } from '../art/forge_art.js';
 import { dim, ribbonTitle } from './common.js';
 import { save } from '../core/save.js';
 import { ease, clamp } from '../core/math.js';
@@ -473,10 +473,9 @@ class ForgeController {
     const tabs = this.mode === 'weapon' ? ['forge', 'codex'] : ['forge', 'tools', 'codex'];
     tabs.forEach((t, i) => {
       const on = this.tab === t;
-      const tx = x + BOOK.w - 70 - (tabs.length - 1 - i) * 58, ty = y - 14 + (on ? 0 : 4);
-      const c = tag(54, 22, { string: 0, tone: on ? 'paper' : 'manila', seed: i });
-      ui.img(c, tx, ty);
-      ui.text(t[0].toUpperCase() + t.slice(1), tx + 27, ty + 9, { align: 'center', color: on ? RED_INK : FAINT });
+      const tx = x + BOOK.w - 70 - (tabs.length - 1 - i) * 58, ty = y - 16 + (on ? 0 : 4);
+      ui.img(indexTabCanvas(54, 24, on), tx, ty);
+      ui.text(t[0].toUpperCase() + t.slice(1), tx + 27, ty + 7, { align: 'center', color: on ? RED_INK : FAINT });
       if (ui.hit('tab-' + t, tx, ty, 54, 18).clicked && this.state === 'select' && t !== this.tab) { const dir = i > tabs.indexOf(this.tab) ? 1 : -1; this.tab = t; this.turnPage(dir); }
     });
     ui.img(bookCanvas(), x, y);
@@ -495,11 +494,11 @@ class ForgeController {
     // the "skip" choice: a tag tied to the book's corner
     if (this.state === 'select') {
       const label = this.mode === 'pickaxe' ? 'Old pick only' : this.opts.emergency ? 'Fists!' : 'No weapon';
-      const c = tag(96, 24, { seed: 9 });
-      const kx = x + BOOK.w - 104, ky = y + BOOK.h + 6;
-      const h = ui.hit('forge-skip', kx, ky, 96, 36);
+      const c = tag(100, 30, { seed: 9 });
+      const kx = x + BOOK.w - 108, ky = y + BOOK.h + 2;
+      const h = ui.hit('forge-skip', kx, ky, 100, c.height);
       ui.img(c, kx, ky - (h.hover ? 2 : 0));
-      ui.text(label, kx + 48, ky + c.inner.y + 3 - (h.hover ? 2 : 0), { align: 'center', color: INK });
+      ui.text(label, kx + 50, ky + c.inner.y + Math.round((c.inner.h - 7) / 2) - (h.hover ? 2 : 0), { align: 'center', color: INK });
       if (h.hover) ui.tooltip(this.mode === 'pickaxe' ? 'Dig with your trusty old pick: 3 strikes.' : 'Fight bare-handed or try to flee.');
       if (h.clicked) this.done(null);
     }
@@ -674,12 +673,7 @@ class ForgeController {
     }
     ui.img(c, x, y + dy);
     const I = c.inner;
-    const word = this.mode === 'pickaxe' ? 'TEMPER' : 'FORGE!';
-    const hi = bigText(word, { scale: 2, top: ok ? '#fff0b8' : '#8a8478', bottom: ok ? '#e8c070' : '#6e695e' });
-    const lo = bigText(word, { scale: 2, top: ok ? '#4a2c08' : '#1e1c18', bottom: ok ? '#2a1804' : '#141210' });
-    const tx = Math.round(x + I.x + I.w / 2 - lo.width / 2), ty = Math.round(y + dy + I.y + I.h / 2 - lo.height / 2);
-    ui.img(hi, tx, ty + 1);
-    ui.img(lo, tx, ty);
+    engrave(ui, this.mode === 'pickaxe' ? 'TEMPER' : 'FORGE!', x + I.x + I.w / 2, y + dy + I.y + I.h / 2, ok);
     ui.text('space', x + W / 2 + 10, y + H + 18, { align: 'center', font: 'small', color: ok ? '#e8d8b8' : '#8a8074', outline: '#140c10' });
     if (h.hover && !ok && this.res.error) ui.tooltip(this.res.error);
     if ((h.clicked && ok) || (this.game.input.actionPressed('confirm') && ok)) { this.game.audio.play('click'); this.forge(); }
@@ -734,9 +728,9 @@ class ForgeController {
       }
     }
     // a small paper tag with the hint
-    const t = tag(150, 22, { seed: 4 });
-    ui.img(t, ui.w / 2 - 75, ui.h - 52);
-    ui.text('SPACE or click on the beat', ui.w / 2, ui.h - 52 + t.inner.y + 3, { align: 'center', color: INK });
+    const t = tag(170, 30, { seed: 4 });
+    ui.img(t, ui.w / 2 - 85, ui.h - 58);
+    ui.text('SPACE or click on the beat', ui.w / 2, ui.h - 58 + t.inner.y + Math.round((t.inner.h - 7) / 2), { align: 'center', color: INK });
   }
 
   drawResult(ui) {
@@ -775,9 +769,7 @@ class ForgeController {
       const hh = ui.hit('forge-take', x, y, W + 20, H + 20);
       const c = plaqueCanvas(W, H, hh.down ? 'down' : hh.hover ? 'hover' : 'idle');
       ui.img(c, x, y);
-      const word = this.mode === 'weapon' ? 'Fight!' : 'Dig!';
-      const lo = bigText(word, { scale: 2, top: '#4a2c08', bottom: '#2a1804' });
-      ui.img(lo, Math.round(x + c.inner.x + c.inner.w / 2 - lo.width / 2), Math.round(y + c.inner.y + c.inner.h / 2 - lo.height / 2));
+      engrave(ui, this.mode === 'weapon' ? 'Fight!' : 'Dig!', x + c.inner.x + c.inner.w / 2, y + c.inner.y + c.inner.h / 2, true);
       if (hh.clicked || this.game.input.actionPressed('confirm')) this.done(this.weapon);
     }
   }
@@ -798,6 +790,15 @@ class ForgeController {
       }
     }
   }
+}
+
+/** Letters cut into a brass plate: a pale lower lip under dark recessed glyphs. */
+export function engrave(ui, word, cx, cy, ok = true) {
+  const hi = bigText(word, { scale: 2, top: ok ? '#fff2c0' : '#a09a8c', bottom: ok ? '#f0cc6a' : '#8a8478', outline: ok ? '#c8983a' : '#5a5448' });
+  const lo = bigText(word, { scale: 2, top: ok ? '#3a2006' : '#2a2620', bottom: ok ? '#20120a' : '#1a1814', outline: ok ? '#9a6e22' : '#4a4238' });
+  const x = Math.round(cx - lo.width / 2), y = Math.round(cy - lo.height / 2);
+  ui.img(hi, x, y + 1);
+  ui.img(lo, x, y);
 }
 
 const PICK_TEXT = {

@@ -6,7 +6,8 @@ import { itemSprite } from '../art/sprites.js';
 import { matOf, itemTooltip, cellsOf } from '../systems/items.js';
 import { RARITY } from '../data/materials.js';
 import { RECIPES } from '../data/blueprints.js';
-import { COLORS, bigText } from '../ui/font.js';
+import { COLORS } from '../ui/font.js';
+import { engrave } from './forgeui.js';
 import { tag, scrap } from '../ui/frames.js';
 import { glowCanvas, lanternCanvas } from '../art/handpaint.js';
 import { backpackCanvas, clothCanvas, pitCanvas, floorCanvas, plaqueCanvas } from '../art/forge_art.js';
@@ -40,7 +41,7 @@ export class BagOverlay extends Scene {
     const bag = this.game.run.bag;
     const pack = backpackCanvas(bag.w, bag.h, CELL);
     const k = ease.outBack(clamp(this.open, 0, 1));
-    const bagX = Math.round(96 - (1 - k) * 60), bagY = Math.round(ui.h / 2 - pack.height / 2 + 10 + (1 - k) * 40);
+    const bagX = Math.round(72 - (1 - k) * 60), bagY = Math.round(ui.h / 2 - pack.height / 2 + 10 + (1 - k) * 40);
     return {
       pack, bagX, bagY, gx: bagX + pack.grid.x, gy: bagY + pack.grid.y,
       cloth: { x: 452, y: 150, w: 330, h: 250 },
@@ -67,9 +68,9 @@ export class BagOverlay extends Scene {
 
   drawTag(ui, x, y, text, opts = {}) {
     const w = Math.max(60, ui.measure(text) + 22);
-    const c = tag(w, 22, { seed: opts.seed || 1, tone: opts.tone, string: opts.string ?? 12 });
+    const c = tag(w, 30, { seed: opts.seed || 1, tone: opts.tone, string: opts.string ?? 12 });
     ui.img(c, Math.round(x - w / 2), y);
-    ui.text(text, Math.round(x), y + c.inner.y + 3, { align: 'center', color: opts.color || INK });
+    ui.text(text, Math.round(x), y + c.inner.y + Math.round((c.inner.h - 7) / 2), { align: 'center', color: opts.color || INK });
     return { x: Math.round(x - w / 2), y, w, h: c.height };
   }
 
@@ -93,7 +94,7 @@ export class BagOverlay extends Scene {
 
     // the backpack and its stitched pockets
     ui.img(L.pack, L.bagX, L.bagY);
-    this.drawTag(ui, L.bagX + L.pack.width / 2, L.bagY - 34, this.title, { seed: 2, color: '#6a2a10' });
+    this.drawTag(ui, L.bagX + L.pack.width / 2 + 70, L.bagY - 18, this.title, { seed: 2, color: '#6a2a10' });
 
     const bonus = bag.bonuses();
     const links = bag.links();
@@ -115,7 +116,6 @@ export class BagOverlay extends Scene {
       ctx.globalAlpha = 0.35;
       ui.img(itemSprite(it.id, CELL, it.rot), px + 2, py + 3);
       ctx.globalAlpha = 1;
-      ctx.save(); ctx.filter = 'brightness(0)'; ctx.restore();
       ui.img(itemSprite(it.id, CELL, it.rot), px, py);
       if (bonus[it.uid]) {
         const [cx, cy] = center(it);
@@ -149,7 +149,7 @@ export class BagOverlay extends Scene {
       if (h.pressed && !this.drag) this.pick(it, 'tray');
       if (h.rclicked && !this.drag) this.contextAction(it);
     }
-    this.drawTag(ui, L.cloth.x + L.cloth.w / 2, L.cloth.y - 32, bag.overflow.length ? `New loot (${bag.overflow.length})` : 'Set things aside here', { seed: 3, color: bag.overflow.length ? '#6a2a10' : INK });
+    this.drawTag(ui, L.cloth.x + L.cloth.w / 2, L.cloth.y - 40, bag.overflow.length ? `New loot (${bag.overflow.length})` : 'Set things aside here', { seed: 3, color: bag.overflow.length ? '#6a2a10' : INK });
 
     // dragging
     if (this.drag) {
@@ -203,13 +203,12 @@ export class BagOverlay extends Scene {
     }
 
     // hints on a tag; the brass "done" plaque
-    this.drawTag(ui, L.cloth.x + L.cloth.w / 2, L.cloth.y + L.cloth.h + 14, 'drag to arrange · R or right-click rotates', { seed: 5, string: 6 });
+    this.drawTag(ui, L.cloth.x + L.cloth.w / 2, L.cloth.y + L.cloth.h + 10, 'drag to arrange · R or right-click rotates', { seed: 5, string: 6 });
     const D = L.done;
     const dh = ui.hit('bag-done', D.x, D.y, D.w + 20, D.h + 20);
     const pc = plaqueCanvas(D.w, D.h, dh.down ? 'down' : dh.hover ? 'hover' : 'idle');
     ui.img(pc, D.x, D.y);
-    const lo = bigText('Done', { scale: 2, top: '#4a2c08', bottom: '#2a1804' });
-    ui.img(lo, Math.round(D.x + pc.inner.x + pc.inner.w / 2 - lo.width / 2), Math.round(D.y + pc.inner.y + pc.inner.h / 2 - lo.height / 2));
+    engrave(ui, 'Done', D.x + pc.inner.x + pc.inner.w / 2, D.y + pc.inner.y + pc.inner.h / 2);
     if (dh.clicked) game.audio && game.audio.play('click');
     if (dh.clicked || (this.time > 0 && !this.confirm && (inp.actionPressed('bag') || inp.actionPressed('back')))) this.close();
 

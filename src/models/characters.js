@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { LAYER_FX } from '../gfx/renderer.js';
 import { CHARACTERS } from '../data/characters.js';
-import { loft, blob, slab, Tex, fabricTex, leatherTex, furTex, mailTex, metalTex, woodTex, quiltTex, hairTex } from './char_geo.js';
+import { loft, blob, slab, Tex, fabricTex, leatherTex, furTex, mailTex, metalTex, quiltTex, hairTex } from './char_geo.js';
 import { FacePainter, FACE_SPECS } from './char_faces.js';
 import { Sculpt, ell, cone, box, cyl, torus, shell, buildSculpt } from './char_sdf.js';
 import { W, WR, humanoid, sculptHead, faceLayout, lockOn } from './char_body.js';
@@ -751,7 +751,6 @@ const BUILD = {
     const skirt = S.group('apron', { k: 0.01, mat: 'apron', bone: R.hips, weights: hangWeights(R.hips, flap, hy - 0.02, hy - 0.2) });
     skirt.add(shell(ell(W(R.hips, 0, -0.2, -0.16), [0.24, 0.55, 0.3]), 0.0108));
     skirt.clip(box(W(R.hips, 0, -0.21, 0.16), [0.16, 0.27, 0.12], 0.012));
-    skirt.add(box(W(R.hips, 0.065, -0.2, 0.152), [0.045, 0.05, 0.012], 0.006, [0.08, 0.15, 0]), { mat: 'belt', k: 0.006 }); // tool pocket
     c.addSpring(flap, 'x', { base: 0, src: 'vz', gain: -0.12, k: 70, d: 7, extra: (ch) => Math.max(0, ch.pose.lHip, ch.pose.rHip) * -0.8, min: -1.4, max: 0.4 });
     // neck strap of the apron, red neckerchief with a knot and two tails
     const kf = S.group('kerchief', { fine: true, k: 0.008, mat: 'kerchief', bone: R.neck });
@@ -971,7 +970,7 @@ const BUILD = {
     const brows = S.group('brows', { fine: true, k: 0.008, mat: 'beardL', bone: R.head });
     c.brows.forEach((b, i) => { const sx = i ? 1 : -1; lockOn(brows, [W(b, -sx * 0.03, -0.004, 0), W(b, sx * 0.0, 0.01, 0.01), W(b, sx * 0.045, -0.006, -0.004)], 0.014, 0.006, { bone: b, k: 0.006 }); });
     c.finish(S);
-    c.backItem = backWeapon(c, R.spine, { bp: 'axe', ids: ['iron', 'iron', 'coal', 'bat_fang'], grade: 2 }, [-0.12, -0.02, -0.22], [0.15, 0, -0.8], 1.5);
+    c.backItem = backWeapon(c, R.spine, { bp: 'axe', ids: ['iron', 'iron', 'coal', 'bat_fang'], grade: 2 }, [-0.12, -0.02, -0.22], [0.15, 0, -0.8], 1.25);
     c.extraUpdate = () => {
       const e = c.expr;
       const ang = e === 'angry' || e === 'determined' ? 0.4 : e === 'sad' || e === 'hurt' ? -0.35 : e === 'surprised' ? -0.1 : 0.05;

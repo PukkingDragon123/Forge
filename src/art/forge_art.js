@@ -255,35 +255,78 @@ export function anvilFaceCanvas(heat = 1) {
 }
 
 // ------------------------------------------------------------------ backpack
-/** Open leather backpack seen from above, its grid of stitched pockets (cell px), flap thrown back. */
+/** Open leather backpack seen from above: the flap thrown back (suede underside up), bulging side
+ *  pockets with buckles, a rolled blanket strapped below, and a grid of stitched pockets inside. */
 export function backpackCanvas(gw, gh, cell) {
-  return memo(`pack|${gw}x${gh}|${cell}`, [{ x: 150, y: -60, r: 520 }], () => {
-    const GW = gw * cell, GH = gh * cell, PAD = 26;
-    const W = GW + PAD * 2 + 40, H = GH + PAD * 2 + 90;
+  return memo(`pack|${gw}x${gh}|${cell}`, [{ x: 150, y: -60, r: 560 }], () => {
+    const GW = gw * cell, GH = gh * cell, PAD = 18;
+    const W = GW + PAD * 2 + 64, H = GH + PAD * 2 + 120;
     const p = new Painter(W, H);
     const lea = ramp9(LEATHER, '#f0a060', '#0a1418');
+    const suede = ramp9(['#3a2418', '#54362a', '#6e4a38', '#8a634c', '#a67e62'], '#f0b080', '#101a1c');
     const lin = ramp9(LINING, '#b07040', '#060c10');
-    const gx = 20 + PAD, gy = 64 + PAD;
-    // flap thrown back above the opening, buckle strap dangling
-    const flap = [[gx - 6, 66], [gx + 10, 10], [gx + GW / 2, 2], [gx + GW - 10, 10], [gx + GW + 6, 66]];
-    p.poly(flap, (x, y) => pick(lea, 0.4 + (fbm2(x * 0.07, y * 0.07, 3, 2) - 0.5) * 0.35 + (66 - y) / 80 * 0.25, x, y));
-    ink(p, [...flap, flap[0]], 2, { thick: 2 });
-    for (let k = 1; k < 30; k++) { const t = k / 30; const x = gx + 10 + (GW - 20) * t, y = 14 - Math.sin(t * Math.PI) * 6; if (k % 2) p.set(Math.round(x), Math.round(y), [214, 170, 110]); }
-    ink(p, [[gx + GW / 2 - 6, 4], [gx + GW / 2 - 8, -10]], 3, { col: lea[3], thick: 6 });
-    p.rect(gx + GW / 2 - 14, 2, 12, 9, [120, 84, 30]); p.rect(gx + GW / 2 - 12, 4, 8, 5, lea[1]); p.set(gx + GW / 2 - 13, 3, [250, 210, 110]);
-    // body
-    const body = noisyBlob(W / 2, gy + GH / 2 + 6, GW / 2 + PAD + 4, GH / 2 + PAD + 10, 9, 32, 0.035);
-    p.poly(body, (x, y) => { const { L, dx, dy } = lightAt(x, y); const nx = (x - W / 2) / (GW / 2 + PAD), ny = (y - gy - GH / 2) / (GH / 2 + PAD); return pick(lea, 0.5 + (fbm2(x * 0.06, y * 0.06, 3, 4) - 0.5) * 0.35 + (nx * dx + ny * dy) * 0.25 - (nx * nx + ny * ny) * 0.25 + L * 0.2, x, y); });
+    const gx = 32 + PAD, gy = 70 + PAD;
+    const bx0 = gx - PAD, by0 = gy - PAD, bx1 = gx + GW + PAD, by1 = gy + GH + PAD + 10;
+    const rr = (x0, y0, x1, y1, r, seed, n = 6) => {
+      // rounded rectangle with a hand-cut wobble
+      const pts = [];
+      const corners = [[x1 - r, y0 + r, -Math.PI / 2], [x1 - r, y1 - r, 0], [x0 + r, y1 - r, Math.PI / 2], [x0 + r, y0 + r, Math.PI]];
+      corners.forEach(([cx, cy, a0], ci) => { for (let k = 0; k <= n; k++) { const a = a0 + (k / n) * (Math.PI / 2); const j = (hash2(ci * 10 + k, seed, 3) - 0.5) * 2.2; pts.push([cx + Math.cos(a) * (r + j), cy + Math.sin(a) * (r + j)]); } });
+      return pts;
+    };
+    // flap thrown back: hinged at the top edge, suede side up, buckle strap at its end
+    const flap = [[bx0 + 8, by0 + 14], [bx0 + 14, 22], [bx0 + 34, 8], [bx1 - 34, 8], [bx1 - 14, 22], [bx1 - 8, by0 + 14]];
+    p.poly(flap, (x, y) => pick(suede, 0.5 + (fbm2(x * 0.08, y * 0.08, 3, 2) - 0.5) * 0.3 + (y - 8) / (by0 + 14) * 0.15 - Math.abs(x - W / 2) / W * 0.3, x, y));
+    ink(p, [...flap], 2, { thick: 2 });
+    for (let k = 1; k < 40; k++) { const t = k / 40; const [ax, ay] = [bx0 + 34 + (bx1 - bx0 - 68) * t, 13]; if (k % 2) p.set(Math.round(ax), ay, [214, 172, 120]); }
+    // strap and buckle tongue hanging over the flap's edge
+    const sx = Math.round(W / 2 - 7);
+    for (let y = 0; y < 30; y++) for (let x = sx; x < sx + 14; x++) p.set(x, y, pick(lea, 0.55 + (x - sx < 3 ? 0.15 : x - sx > 10 ? -0.15 : 0) - y * 0.004, x, y));
+    ink(p, [[sx, 0], [sx, 30], [sx + 14, 30], [sx + 14, 0]], 3, { thick: 1.2 });
+    for (let y = 4; y < 28; y += 7) { p.set(sx + 7, y, [20, 12, 8]); p.set(sx + 7, y + 1, [90, 60, 40]); }
+    // side pockets bulging out
+    for (const side of [-1, 1]) {
+      const cx = side < 0 ? bx0 + 2 : bx1 - 2, cy = gy + GH * 0.55;
+      const pts = [];
+      for (let k = 0; k <= 16; k++) { const a = -Math.PI / 2 + (k / 16) * Math.PI; pts.push([cx + side * Math.cos(a) * 24 * (1 + (hash2(k, side, 4) - 0.5) * 0.08), cy + Math.sin(a) * 46]); }
+      p.poly(pts, (x, y) => pick(lea, 0.45 + ((x - cx) * side) / 24 * -0.25 + (cy - y) / 46 * 0.2 + (fbm2(x * 0.1, y * 0.1, 2, 5) - 0.5) * 0.25, x, y));
+      ink(p, pts, 4 + side, { thick: 1.8 });
+      // pocket flap with a little brass buckle
+      const fy = cy - 30;
+      p.poly([[cx, fy], [cx + side * 22, fy + 4], [cx + side * 20, fy + 20], [cx, fy + 22]], (x, y) => pick(lea, 0.6 - (y - fy) * 0.01, x, y));
+      ink(p, [[cx, fy], [cx + side * 22, fy + 4], [cx + side * 20, fy + 20], [cx, fy + 22]], 9 + side, { thick: 1.2 });
+      const bx = Math.round(cx + side * 12 - 3), byy = fy + 16;
+      p.rect(bx, byy, 7, 6, [150, 108, 36]); p.rect(bx + 2, byy + 2, 3, 2, lea[2]); p.set(bx, byy, [255, 226, 130]);
+    }
+    // bedroll strapped under the bag
+    const ry0 = by1 + 2, ry1 = ry0 + 26;
+    for (let y = ry0; y < ry1; y++) for (let x = bx0 + 6; x < bx1 - 6; x++) {
+      const t = (y - ry0) / (ry1 - ry0);
+      const stripe = Math.floor((x - bx0) / 9) % 4 === 0;
+      const v = 0.75 - Math.abs(t - 0.35) * 1.1 + (stripe ? -0.12 : 0);
+      p.set(x, y, pick(ramp9(['#2a2a3a', '#3a3a52', '#4e4e6a', '#6a6a86', '#8a8aa4'], '#ffc890', '#081018'), v, x, y));
+    }
+    ink(p, [[bx0 + 6, ry0], [bx1 - 6, ry0], [bx1 - 3, (ry0 + ry1) / 2], [bx1 - 6, ry1], [bx0 + 6, ry1], [bx0 + 3, (ry0 + ry1) / 2], [bx0 + 6, ry0]], 6, { thick: 1.6 });
+    for (const x of [bx0 + 36, bx1 - 44]) { p.rect(x, ry0 - 4, 9, ry1 - ry0 + 8, lea[3]); p.rect(x + 1, ry0 - 4, 2, ry1 - ry0 + 8, lea[6]); p.rect(x - 1, ry0 + 9, 11, 6, [140, 100, 34]); }
+    // body: a soft rounded sack, darker where it curves away
+    const body = rr(bx0, by0, bx1, by1, 24, 9);
+    p.poly(body, (x, y) => {
+      const ex = Math.min(x - bx0, bx1 - x) / 30, ey = Math.min(y - by0, by1 - y) / 30;
+      const curve = Math.min(1, Math.min(ex, ey));
+      const { L } = lightAt(x, y);
+      return pick(lea, 0.25 + curve * 0.35 + (fbm2(x * 0.06, y * 0.06, 3, 4) - 0.5) * 0.3 + (hash2(x >> 1, y >> 1, 4) - 0.5) * 0.06 + L * 0.15, x, y);
+    });
     ink(p, [...body, body[0]], 4, { thick: 2.4 });
-    // stitched seam around the body
-    body.forEach(([x, y], k) => { const [x2, y2] = body[(k + 1) % body.length]; for (let t = 0; t < 1; t += 0.12) { const sx = x + (x2 - x) * t, sy = y + (y2 - y) * t; const ix = sx + (W / 2 - sx) * 0.035, iy = sy + (gy + GH / 2 - sy) * 0.035; if (Math.round(t * 8) % 2) p.set(Math.round(ix), Math.round(iy), [210, 168, 110]); } });
+    // seam stitched just inside the edge
+    const seam = rr(bx0 + 5, by0 + 5, bx1 - 5, by1 - 5, 20, 9);
+    seam.forEach(([x, y], k) => { const [x2, y2] = seam[(k + 1) % seam.length]; for (let t = 0; t < 1; t += 0.2) if (Math.round((k + t) * 5) % 2) p.set(Math.round(x + (x2 - x) * t), Math.round(y + (y2 - y) * t), [210, 166, 108]); });
     // rolled leather lip around the opening
-    const ox = gx - 10, oy = gy - 10, ow = GW + 20, oh = GH + 20;
-    const lip = [[ox, oy + 4], [ox + ow / 2, oy - 3], [ox + ow, oy + 4], [ox + ow + 3, oy + oh / 2], [ox + ow, oy + oh], [ox + ow / 2, oy + oh + 3], [ox, oy + oh], [ox - 3, oy + oh / 2]];
-    p.poly(lip, (x, y) => pick(lea, 0.75 - (y - oy) / oh * 0.3, x, y));
+    const lip = rr(gx - 9, gy - 9, gx + GW + 9, gy + GH + 9, 10, 5, 4);
+    p.poly(lip, (x, y) => pick(lea, 0.85 - (y - gy + 9) / (GH + 18) * 0.35, x, y));
     ink(p, [...lip, lip[0]], 5, { thick: 1.6 });
     // lining and the grid of stitched pockets
-    p.rect(gx - 4, gy - 4, GW + 8, GH + 8, lin[1]);
+    const open = rr(gx - 4, gy - 4, gx + GW + 4, gy + GH + 4, 6, 6, 3);
+    p.poly(open, lin[1]);
     for (let cy = 0; cy < gh; cy++) for (let cx = 0; cx < gw; cx++) {
       const x0 = gx + cx * cell, y0 = gy + cy * cell;
       for (let y = y0; y < y0 + cell; y++) for (let x = x0; x < x0 + cell; x++) {
@@ -291,25 +334,12 @@ export function backpackCanvas(gw, gh, cell) {
         const sag = Math.sin(u * Math.PI) * Math.sin(v * Math.PI);
         p.set(x, y, pick(lin, 0.35 + sag * 0.35 - v * 0.15 + (hash2(x >> 1, y >> 1, cx * 7 + cy) - 0.5) * 0.12, x, y));
       }
-      // seams: a dark crease with dashed thread on the lit side
       for (let i = 0; i < cell; i++) {
         p.set(x0 + i, y0, lin[0]); p.set(x0, y0 + i, lin[0]);
         if (i % 4 < 2) { p.set(x0 + i, y0 + 2, [178, 140, 92]); p.set(x0 + 2, y0 + i, [150, 116, 76]); }
       }
     }
-    ink(p, [[gx - 4, gy - 4], [gx + GW + 4, gy - 4], [gx + GW + 4, gy + GH + 4], [gx - 4, gy + GH + 4], [gx - 4, gy - 4]], 6, { thick: 1.4 });
-    // shoulder straps running out of frame on the left and right
-    for (const side of [-1, 1]) {
-      const sx = side < 0 ? 2 : W - 16;
-      const strap = [[sx, gy + 20], [sx + 14, gy + 16], [sx + 14, gy + GH - 10], [sx, gy + GH - 6]];
-      p.poly(strap, (x, y) => pick(lea, 0.55 + (side < 0 ? 0.1 : -0.1) + (hash2(x, y >> 2, 3) - 0.5) * 0.1, x, y));
-      ink(p, [...strap, strap[0]], 7 + side, { thick: 1.6 });
-      for (let y = gy + 22; y < gy + GH - 10; y += 4) p.set(sx + 3, y, [200, 160, 104]);
-      p.rect(sx + 2, gy + GH / 2 - 6, 10, 12, [130, 94, 34]); p.rect(sx + 4, gy + GH / 2 - 4, 6, 8, lea[2]); p.set(sx + 3, gy + GH / 2 - 5, [255, 220, 120]);
-    }
-    // a corked bottle peeking out of a side pocket
-    p.rect(W - 34, gy + GH + 22, 10, 18, [60, 110, 100]); p.rect(W - 33, gy + GH + 23, 3, 14, [140, 200, 180]); p.rect(W - 32, gy + GH + 16, 6, 7, [170, 120, 70]);
-    ink(p, [[W - 44, gy + GH + 30], [W - 20, gy + GH + 28], [W - 18, gy + GH + 50], [W - 44, gy + GH + 52], [W - 44, gy + GH + 30]], 8, { thick: 1.4 });
+    ink(p, [...open, open[0]], 6, { thick: 1.4 });
     const c = p.toCanvas();
     c.grid = { x: gx, y: gy };
     return c;
@@ -326,21 +356,47 @@ export function clothCanvas(w, h) {
       const weave = (x % 2 === 0) !== (y % 2 === 0) ? 0.05 : -0.05;
       return pick(bur, 0.55 + fold + weave + (hash2(x >> 2, y >> 2, 3) - 0.5) * 0.08, x, y);
     });
+    // hem stitched a few pixels in from the edge, and two soft fold creases
+    pts.forEach(([x, y], k) => { const [x2, y2] = pts[(k + 1) % pts.length]; const n = Math.hypot(x2 - x, y2 - y) / 3; for (let i = 0; i < n; i++) { const t = i / n; const hx = x + (x2 - x) * t + (w / 2 - x) * 0.04, hy = y + (y2 - y) * t + (h / 2 - y) * 0.05; if (i % 2) p.set(Math.round(hx), Math.round(hy), bur[2]); } });
+    ink(p, [[w * 0.18, h * 0.3], [w * 0.4, h * 0.42], [w * 0.62, h * 0.4], [w * 0.86, h * 0.52]], 31, { col: [86, 66, 42], thick: 0.8 });
+    ink(p, [[w * 0.3, h * 0.78], [w * 0.5, h * 0.66], [w * 0.72, h * 0.7]], 32, { col: [86, 66, 42], thick: 0.8 });
     ink(p, [...pts, pts[0]], 9, { thick: 1.4 });
     // frayed edge threads
     pts.forEach(([x, y], k) => { for (let i = 0; i < 6; i++) { const t = i / 6; const [x2, y2] = pts[(k + 1) % pts.length]; const fx = x + (x2 - x) * t, fy = y + (y2 - y) * t; p.set(Math.round(fx + (hash2(i, k, 1) - 0.5) * 4), Math.round(fy + (hash2(k, i, 2) - 0.5) * 4), bur[6]); } });
     return p.toCanvas();
   });
 }
-/** A crack in the floor to toss junk into. */
+/** A jagged crack in the floor to toss junk into (glows hot when something is held over it). */
 export function pitCanvas(hot = false) {
   return memo('pit|' + (hot ? 1 : 0), [{ x: 40, y: -60, r: 260 }], () => {
-    const W = 92, H = 44;
+    const W = 96, H = 48;
     const p = new Painter(W, H);
-    const pts = noisyBlob(W / 2, H / 2, W / 2 - 4, H / 2 - 6, 13, 26, 0.18);
-    p.poly(pts, (x, y) => { const d = Math.hypot((x - W / 2) / (W / 2), (y - H / 2) / (H / 2)); return d > 0.75 && y < H / 2 ? (hot ? [130, 60, 40] : [66, 50, 38]) : dither(x, y, d) ? [8, 6, 8] : [14, 10, 12]; });
-    ink(p, [...pts, pts[0]], 13, { thick: 2 });
-    for (let k = 0; k < 8; k++) { const [x, y] = pts[Math.floor(hash2(k, 4, 13) * pts.length)]; p.set(Math.round(x), Math.round(y) + 2, [90, 70, 52]); }
+    // a lens-shaped gash with ragged lips
+    const top = [], bot = [];
+    for (let k = 0; k <= 16; k++) {
+      const t = k / 16, x = 6 + t * (W - 12), open = Math.sin(t * Math.PI) ** 0.8 * 14;
+      top.push([x, H / 2 - open * (0.7 + hash2(k, 1, 17) * 0.5)]);
+      bot.push([x, H / 2 + open * (0.4 + hash2(k, 2, 17) * 0.4)]);
+    }
+    const pts = [...top, ...bot.reverse()];
+    p.poly(pts, (x, y) => (y < H / 2 - 4 ? (hot ? [120, 50, 30] : [40, 30, 26]) : dither(x, y, 0.5) ? [6, 5, 7] : [12, 9, 11]));
+    // lit far lip, dark near lip
+    for (const [x, y] of top) { p.set(Math.round(x), Math.round(y) - 1, hot ? [255, 150, 90] : [130, 104, 80]); }
+    ink(p, [...pts, pts[0]], 17, { thick: 2 });
+    // hairline cracks running out from the ends
+    for (const [sx, dir] of [[6, -1], [W - 6, 1]]) { const line = [[sx, H / 2]]; let x = sx, y = H / 2; for (let i = 0; i < 4; i++) { x += dir * 3; y += (hash2(i, sx, 5) - 0.5) * 6; line.push([x, y]); } ink(p, line, sx, { thick: 1 }); }
+    for (const [sx, sy] of [[30, H / 2 + 10], [64, H / 2 - 10]]) { const line = [[sx, sy]]; let x = sx, y = sy; for (let i = 0; i < 3; i++) { x += (hash2(i, sx, 6) - 0.5) * 6; y += sy > H / 2 ? 3 : -3; line.push([x, y]); } ink(p, line, sy, { thick: 0.8 }); }
+    return p.toCanvas();
+  });
+}
+/** Little paper index tab sticking out of the book. */
+export function indexTabCanvas(w, h, on) {
+  return memo(`itab|${w}x${h}|${on ? 1 : 0}`, [{ x: w / 2, y: -40, r: 300 }], () => {
+    const p = new Painter(w, h);
+    const paper = ramp9(on ? ['#9a7a52', '#c09a68', '#d8b682', '#ecd2a4', '#f8e6c4'] : ['#7a6040', '#9a7a52', '#b4946a', '#c8aa80', '#d8bc92'], '#ffe2a8', '#2a3a3a');
+    const pts = [[1, h], [2, 5], [6, 1], [w - 7, 1], [w - 2, 5], [w - 1, h]];
+    p.poly(pts, (x, y) => pick(paper, 0.72 - y / h * 0.3 + (hash2(x >> 1, y >> 1, w) - 0.5) * 0.1, x, y));
+    ink(p, pts, w + h, { col: [96, 66, 40], thick: 1 });
     return p.toCanvas();
   });
 }

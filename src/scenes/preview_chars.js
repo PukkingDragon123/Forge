@@ -30,7 +30,7 @@ export class CharPreview extends Scene {
       const i = ids.indexOf(id);
       const t0 = performance.now();
       const c = buildCharacter(id);
-      console.warn(`build ${id} ${(performance.now() - t0).toFixed(1)}ms`);
+      console.log(`build ${id} ${(performance.now() - t0).toFixed(1)}ms`);
       c.group.position.set(-1.95 + i * 1.3, 0, 0);
       scene.add(c.group);
       if (q.get('seated')) c.setSeated(true, 0.3);
@@ -40,6 +40,21 @@ export class CharPreview extends Scene {
       if (q.get('rot')) c.group.rotation.y = +q.get('rot');
       return c;
     });
+    if (q.get('exprs')) { // expression sheet: one explorer, every face in a row
+      this.chars.forEach((c) => c.setVisible(false));
+      const id = only || 'bran', EX = ['neutral', 'happy', 'angry', 'surprised', 'sad', 'smug', 'determined', 'hurt', 'sleepy'];
+      const ex = EX.map((e, i) => {
+        const c = buildCharacter(id);
+        c.group.position.set((i - 4) * 0.3, 0, 0);
+        scene.add(c.group);
+        c.play('idle'); c.setExpression(e, { hold: 999 });
+        c.showBackItem(false);
+        return c;
+      });
+      this.chars = ex;
+      const h = { bran: 1.53, elio: 1.21, durgan: 0.9, clover: 1.12 }[id];
+      this.rig.cut([0, h + 0.03, 4.4], [0, h - 0.02, 0], 34);
+    }
     if (q.get('hold')) {
       const bps = ['sword', 'staff', 'axe', 'dagger'];
       this.chars.forEach((c, i) => { c.hold(buildWeaponMesh({ bp: bps[i], ids: ['iron', 'coal', 'ruby'], el: { fire: 2 }, grade: 3 })); c.showBackItem(false); });
@@ -65,7 +80,7 @@ export class CharPreview extends Scene {
         return m;
       });
     }
-    const cam = q.get('cam') || 'wide';
+    const cam = q.get('cam') || (q.get('exprs') ? 'none' : 'wide');
     const [cid, cmode] = cam.split('_');
     const idx = ids.indexOf(cid);
     const HEAD = { bran: 1.53, elio: 1.21, durgan: 0.9, clover: 1.12 };
@@ -73,7 +88,7 @@ export class CharPreview extends Scene {
     else if (idx >= 0) { const x = -1.95 + idx * 1.3; const h = HEAD[cid]; this.rig.cut([x, h + 0.04, 1.05], [x, h, 0], 24); }
     else if (cam === 'faces') this.rig.cut([0, 1.0, 3.2], [0, 0.95, 0], 34);
     else if (q.get('weapons')) this.rig.cut([0, 0.75, 3.4], [0, 0.72, 0], 40);
-    else this.rig.cut([0, 1.1, 6.2], [0, 0.85, 0], 34);
+    else if (cam === 'wide') this.rig.cut([0, 1.1, 6.2], [0, 0.85, 0], 34);
     this.ff = +(q.get('t') || 0);
   }
   update(dt) {

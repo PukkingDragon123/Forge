@@ -451,15 +451,17 @@ export function buildSculpt(S, o) {
     if (vWin[b] && vWin[b] === vWin[c]) g = vWin[b];
     if (!g) { tMat[t] = 'default'; continue; }
     const src = g.src;
+    if (src._uni === undefined) { const ms = new Set(src.adds.map((p) => p.mat || src.mat)); src._uni = ms.size === 1 ? [...ms][0] : null; }
     let mat = src.mat, dm = 1e9;
-    for (const p of g.adds) {
+    if (src._uni !== null) mat = src._uni || src.mat;
+    else for (const p of g.adds) {
       if (!p.mat) continue;
       const dx = x - p.c[0], dy = y - p.c[1], dz = z - p.c[2];
       if (Math.sqrt(dx * dx + dy * dy + dz * dz) - p.r > dm + 0.02) continue;
       const d = p.f(x, y, z);
       if (d < dm) { dm = d; mat = p.mat; }
     }
-    if (src.base && src.mat) mat = dm < 0.003 ? mat : src.mat;
+    if (src.base && src.mat && src._uni === null) mat = dm < 0.003 ? mat : src.mat;
     if (src.innerMat) {
       const ux = allV[b * 3] - allV[a * 3], uy = allV[b * 3 + 1] - allV[a * 3 + 1], uz = allV[b * 3 + 2] - allV[a * 3 + 2];
       const vx = allV[c * 3] - allV[a * 3], vy = allV[c * 3 + 1] - allV[a * 3 + 1], vz = allV[c * 3 + 2] - allV[a * 3 + 2];

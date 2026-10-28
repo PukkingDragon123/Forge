@@ -7,11 +7,13 @@ import { buildProp } from '../models/props.js';
 import { makeWorld, hud } from './common.js';
 import { openForge } from './forgeui.js';
 import { openBag } from './flow.js';
+import { floorCanvas } from '../art/forge_art.js';
 
 export class ForgeTestScene extends Scene {
   enter(p) {
     this.game.run = this.game.run || new Run(p.char || 'bran', 'test');
     this.flat = !!p.flat;
+    if (this.flat) { this.world = null; this.open(p.mode || 'weapon'); return; } // 2D only, like the mining spot
     const set = buildSet('arena', this.game.run.region);
     this.set = set;
     this.world = makeWorld(set);
@@ -21,12 +23,12 @@ export class ForgeTestScene extends Scene {
     this.open(p.mode || 'weapon');
   }
   open(mode) {
-    const a = this.set.anchors.forge;
-    const rig = this.flat ? {} : { anvil: a, rig: this.world.rig, world: this.world };
+    const rig = this.flat ? {} : { anvil: this.set.anchors.forge, rig: this.world.rig, world: this.world };
     this.ctrl = openForge(this, { mode, monster: mode === 'weapon' ? 'rustrat' : undefined, ...rig, onDone: (w) => { this.result = w; setTimeout(() => this.open(mode), 500); } });
   }
-  update(dt) { this.world.rig.update(dt); this.world.sparks.update(dt); this.world.dust.update(dt); this.set.update && this.set.update(dt, this.time); this.ctrl && this.ctrl.update(dt); }
+  update(dt) { if (this.flat) { this.ctrl && this.ctrl.update(dt); return; } this.world.rig.update(dt); this.world.sparks.update(dt); this.world.dust.update(dt); this.set.update && this.set.update(dt, this.time); this.ctrl && this.ctrl.update(dt); }
   draw(ui) {
+    if (this.flat) ui.img(floorCanvas(ui.w, ui.h), 0, 0);
     const h = hud(ui, this.game);
     if (h.bagClicked) openBag(this.game);
     this.ctrl && this.ctrl.draw(ui);

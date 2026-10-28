@@ -12,7 +12,7 @@ export const CHARACTERS = {
     start: ['iron', 'iron', 'iron', 'copper', 'copper', 'coal', 'tin'],
     blueprints: ['sword', 'hammer', 'axe'],
     playstyle: 'Big alloys, perfect hammering, sustain by salvaging.',
-    model: { skin: '#f0c09a', hair: '#7a3a1e', cloth: '#e8dcc8', apron: '#5a3a24', accent: '#c8743a', eyes: '#3a7a5a' },
+    model: { skin: '#f0c09a', hair: '#7a3a1e', cloth: '#4a5a6e', apron: '#5a3a24', accent: '#c8743a', eyes: '#3a7a5a' },
     barks: {
       start: ['Right. Let\'s make something worth breaking.', 'Hammer\'s warm. Let\'s go.'],
       mine: ['Ooh, listen to that ring!', 'That\'s good iron, that is.'],
