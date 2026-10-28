@@ -1,0 +1,30 @@
+// Scene registry.
+import { TitleScene } from './title.js';
+import { MapScene } from './map.js';
+import { TravelScene } from './travel.js';
+import { EventScene } from './event.js';
+import { MiningScene } from './mining.js';
+import { CombatScene } from './combat.js';
+import { MerchantScene, TreasureScene, CampScene } from './rooms.js';
+import { DescendScene, GameOverScene, VictoryScene } from './endings.js';
+import { BagOverlay } from './bag.js';
+import { TestScene } from './test.js';
+import { ForgeTestScene } from './forgetest.js';
+
+export function registerScenes(game) {
+  game.register('title', TitleScene);
+  game.register('map', MapScene);
+  game.register('travel', TravelScene);
+  game.register('event', EventScene);
+  game.register('mining', MiningScene);
+  game.register('combat', CombatScene);
+  game.register('merchant', MerchantScene);
+  game.register('treasure', TreasureScene);
+  game.register('camp', CampScene);
+  game.register('descend', DescendScene);
+  game.register('gameover', GameOverScene);
+  game.register('victory', VictoryScene);
+  game.register('bag', BagOverlay);
+  game.register('test', TestScene);
+  game.register('forgetest', ForgeTestScene);
+}

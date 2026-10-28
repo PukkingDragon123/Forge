@@ -1,0 +1,113 @@
+// The six layers of the mine. Palettes drive voxel environments, UI accents, fog and light.
+export const REGIONS = [
+  {
+    id: 'hollowdeep', name: 'Hollowdeep Mine', sub: 'Abandoned iron workings', boss: 'rustjaw', elite: ['mole_brute'],
+    music: 'mine', tone: 'brown', ribbon: 'brown',
+    pal: {
+      rock: ['#2c221c', '#3a2d25', '#4a3b30', '#5a4838', '#6e5a46'], dirt: ['#3a2a20', '#4a3626', '#5a442e'],
+      accent: ['#8a5a33', '#b07a45', '#5a3820'], metal: ['#4a4a52', '#7a7a84', '#a8a8b0'],
+      glow: '#ffb060', glow2: '#ffd890', fog: '#120c0a', sky: '#0a0706', moss: '#4a5a2a', water: '#2a5a6a',
+    },
+    light: { key: 0xffb060, keyI: 6, fill: 0x5a6a9a, fillI: 0.35, ambient: 0x2a2018 },
+    props: ['supports', 'rails', 'lanterns', 'carts', 'crates', 'barrels', 'pickaxes'],
+    tunnels: ['tunnel', 'minecart', 'bridge', 'elevator', 'crawl'],
+    critters: ['bat', 'rat', 'firefly'],
+    hazard: 'Cave-ins',
+  },
+  {
+    id: 'prism', name: 'Prism Hollows', sub: 'Caves that remember light', boss: 'geodessa', elite: ['crystal_golem'],
+    music: 'crystal', tone: 'blue', ribbon: 'blue',
+    pal: {
+      rock: ['#1a1a2e', '#24243c', '#2e3048', '#3a3c5a', '#4a4c6e'], dirt: ['#22223a', '#2c2c48', '#363656'],
+      accent: ['#6ad8ff', '#ff8af0', '#b08aff'], metal: ['#5a6a8a', '#8a9ac0', '#c0d0f0'],
+      glow: '#6ad8ff', glow2: '#ff8af0', fog: '#0a0c1a', sky: '#06070f', moss: '#3a5a7a', water: '#3a8ac0',
+    },
+    light: { key: 0x6ad8ff, keyI: 5, fill: 0xb08aff, fillI: 0.45, ambient: 0x141a2e },
+    props: ['crystals', 'geodes', 'pools', 'stalactites'],
+    tunnels: ['tunnel', 'bridge', 'crystalbridge', 'elevator', 'flooded'],
+    critters: ['wisp', 'firefly', 'bat'],
+    hazard: 'Shard falls',
+  },
+  {
+    id: 'sporewood', name: 'Sporewood', sub: 'A forest that never saw the sun', boss: 'mycel', elite: ['myconid_brute'],
+    music: 'spore', tone: 'green', ribbon: 'green',
+    pal: {
+      rock: ['#141c18', '#1c2620', '#24302a', '#2e3d34', '#3a4a40'], dirt: ['#1e2a1c', '#283624', '#33442c'],
+      accent: ['#5af0c8', '#d04a3a', '#e0a04a'], metal: ['#5a6a5a', '#8a9a8a', '#c0d0c0'],
+      glow: '#5af0c8', glow2: '#ffe08a', fog: '#0a140f', sky: '#050a07', moss: '#3a7a3a', water: '#2a6a5a',
+    },
+    light: { key: 0x5af0c8, keyI: 4.5, fill: 0xe0a04a, fillI: 0.4, ambient: 0x10201a },
+    props: ['mushrooms', 'roots', 'vines', 'spores'],
+    tunnels: ['tunnel', 'rootbridge', 'bridge', 'crawl', 'flooded'],
+    critters: ['spore', 'firefly', 'moth'],
+    hazard: 'Spore clouds',
+  },
+  {
+    id: 'sunken', name: 'Sunken Halls', sub: 'Ruins of the first miners', boss: 'warden', elite: ['rune_guardian'],
+    music: 'ruins', tone: 'gold', ribbon: 'gold',
+    pal: {
+      rock: ['#2a2218', '#3a3024', '#4e4232', '#62543e', '#7a6a52'], dirt: ['#3a3024', '#4a3e2e', '#5a4c38'],
+      accent: ['#d8a840', '#4affe0', '#8a5a3a'], metal: ['#8a7a5e', '#c8a040', '#ffe08a'],
+      glow: '#ffc060', glow2: '#4affe0', fog: '#14100a', sky: '#0a0805', moss: '#5a6a3a', water: '#2a6a8a',
+    },
+    light: { key: 0xffc060, keyI: 5.5, fill: 0x4affe0, fillI: 0.3, ambient: 0x221a10 },
+    props: ['pillars', 'statues', 'torches', 'gold', 'pools'],
+    tunnels: ['tunnel', 'stairs', 'bridge', 'elevator', 'flooded'],
+    critters: ['dust', 'firefly'],
+    hazard: 'Rune traps',
+  },
+  {
+    id: 'emberdeep', name: 'Emberdeep', sub: 'Where the mountain bleeds', boss: 'pyrrhax', elite: ['lava_wyrmling'],
+    music: 'volcano', tone: 'red', ribbon: 'red',
+    pal: {
+      rock: ['#140e0e', '#221a1a', '#2e2424', '#3a2e2c', '#4a3a36'], dirt: ['#2a1a16', '#3a2420', '#4a2e28'],
+      accent: ['#ff6a1a', '#ffd04a', '#2a1e3a'], metal: ['#4a3a3a', '#7a6a6a', '#a89a9a'],
+      glow: '#ff6a1a', glow2: '#ffd04a', fog: '#1a0804', sky: '#0a0302', moss: '#5a2a1a', water: '#ff5a1a',
+    },
+    light: { key: 0xff6a1a, keyI: 7, fill: 0x5a3a8a, fillI: 0.3, ambient: 0x2a1008 },
+    props: ['lava', 'obsidian', 'vents', 'basalt'],
+    tunnels: ['tunnel', 'lavabridge', 'minecart', 'elevator', 'crawl'],
+    critters: ['ember', 'ash'],
+    hazard: 'Lava bursts',
+  },
+  {
+    id: 'tomb', name: 'The Forbidden Tomb', sub: 'Where it all began', boss: 'cursed_lord', elite: ['grave_colossus'],
+    music: 'tomb', tone: 'purple', ribbon: 'purple',
+    pal: {
+      rock: ['#16121c', '#201a28', '#2c2436', '#3a3448', '#4a425a'], dirt: ['#1e1826', '#282032', '#322a3e'],
+      accent: ['#c86bff', '#ff5af0', '#e0d8c8'], metal: ['#4a425a', '#7a6a8a', '#b8a8c8'],
+      glow: '#c86bff', glow2: '#9affc8', fog: '#0c0812', sky: '#050308', moss: '#3a2a4a', water: '#5a2a7a',
+    },
+    light: { key: 0xc86bff, keyI: 5, fill: 0x9affc8, fillI: 0.3, ambient: 0x18101e },
+    props: ['sarcophagi', 'chains', 'braziers', 'bones', 'banners'],
+    tunnels: ['tunnel', 'stairs', 'bridge', 'chainbridge', 'crawl'],
+    critters: ['wisp', 'dust'],
+    hazard: 'Curse surges',
+  },
+];
+
+export const TUNNELS = {
+  tunnel: { name: 'Tunnel', icon: 'arrowR', risk: 0, desc: 'A plain old tunnel. Probably fine.' },
+  minecart: { name: 'Minecart Track', icon: 'minecart', risk: 1, desc: 'Ride the rails! Fast, bumpy, possibly a chase.' },
+  bridge: { name: 'Rope Bridge', icon: 'bridge', risk: 2, desc: 'Rickety. Might collapse under you.' },
+  crystalbridge: { name: 'Crystal Bridge', icon: 'bridge', risk: 1, desc: 'Beautiful. Brittle.' },
+  rootbridge: { name: 'Root Bridge', icon: 'bridge', risk: 1, desc: 'The roots are moving. Probably fine.' },
+  lavabridge: { name: 'Basalt Crossing', icon: 'bridge', risk: 2, desc: 'Stepping stones over lava.' },
+  chainbridge: { name: 'Chain Bridge', icon: 'bridge', risk: 2, desc: 'Hangs over nothing at all.' },
+  elevator: { name: 'Old Elevator', icon: 'elevator', risk: 1, desc: 'Creaky lift. The rope looks tired.' },
+  crawl: { name: 'Crawlway', icon: 'arrowR', risk: 1, desc: 'Tight squeeze. Things live in the walls.' },
+  flooded: { name: 'Flooded Passage', icon: 'arrowR', risk: 1, desc: 'Wade through dark water. Something brushes your leg.' },
+  stairs: { name: 'Carved Stairs', icon: 'arrowD', risk: 0, desc: 'Ancient steps worn smooth.' },
+};
+
+export const NODE_TYPES = {
+  start: { name: 'Entrance', icon: 'start', color: '#e0d0b0' },
+  monster: { name: 'Monster', icon: 'monster', color: '#ff7a6a', desc: 'Forge a weapon and fight.' },
+  elite: { name: 'Elite', icon: 'elite', color: '#ff5af0', desc: 'A dangerous foe with rare parts.' },
+  boss: { name: 'Boss', icon: 'boss', color: '#ffd25e', desc: 'The guardian of this layer.' },
+  mining: { name: 'Mining Spot', icon: 'mining', color: '#7fe3ff', desc: 'Forge a pickaxe and dig for ore.' },
+  treasure: { name: 'Treasure', icon: 'treasure', color: '#ffd25e', desc: 'Chests! Probably not mimics.' },
+  merchant: { name: 'Merchant', icon: 'merchant', color: '#ffb84a', desc: 'Trade ores, parts, tools and scrolls.' },
+  event: { name: 'Mystery', icon: 'event', color: '#c08aff', desc: 'Something strange lies ahead.' },
+  camp: { name: 'Campsite', icon: 'camp', color: '#ffb060', desc: 'Rest, smelt, or temper.' },
+};
