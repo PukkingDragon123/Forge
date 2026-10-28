@@ -42,7 +42,7 @@ const STORY = [
   'Now one of them must descend — forging, fighting and breaking weapon after weapon — to end the curse forever.',
 ];
 
-const PX = 0.01, TILT = 0.3;
+const PX = 0.01, TILT = 0.16;
 const toWorld = (x, y) => ({ x: (x - 480) * PX, y: (270 - y) * PX });
 
 export class TitleScene extends Scene {
@@ -74,7 +74,7 @@ export class TitleScene extends Scene {
       const c = buildCharacter(id);
       const box = new THREE.Box3().setFromObject(c.group);
       const h = Math.max(0.3, box.max.y - box.min.y);
-      const px = (st.back ? 128 : 158) * (id === 'durgan' ? 0.8 : id === 'clover' ? 0.86 : 1);
+      const px = (st.back ? 150 : 186) * (id === 'durgan' ? 0.8 : id === 'clover' ? 0.88 : 1);
       const s = (px * PX) / h;
       // a tilted holder makes the explorers read as seen from a little above, like the painting
       const holder = new THREE.Group();
@@ -85,9 +85,11 @@ export class TitleScene extends Scene {
       holder.position.set(w.x, w.y, st.back ? 0.6 : 2);
       c.group.position.y = -box.min.y;
       const look = id === 'bran' ? { x: ANVIL.x + 34, y: ANVIL.y + 30 } : FIRE; // Bran works at his anvil
-      c.home = Math.atan2(look.x - st.x, (st.y - look.y) * 2.2);
+      // turn toward the fire, but never fully away from us: front-row explorers sit in profile
+      c.home = Math.atan2(look.x - st.x, (st.y - look.y) * 1.4);
+      if (!st.back) c.home = Math.sign(c.home) * Math.min(Math.abs(c.home), 1.9);
       c.group.rotation.y = c.home;
-      c.seatHeight = 0.34;
+      c.seatHeight = 0.3;
       c.setSeated && c.setSeated(true, c.seatHeight);
       c.id = id;
       c.holder = holder;
