@@ -5,16 +5,17 @@ import { buildStage as buildSet } from '../models/stage2d.js';
 import { buildCharacter } from '../models/characters.js';
 import * as Props from '../models/props.js';
 import { buildMonster } from '../models/monsters.js';
-import { makeWorld, hud, speech, ribbonTitle, dim, ambientDust } from './common.js';
+import { makeWorld, hud, speech, ambientDust } from './common.js';
 import { finish, openBag, gameOver } from './flow.js';
 import { EVENTS } from '../data/events.js';
 import { REGIONS } from '../data/regions.js';
 import { MATERIALS, RARITY } from '../data/materials.js';
 import { RECIPES } from '../data/blueprints.js';
 import { makeItem, matOf, itemTooltip } from '../systems/items.js';
-import { materialCard, drawCard } from '../ui/cards.js';
+import { materialCard } from '../ui/cards.js';
+import { materialSprite } from '../art/sprites.js';
 import { COLORS } from '../ui/font.js';
-import { divider } from '../ui/frames.js';
+import { clamp, ease } from '../core/math.js';
 import { TimingQTE, MashQTE, ShellGame } from './travel_qte.js';
 
 const PROP_ALIAS = { rubble: 'rock', silk: 'web' };
@@ -41,7 +42,6 @@ export class EventScene extends Scene {
     const A = this.set.anchors || {};
     const center = A.center ? A.center.clone() : new THREE.Vector3(0, 0, 0);
     this.center = center;
-    // frame the stage in the left ~60% of the screen (the storybook page covers the right)
     const pp = new THREE.Vector3(center.x - 0.85, A.player ? A.player.y : center.y, center.z + 0.6);
     this.char = buildCharacter(run ? run.char : 'clover');
     this.char.group.position.copy(pp);
@@ -52,7 +52,7 @@ export class EventScene extends Scene {
     this.dress(center);
 
     const cp = new THREE.Vector3().copy(center);
-    this.camBase = { pos: [cp.x + 1.0, cp.y + 2.0, cp.z + 5.6], look: [cp.x + 1.55, cp.y + 0.7, cp.z - 0.2] };
+    this.camBase = { pos: [cp.x + 0.4, cp.y + 2.1, cp.z + 6.0], look: [cp.x + 0.4, cp.y + 0.35, cp.z - 0.2] }; // centred: the narration sits below
     this.rig.cut(this.camBase.pos, this.camBase.look, 38);
 
     this.phase = 'intro';
@@ -228,102 +228,97 @@ export class EventScene extends Scene {
 
   draw(ui) {
     const game = this.game, run = game.run;
-    const h = hud(ui, game, { bag: this.phase !== 'qte' && this.phase !== 'pick' });
-    if (h.bagClicked && (this.phase === 'choose' || this.phase === 'intro' || this.phase === 'result')) openBag(game, {});
-
     if (this.phase === 'qte' && this.qte) {
+      hud(ui, game, { bag: false });
       const lx = Math.round((ui.w - 262) / 2);
       if (this.qte.def.kind === 'shells') ui.text(this.qte.def.label || '', lx, 44, { align: 'center', color: COLORS.gold, outline: '#140c10' });
       this.qte.obj.draw(ui);
       return;
     }
-
-    // ---- storybook page
-    const pw = 250, px = ui.w - pw - 10;
-    const top = 40;
-    const textW = pw - 28;
+    // cinematic: the scene plays above, the narrator and your choices sit in the letterbox below
+    this.lbT = Math.min(1, (this.lbT || 0) + ui.dt * 1.8);
     const fullText = this.text;
     const typing = this.phase === 'intro' || this.phase === 'result';
     const shown = typing && !fullText.includes('{') ? fullText.slice(0, Math.floor(this.typed)) : fullText;
-    const textLines = ui.layout(fullText, 'body', textW).length;
-    let body = 26 + textLines * 11 + 8;
+    const textW = 620, x = Math.round(ui.w / 2 - textW / 2);
     const choices = this.ev.choices;
-    if (this.phase === 'choose' || this.phase === 'intro') body += 8 + choices.reduce((a, c) => a + (c.hint ? 31 : 24), 0);
-    if (this.phase === 'result') body += this.results.length * 11 + (this.gained.length ? 70 : 0) + 34;
-    const ph = Math.min(ui.h - top - 30, body + 10);
-    ui.panel('parchment', px, top, pw, ph, { seed: 3 });
-    ribbonTitle(ui, this.ev.title, px + pw / 2, top - 8, REGIONS[this.region].ribbon || 'red');
-    let y = top + 16;
-    const pageHit = ui.hit('event-page', px, top, pw, ph, { cursor: false, sound: false });
-    if (pageHit.clicked && typing && this.typed < fullText.length) this.typed = 9999;
-    ui.text(shown, px + 14, y, { maxW: textW, color: '#3a2618' });
-    y += textLines * 11 + 6;
-    ui.img(divider(pw - 40, 'ink'), px + 20, y);
-    y += 10;
     const typedOut = this.typed >= fullText.length;
-
+    let body = 22 + ui.layout(fullText, 'body', textW).length * 11 + 8;
+    if (this.phase === 'choose' || this.phase === 'intro') body += choices.length * 16 + 4;
+    if (this.phase === 'result') body += this.results.length * 11 + (this.gained.length ? 52 : 0) + 18;
+    if (this.phase === 'pick') body += 70;
+    const H = Math.round(Math.max(96, body + 10) * ease.outCubic(this.lbT));
+    ui.rect(0, 0, ui.w, Math.round(32 * ease.outCubic(this.lbT)), '#050406');
+    ui.rect(0, ui.h - H, ui.w, H, '#050406');
+    for (let i = 0; i < 6; i++) ui.rect(0, ui.h - H - 6 + i, ui.w, 1, '#050406', (i + 1) / 7);
+    const h = hud(ui, game, { bag: this.phase !== 'pick' });
+    if (h.bagClicked && (this.phase === 'choose' || this.phase === 'intro' || this.phase === 'result')) openBag(game, {});
+    if (this.lbT < 0.6) return;
+    let y = ui.h - H + 10;
+    ui.text(`{gold}${this.ev.title}{/}`, x, y, {});
+    y += 14;
+    const pageHit = ui.hit('event-page', 0, ui.h - H, ui.w, H, { cursor: false, sound: false });
+    if (pageHit.clicked && typing && this.typed < fullText.length) this.typed = 9999;
+    ui.text(shown, x, y, { maxW: textW, color: '#efe2c8' });
+    y += ui.layout(fullText, 'body', textW).length * 11 + 8;
     if ((this.phase === 'intro' || this.phase === 'choose') && typedOut) {
       this.phase = 'choose';
       choices.forEach((c, i) => {
         const req = c.req ? c.req(run) : true;
         const disabled = req !== true;
         const label = `${i + 1}. ${c.label}`;
-        const clicked = ui.button('evc' + i, px + 12, y, pw - 24, 20, label, { style: disabled ? 'stone' : 'wood', disabled, tip: disabled ? { title: c.label, body: `{bad}${req}{/}` } : c.hint ? { title: c.label, body: c.hint } : undefined });
-        if (c.hint) ui.text(disabled ? req : c.hint, px + pw / 2, y + 22, { font: 'small', color: disabled ? '#9a3a2a' : '#7a5a3a', align: 'center' });
-        if ((clicked || game.input.keyPressed('Digit' + (i + 1))) && !disabled) this.choose(c);
-        y += c.hint ? 31 : 24;
+        const lw = ui.measure(label) + 12;
+        const hh = ui.hit('evc' + i, x - 4, y - 2, Math.max(lw, 300), 14, { sound: false, cursor: disabled ? 'arrow' : 'hand' });
+        const col = disabled ? '#6a6058' : hh.hover ? '#ffe2a0' : '#d8c8b0';
+        if (hh.hover && !disabled) ui.text('›', x - 10 + Math.round(Math.sin(this.time * 8)), y, { color: '#ffd27a' });
+        ui.text(label, x + (hh.hover && !disabled ? 4 : 0), y, { color: col });
+        const note = disabled ? req : c.hint;
+        if (note) ui.text(`{dim}— ${note}{/}`, x + lw + 10, y, { font: 'small', color: disabled ? '#9a5a4a' : '#9a8a7a' });
+        if (((hh.clicked) || game.input.keyPressed('Digit' + (i + 1))) && !disabled) { game.audio && game.audio.play('ui_pop'); this.choose(c); }
+        y += 16;
       });
     }
-
     if (this.phase === 'result' && typedOut) {
-      for (const l of this.results) { ui.text(l, px + 14, y, { color: '#3a2618' }); y += 11; }
+      for (const l of this.results) { ui.text(l, x, y, { color: '#d8c8b0' }); y += 11; }
       if (this.gained.length) {
-        const n = Math.min(4, this.gained.length);
-        const cw = 52, sx = Math.round(px + pw / 2 - (n * cw) / 2);
-        this.gained.slice(0, 4).forEach((it, i) => {
-          const card = materialCard(it);
-          const hh = ui.hit('evg' + it.uid, sx + i * cw, y, 48, 64);
-          drawCard(ui, card, sx + i * cw, y + 2, { hover: hh.hover });
+        this.gained.slice(0, 8).forEach((it, i) => {
+          const sx = x + i * 74;
+          const hh = ui.hit('evg' + it.uid, sx, y, 70, 46);
+          ui.img(materialSprite(it.id, 40), sx, y + 2 - (hh.hover ? 2 : 0));
+          ui.text(matOf(it).name, sx + 20, y + 40, { align: 'center', font: 'small', color: COLORS[matOf(it).rarity] || '#d8c8b0' });
           if (hh.hover) ui.tooltip(itemTooltip(it));
         });
-        y += 70;
+        y += 52;
       }
       const label = this.pendingFight ? 'Fight!' : 'Continue';
-      if (ui.button('ev-continue', px + pw / 2 - 50, Math.min(y + 4, top + ph - 26), 100, 20, label, { style: this.pendingFight ? 'red' : 'gold', icon: this.pendingFight ? 'sword' : 'arrowR' }) || game.input.actionPressed('confirm')) this.continueOn();
+      const hh = ui.hit('ev-continue', x - 4, y, 200, 14, { sound: false });
+      ui.text(`${hh.hover ? '› ' : ''}${label}`, x, y + 2, { color: this.pendingFight ? '#ff8a7a' : '#ffe2a0' });
+      ui.text('{dim}(space){/}', x + ui.measure(label) + 20, y + 2, { font: 'small' });
+      if (hh.clicked || game.input.actionPressed('confirm')) this.continueOn();
     }
-
-    if (this.phase === 'pick' && this.picker) this.drawPicker(ui);
+    if (this.phase === 'pick' && this.picker) this.drawPicker(ui, x, y);
   }
 
-  drawPicker(ui) {
+  drawPicker(ui, x, y) {
     const game = this.game, run = game.run;
     const { pick, items } = this.picker;
-    ui.block(3);
-    dim(ui, 0.55);
-    const cols = Math.min(8, Math.max(3, items.length));
-    const rows = Math.ceil(items.length / cols);
-    const cw = 52, chh = 68;
-    const w = cols * cw + 24, h = rows * chh + 60;
-    const x = Math.round(ui.w / 2 - w / 2), y = Math.round(Math.max(40, ui.h / 2 - h / 2));
-    ui.panel('dark', x, y, w, h, { accent: 'gold' });
-    ui.text(`Choose an item to {gold}${pick.verb || 'use'}{/}`, ui.w / 2, y + 8, { align: 'center', color: COLORS.white });
-    items.forEach((it, i) => {
-      const cx = x + 12 + (i % cols) * cw, cy = y + 24 + Math.floor(i / cols) * chh;
-      const hh = ui.hit('pick' + it.uid, cx, cy, 48, 64, { layer: 3 });
-      drawCard(ui, materialCard(it), cx, cy, { hover: hh.hover });
-      if (hh.hover) ui.tooltip(itemTooltip(it));
+    ui.text(`Choose something to {gold}${pick.verb || 'use'}{/}:`, x, y, { color: '#d8c8b0' });
+    y += 14;
+    items.slice(0, 10).forEach((it, i) => {
+      const sx = x + i * 58;
+      const hh = ui.hit('pick' + it.uid, sx, y, 52, 44);
+      ui.img(materialSprite(it.id, 40), sx + 4, y - (hh.hover ? 3 : 0));
+      if (hh.hover) { ui.tooltip(itemTooltip(it)); const card = materialCard(it); ui.img(card, Math.round(clamp(sx + 24 - card.width / 2, 6, ui.w - card.width - 6)), y - card.height - 30); }
       if (hh.clicked) {
         this.picker = null;
         game.audio && game.audio.play('card_place');
         const out = pick.then(it, run, this.rng) || {};
-        ui.unblock();
         this.apply(out);
       }
     });
-    if (this.picker && ui.button('pick-cancel', ui.w / 2 - 40, y + h - 26, 80, 20, 'Never mind', { style: 'stone' })) {
-      this.picker = null;
-      this.phase = 'choose';
-    }
-    ui.unblock();
+    const nv = ui.hit('pick-cancel', x + Math.min(10, items.length) * 58 + 10, y + 14, 90, 14, { sound: false });
+    ui.text(`${nv.hover ? '› ' : ''}Never mind`, x + Math.min(10, items.length) * 58 + 10, y + 16, { color: nv.hover ? '#ffe2a0' : '#9a8a7a' });
+    if (this.picker && (nv.clicked || game.input.actionPressed('back'))) { this.picker = null; this.phase = 'choose'; }
   }
+
 }
