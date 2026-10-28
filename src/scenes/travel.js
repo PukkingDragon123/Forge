@@ -1,7 +1,7 @@
 // Cinematic side-scrolling travel through a tunnel: auto-walk, inspectables, tunnel QTEs, reactions.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
-import { buildSet } from '../models/environments.js';
+import { buildStage as buildSet } from '../models/stage2d.js';
 import { buildCharacter } from '../models/characters.js';
 import * as Props from '../models/props.js';
 import { buildMonster } from '../models/monsters.js';

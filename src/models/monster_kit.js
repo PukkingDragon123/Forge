@@ -550,7 +550,7 @@ export class Sculpt {
       if (!nk || sum <= 0) { SW[v * 4] = 255; continue; }
       let acc = 0;
       for (let s = 0; s < nk; s++) {
-        const q = s === nk - 1 ? 255 - acc : Math.round((pairs[s][1] / sum) * 255);
+        const q = s === nk - 1 ? 255 - acc : Math.floor((pairs[s][1] / sum) * 255); // floor keeps the remainder ≥ 0 (u8 would wrap)
         SI[v * 4 + s] = pairs[s][0]; SW[v * 4 + s] = q; acc += q;
       }
     }

@@ -1,7 +1,7 @@
 // Descent between layers, game over, and the ending.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
-import { buildSet } from '../models/environments.js';
+import { buildStage as buildSet } from '../models/stage2d.js';
 import { buildProp } from '../models/props.js';
 import { buildCharacter } from '../models/characters.js';
 import { VoxelGrid, meshVoxels, GLOW } from '../gfx/voxel.js';

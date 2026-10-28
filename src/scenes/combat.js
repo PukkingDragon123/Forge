@@ -10,7 +10,7 @@ import { CombatSim, FISTS, monsterStats } from '../systems/combat.js';
 import { GRADES } from '../systems/forge.js';
 import { monsterDrops, rollQuality } from '../systems/run.js';
 import { makeItem, itemTooltip } from '../systems/items.js';
-import { buildSet } from '../models/environments.js';
+import { buildStage as buildSet } from '../models/stage2d.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildMonster } from '../models/monsters.js';
 import { buildWeaponMesh, crackWeapon, shatterPieces } from '../models/weapons3d.js';
