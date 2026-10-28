@@ -1,10 +1,15 @@
-// Forged weapons as low-poly meshes whose look comes from their ingredients:
-// blade metal/gem/bone colour, guard trim, gem inlay, handle wrap, element glow runes,
-// fang spikes, golem cores, masterwork gold. Plus curse cracks and shatter shards.
+// Forged weapons, carved rather than stacked: blades are lofted forged cross-sections (bevelled
+// edges, fullers, tapering points), guards are swept quillons, grips are ridged leather wraps,
+// heads are chamfered octagons and flared bits, staves are gnarled sweeps with root claws —
+// each painted with pixel textures (honed edges, wood grain, wrap turns, worn fittings). The
+// look still comes from the ingredients: blade metal/gem/bone colour, trim, gem inlays, wrap,
+// element rune inlays, fangs, cores, masterwork glints. Plus curse cracks and shatter shards.
 import * as THREE from 'three';
 import { TOON4 } from '../gfx/materials.js';
 import { LAYER_FX } from '../gfx/renderer.js';
 import { MATERIALS } from '../data/materials.js';
+import { hash2 } from '../core/math.js';
+import { sweep, curve, Tex, woodTex, shade } from './char_geo.js';
 
 const ELEMENT_GLOW = { fire: '#ff7a2a', ice: '#7fe3ff', shock: '#ffe74a', poison: '#8fe04a', curse: '#c86bff', holy: '#fff3b0', bleed: '#ff4f6a' };
 const METAL_TINT = {
@@ -15,28 +20,6 @@ const WRAP = { spider_silk: '#f0f0ff', bat_wing: '#5a3a5a', rat_tail: '#c88a8a',
 
 const m3 = (id) => MATERIALS[id] || null;
 const tagged = (id, t) => !!(m3(id) && m3(id).tags.includes(t));
-
-function toonM(color, o = {}) {
-  return new THREE.MeshToonMaterial({ color: new THREE.Color(color), gradientMap: TOON4, emissive: new THREE.Color(o.emissive || 0), emissiveIntensity: o.ei ?? 1 });
-}
-function glowM(color, i = 2.2) { return new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(i), fog: false }); }
-function mk(geo, mat, parent, p = [0, 0, 0], r = [0, 0, 0], s = null) {
-  if (mat.isMeshToonMaterial && geo.index) { geo = geo.toNonIndexed(); geo.computeVertexNormals(); }
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(...p); m.rotation.set(...r);
-  if (s) m.scale.set(...s);
-  m.castShadow = true; m.receiveShadow = true;
-  parent.add(m);
-  return m;
-}
-function extrude(pts, depth, bevel = 0.006) {
-  const s = new THREE.Shape();
-  pts.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y)));
-  s.closePath();
-  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel * 1.2, bevelSegments: 1, curveSegments: 3 });
-  g.translate(0, 0, -depth / 2);
-  return g;
-}
 
 /** Derive colours & decorations from a weapon description. */
 export function weaponLook(w) {
@@ -69,147 +52,287 @@ export function weaponLook(w) {
   };
 }
 
-function bladeMaterial(L) {
-  if (L.bladeKind === 'crystal') {
-    const m = toonM(L.blade, { emissive: L.blade, ei: 0.35 });
-    m.transparent = true; m.opacity = 0.92;
-    return m;
+const TAU = Math.PI * 2;
+
+// ------------------------------------------------------------------ carving tools
+/**
+ * Loft a cross-section along +Y: stations [{y, x?, z?, ...}] and section(st) → [[x, z]...] ordered by
+ * increasing angle from +X toward +Z (same count for every station). Faceted, UV u = around, v = along.
+ */
+function carve(stations, section, o = {}) {
+  const rings = stations.map((st) => section(st).map(([x, z]) => [x + (st.x || 0), st.y, z + (st.z || 0)]));
+  const n = rings[0].length, P = [], UV = [];
+  const y0 = stations[0].y, y1 = stations[stations.length - 1].y, span = (y1 - y0) || 1, vs = o.vScale ?? 1;
+  const tri = (a, b, c, ua, ub, uc) => { P.push(...a, ...b, ...c); UV.push(...ua, ...ub, ...uc); };
+  for (let i = 0; i < rings.length - 1; i++) {
+    const A = rings[i], B = rings[i + 1], va = ((stations[i].y - y0) / span) * vs, vb = ((stations[i + 1].y - y0) / span) * vs;
+    for (let k = 0; k < n; k++) {
+      const k1 = (k + 1) % n, ua = k / n, ub = (k + 1) / n;
+      tri(A[k], B[k1], A[k1], [ua, va], [ub, vb], [ub, va]);
+      tri(A[k], B[k], B[k1], [ua, va], [ua, vb], [ub, vb]);
+    }
   }
-  const m = toonM(L.blade, { emissive: L.magma ? '#ff4a1a' : 0, ei: L.magma ? 0.6 : 1 });
+  const cap = (R, flip, v) => {
+    const c = R.reduce((s, p) => [s[0] + p[0] / n, s[1] + p[1] / n, s[2] + p[2] / n], [0, 0, 0]);
+    for (let k = 0; k < n; k++) { const k1 = (k + 1) % n; if (flip) tri(c, R[k1], R[k], [0.5, v], [k1 / n, v], [k / n, v]); else tri(c, R[k], R[k1], [0.5, v], [k / n, v], [k1 / n, v]); }
+  };
+  if (o.capBottom !== false) cap(rings[0], false, 0);
+  if (o.capTop !== false) cap(rings[rings.length - 1], true, vs);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+  g.computeVertexNormals();
+  return g;
+}
+/** Forged blade section: cutting edges at ±w, bevels, a raised spine or a fuller groove. */
+const bladeSection = (st) => {
+  const w = st.w, t = st.t, f = st.fuller || 0, e = st.edge ?? 0.55;
+  return [[w, 0], [w * e, t * 0.8], [w * 0.22, t], [0, t * (1 - f)], [-w * 0.22, t], [-w * e, t * 0.8], [-w, 0], [-w * e, -t * 0.8], [-w * 0.22, -t], [0, -t * (1 - f)], [w * 0.22, -t], [w * e, -t * 0.8]];
+};
+/** Single-edged section (knives): thick spine on -X, honed edge on +X. */
+const knifeSection = (st) => {
+  const w = st.w, t = st.t;
+  return [[w, 0], [w * 0.35, t * 0.75], [-w * 0.6, t], [-w, t * 0.8], [-w, -t * 0.8], [-w * 0.6, -t], [w * 0.35, -t * 0.75]];
+};
+/** Chamfered octagon (hammer heads, eyes, sockets, collars): half sizes a (x), b (z), chamfer c. */
+const octSection = (st) => {
+  const a = st.a, b = st.b ?? st.a, c = st.c ?? Math.min(a, b) * 0.35;
+  return [[a, -b + c], [a, b - c], [a - c, b], [-a + c, b], [-a, b - c], [-a, -b + c], [-a + c, -b], [a - c, -b]];
+};
+const ringSection = (n) => (st) => Array.from({ length: n }, (_, i) => { const a = (i / n) * TAU + (st.phase || 0); return [Math.cos(a) * st.r * (st.sx ?? 1), Math.sin(a) * st.r * (st.sz ?? 1)]; });
+
+/** Faceted brilliant-cut gem (pavilion, girdle, crown, table). */
+const gemGeo = (r) => carve([{ y: -r * 1.1, r: 0.0005 }, { y: 0, r }, { y: r * 0.18, r }, { y: r * 0.45, r: r * 0.6 }], ringSection(8));
+/** Wrapped grip: ridged where each turn of leather overlaps. */
+function gripGeo(y0, y1, r, turns) {
+  const st = [];
+  for (let i = 0; i <= turns * 2; i++) st.push({ y: y0 + (y1 - y0) * (i / (turns * 2)), r: r * (i % 2 ? 1.1 : 0.96), phase: i * 0.12 });
+  return carve(st, ringSection(7), { vScale: turns / 2 });
+}
+/** Hand-hewn haft: gently bowed, slightly irregular octagon, swelling at the butt. */
+function haftGeo(y0, y1, r0, r1, bow = 0.01, n = 7) {
+  const st = [];
+  for (let i = 0; i <= n; i++) { const t = i / n; st.push({ y: y0 + (y1 - y0) * t, x: Math.sin(t * Math.PI) * bow, r: r0 + (r1 - r0) * t + (i === 0 ? r0 * 0.25 : 0), phase: 0.2 * i }); }
+  return carve(st, ringSection(7), { vScale: (y1 - y0) * 3 });
+}
+/** Curved fang / spike / horn: tapered sweep. */
+function fangGeo(len, r, curl = 0.3) {
+  return sweep(curve([0, 0, 0], [len * curl * 0.5, len * 0.5, 0], [len * curl, len, 0], null, 5), (t) => r * (1 - t) + 0.001, { n: 5 });
+}
+/** Raised rune strokes (a small glyph) for element glow inlays. */
+function runeGeo(s, seed) {
+  const pts = [];
+  let x = 0, y = 0;
+  for (let i = 0; i < 4; i++) { pts.push([x, y, 0]); x = (hash2(i, seed, 2) - 0.5) * s; y += s * (0.3 + hash2(i, seed, 5) * 0.4); }
+  pts.push([x, y, 0]);
+  return sweep(pts, s * 0.09, { n: 4, aspect: 1, capStart: true });
+}
+
+// ------------------------------------------------------------------ painted textures
+const texCache = new Map();
+function cachedTex(key, make) { if (!texCache.has(key)) texCache.set(key, make()); return texCache.get(key); }
+/** Blade steel: hammer-worked body, bright honed edges (u = 0, 0.5), a dark fuller line, forge scale. */
+function bladeTex(color) {
+  return cachedTex('blade' + color, () => {
+    const T = new Tex(24, 48);
+    for (let y = 0; y < 48; y++) for (let x = 0; x < 24; x++) {
+      const u = (x + 0.5) / 24, d = Math.min(u, Math.abs(u - 0.5), 1 - u);
+      let f = d < 0.045 ? 0.4 : d < 0.09 ? 0.18 : Math.abs(u - 0.25) < 0.03 || Math.abs(u - 0.75) < 0.03 ? -0.14 : 0;
+      f += (hash2(x >> 1, y >> 2, 3) - 0.5) * 0.08;
+      if (hash2(x, y, 9) > 0.985) f -= 0.22;
+      T.set(x, y, shade(color, f));
+    }
+    const t = T.texture(); t.wrapS = THREE.RepeatWrapping; return t;
+  });
+}
+function woodHaftTex(color) {
+  return cachedTex('wood' + color, () => { const t = woodTex(color, { w: 16, h: 64 }).texture(); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; });
+}
+/** Leather / cord wrap: diagonal turns with a highlight ridge. */
+function wrapTex(color) {
+  return cachedTex('wrap' + color, () => {
+    const T = new Tex(16, 16);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const k = (x + y * 2) % 8; T.set(x, y, shade(color, k < 1 ? -0.32 : k < 3 ? 0.16 : (hash2(x, y, 6) - 0.5) * 0.06)); }
+    const t = T.texture(); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+  });
+}
+/** Fittings: worn brass/steel with a bright top bevel, dark lower lip and punched dots. */
+function trimTex(color) {
+  return cachedTex('trim' + color, () => {
+    const T = new Tex(16, 16);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) T.set(x, y, shade(color, (y < 2 ? 0.3 : y > 13 ? -0.25 : 0) + (hash2(x, y, 4) - 0.5) * 0.06));
+    for (let x = 2; x < 16; x += 5) { T.set(x, 7, shade(color, 0.45)); T.set(x, 8, shade(color, -0.35)); }
+    const t = T.texture(); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+  });
+}
+function toonM(color, o = {}) {
+  return new THREE.MeshToonMaterial({ color: new THREE.Color(o.map ? '#ffffff' : color), map: o.map || null, gradientMap: TOON4, emissive: new THREE.Color(o.emissive || 0), emissiveIntensity: o.ei ?? 1, transparent: o.opacity !== undefined, opacity: o.opacity ?? 1 });
+}
+function glowM(color, i = 2.2) { return new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(i), fog: false }); }
+function mk(geo, mat, parent, p = [0, 0, 0], r = [0, 0, 0], s = null) {
+  if (geo.index) { geo = geo.toNonIndexed(); geo.computeVertexNormals(); }
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(...p); m.rotation.set(...r);
+  if (s) m.scale.set(...s);
+  m.castShadow = true; m.receiveShadow = false;
+  parent.add(m);
   return m;
 }
+const M = {
+  blade: (L) => { const m = L.bladeKind === 'crystal' ? toonM(L.blade, { emissive: L.blade, ei: 0.35, opacity: 0.92 }) : toonM(L.blade, { map: bladeTex(L.bladeKind === 'bone' ? '#efe6d0' : L.blade), emissive: L.magma ? '#ff4a1a' : 0, ei: L.magma ? 0.6 : 1 });  return m; },
+  trim: (L) => toonM(L.trim, { map: trimTex(L.trim) }),
+  wrap: (L) => toonM(L.wrap, { map: wrapTex(L.wrap) }),
+  wood: (L, c = '#7a4a2a') => toonM(c, { map: woodHaftTex(L.bladeKind === 'bone' ? '#d8ccb0' : c) }),
+};
 
-function addGrip(g, L, len, r = 0.022) {
-  const wrapM = toonM(L.wrap), trimM = toonM(L.trim);
-  mk(new THREE.CylinderGeometry(r, r * 1.05, len, 6), wrapM, g, [0, 0, 0]);
-  for (let i = 0; i < 3; i++) mk(new THREE.CylinderGeometry(r * 1.15, r * 1.15, 0.012, 6), toonM(new THREE.Color(L.wrap).multiplyScalar(0.7).getStyle()), g, [0, -len / 2 + (len / 4) * (i + 1), 0]);
-  mk(new THREE.SphereGeometry(r * 1.5, 6, 4), trimM, g, [0, -len / 2 - r, 0]);
-  if (L.gem) mk(new THREE.OctahedronGeometry(r * 0.8), glowM(L.gem, 1.4), g, [0, -len / 2 - r * 2.2, 0]);
+/** Wrapped grip with a faceted pommel (and a gem set in it). */
+function addGrip(g, L, len, r = 0.02) {
+  mk(gripGeo(-len / 2, len / 2, r, Math.round(len / 0.03)), M.wrap(L), g);
+  const tm = M.trim(L);
+  mk(carve([{ y: -len / 2 - r * 1.9, r: r * 0.5 }, { y: -len / 2 - r * 1.6, r: r * 1.45 }, { y: -len / 2 - r * 0.6, r: r * 1.5 }, { y: -len / 2 + r * 0.1, r: r * 0.95 }], ringSection(8)), tm, g);
+  if (L.gem) mk(gemGeo(r * 0.7), glowM(L.gem, 1.4), g, [0, -len / 2 - r * 1.1, r * 1.35], [Math.PI / 2, 0, 0]);
 }
-
 function addFangs(g, L, y0, y1, x, n) {
-  const fm = toonM('#f4ecd8');
-  for (let i = 0; i < Math.min(n * 2, 5); i++) {
-    const y = y0 + ((i + 0.5) / Math.min(n * 2, 5)) * (y1 - y0);
-    mk(new THREE.ConeGeometry(0.014, 0.05, 4), fm, g, [x, y, 0], [0, 0, x > 0 ? -1.9 : 1.9]);
-  }
+  const fm = toonM('#efe4cc');
+  const k = Math.min(n * 2, 5);
+  for (let i = 0; i < k; i++) { const y = y0 + ((i + 0.5) / k) * (y1 - y0); mk(fangGeo(0.055, 0.013, 0.35), fm, g, [x, y, 0], [0, 0, x > 0 ? -1.75 : 1.75]); }
 }
-
-function addRunes(g, L, y0, y1, w = 0.012) {
+/** Glowing rune inlays on both faces between y0 and y1 at depth z. */
+function addRunes(g, L, y0, y1, z, s = 0.03) {
   if (!L.glow) return;
-  const gm = glowM(L.glow, 2.4);
-  const n = 4;
+  const n = Math.max(2, Math.floor((y1 - y0) / (s * 1.6)));
   for (let i = 0; i < n; i++) {
-    const y = y0 + ((i + 0.5) / n) * (y1 - y0);
-    for (const z of [-1, 1]) {
-      const r = mk(new THREE.BoxGeometry(w, (y1 - y0) / n * 0.6, 0.004), i % 2 && L.glow2 ? glowM(L.glow2, 2.4) : gm, g, [0, y, z * 0.016]);
-      r.castShadow = false;
-    }
+    const y = y0 + ((i + 0.2) / n) * (y1 - y0), m = glowM(i % 2 && L.glow2 ? L.glow2 : L.glow, 2.4);
+    for (const sz of [-1, 1]) { const r = mk(runeGeo(s, i * 7 + 3), m, g, [0, y, sz * z]); r.castShadow = false; }
   }
 }
 
 const BUILD = {
   sword(g, L, s = 1) {
-    const bm = bladeMaterial(L); g.userData.bladeMats.push(bm);
-    addGrip(g, L, 0.18 * s);
-    const guard = mk(new THREE.BoxGeometry(0.24 * s, 0.035, 0.06), toonM(L.trim), g, [0, 0.105 * s, 0]);
-    for (const sx of [-1, 1]) mk(new THREE.SphereGeometry(0.024, 6, 4), toonM(L.trim), guard, [sx * 0.12 * s, 0.012, 0]);
-    if (L.gem) mk(new THREE.OctahedronGeometry(0.026), glowM(L.gem, 1.6), g, [0, 0.105 * s, 0.035]);
-    const len = 0.68 * s, w = 0.048 * s;
-    const blade = mk(extrude([[-w, 0], [w, 0], [w * 0.85, len * 0.86], [0, len], [-w * 0.85, len * 0.86]], 0.022), bm, g, [0, 0.12 * s, 0]);
+    const bm = M.blade(L); g.userData.bladeMats.push(bm);
+    addGrip(g, L, 0.17 * s);
+    // crossguard: quillons curving toward the blade, a langet block at the centre
+    const tm = M.trim(L);
+    mk(sweep(curve([-0.13 * s, 0.13, 0], [-0.06 * s, 0.098, 0], [0.06 * s, 0.098, 0], [0.13 * s, 0.13, 0], 8), (t) => 0.013 + Math.sin(t * Math.PI) * 0.006, { n: 6, aspect: 1.5, capStart: true }), tm, g);
+    mk(carve([{ y: 0.086, a: 0.026, b: 0.02 }, { y: 0.104, a: 0.034, b: 0.024 }, { y: 0.124, a: 0.03, b: 0.02 }], octSection), tm, g);
+    for (const sx of [-1, 1]) mk(gemGeo(0.012), tm, g, [sx * 0.132 * s, 0.132, 0], [0, 0, sx * 0.6]);
+    if (L.gem) for (const sz of [-1, 1]) mk(gemGeo(0.016), glowM(L.gem, 1.6), g, [0, 0.106, sz * 0.022], [sz * Math.PI / 2, 0, 0]);
+    const y0 = 0.12 * s, len = 0.68 * s;
+    const blade = mk(carve([
+      { y: y0, w: 0.032 * s, t: 0.011 }, { y: y0 + 0.04 * s, w: 0.046 * s, t: 0.011, fuller: 0.35 }, { y: y0 + len * 0.45, w: 0.044 * s, t: 0.01, fuller: 0.35 },
+      { y: y0 + len * 0.72, w: 0.037 * s, t: 0.009, fuller: 0.1 }, { y: y0 + len * 0.9, w: 0.022 * s, t: 0.007 }, { y: y0 + len, w: 0.0008, t: 0.0008 },
+    ], bladeSection), bm, g);
     blade.userData.breakable = true; blade.userData.len = len;
-    mk(new THREE.BoxGeometry(w * 0.35, len * 0.7, 0.026), toonM(L.bladeDark), g, [0, 0.12 * s + len * 0.38, 0]); // fuller
-    addRunes(g, L, 0.12 * s + len * 0.1, 0.12 * s + len * 0.75);
-    if (L.fangs) addFangs(g, L, 0.12 * s + len * 0.2, 0.12 * s + len * 0.7, -w * 0.95, L.fangs);
-    g.userData.tip = 0.12 * s + len;
+    addRunes(g, L, y0 + len * 0.1, y0 + len * 0.6, 0.0075, 0.032 * s);
+    if (L.fangs) addFangs(g, L, y0 + len * 0.2, y0 + len * 0.7, -0.044 * s, L.fangs);
+    g.userData.tip = y0 + len;
   },
   dagger(g, L) {
-    const bm = bladeMaterial(L); g.userData.bladeMats.push(bm);
-    addGrip(g, L, 0.11, 0.018);
-    mk(new THREE.BoxGeometry(0.12, 0.025, 0.045), toonM(L.trim), g, [0, 0.065, 0]);
-    if (L.gem) mk(new THREE.OctahedronGeometry(0.02), glowM(L.gem, 1.6), g, [0, 0.065, 0.026]);
-    const len = 0.3, w = 0.036;
-    const blade = mk(extrude([[-w, 0], [w * 0.8, 0], [w * 0.4, len * 0.7], [-w * 0.1, len], [-w, len * 0.55]], 0.016, 0.005), bm, g, [0, 0.075, 0]);
+    const bm = M.blade(L); g.userData.bladeMats.push(bm);
+    addGrip(g, L, 0.105, 0.017);
+    const tm = M.trim(L);
+    mk(sweep(curve([-0.06, 0.075, 0], [-0.02, 0.06, 0], [0.03, 0.06, 0], [0.065, 0.045, 0], 6), (t) => 0.01 + Math.sin(t * Math.PI) * 0.004, { n: 6, aspect: 1.4, capStart: true }), tm, g);
+    if (L.gem) mk(gemGeo(0.012), glowM(L.gem, 1.6), g, [0, 0.064, 0.016], [Math.PI / 2, 0, 0]);
+    const len = 0.3;
+    const blade = mk(carve([
+      { y: 0.068, w: 0.03, t: 0.009, x: -0.004 }, { y: 0.1, w: 0.036, t: 0.009, x: -0.002 }, { y: 0.068 + len * 0.55, w: 0.03, t: 0.008, x: 0.006 },
+      { y: 0.068 + len * 0.85, w: 0.016, t: 0.006, x: 0.012 }, { y: 0.068 + len, w: 0.0008, t: 0.0008, x: 0.02 },
+    ], knifeSection), bm, g);
     blade.userData.breakable = true;
-    addRunes(g, L, 0.1, 0.075 + len * 0.6, 0.01);
-    if (L.fangs) addFangs(g, L, 0.12, 0.3, w * 0.8, 1);
-    g.userData.tip = 0.075 + len;
+    addRunes(g, L, 0.1, 0.068 + len * 0.6, 0.0065, 0.024);
+    if (L.fangs) addFangs(g, L, 0.12, 0.3, -0.03, 1);
+    g.userData.tip = 0.068 + len;
   },
   axe(g, L) {
-    const bm = bladeMaterial(L); g.userData.bladeMats.push(bm);
-    const haftM = toonM(L.bladeKind === 'bone' ? '#efe6d0' : '#7a4a2a');
-    mk(new THREE.CylinderGeometry(0.022, 0.026, 0.92, 6), haftM, g, [0, 0.2, 0]);
-    mk(new THREE.CylinderGeometry(0.026, 0.026, 0.16, 6), toonM(L.wrap), g, [0, 0.0, 0]);
-    mk(new THREE.SphereGeometry(0.03, 6, 4), toonM(L.trim), g, [0, -0.27, 0]);
-    const head = mk(extrude([[0, -0.07], [0.09, -0.08], [0.22, -0.17], [0.26, 0], [0.22, 0.17], [0.09, 0.08], [0, 0.07]], 0.03, 0.008), bm, g, [0.01, 0.56, 0]);
-    head.userData.breakable = true;
-    mk(new THREE.BoxGeometry(0.07, 0.17, 0.05), toonM(L.trim), g, [0, 0.56, 0]);
-    mk(new THREE.ConeGeometry(0.035, 0.12, 5), toonM(L.bladeDark), g, [-0.08, 0.56, 0], [0, 0, Math.PI / 2]);
-    if (L.gem) mk(new THREE.OctahedronGeometry(0.025), glowM(L.gem, 1.6), g, [0, 0.56, 0.03]);
-    if (L.glow) { const e = mk(extrude([[0.23, -0.13], [0.262, 0], [0.23, 0.13], [0.215, 0.12], [0.24, 0], [0.215, -0.12]], 0.034, 0), glowM(L.glow, 2.4), g, [0.01, 0.56, 0]); e.castShadow = false; }
+    const bm = M.blade(L); g.userData.bladeMats.push(bm);
+    mk(haftGeo(-0.3, 0.68, 0.026, 0.021, 0.012), M.wood(L), g);
+    mk(gripGeo(-0.1, 0.08, 0.027, 6), M.wrap(L), g);
+    const tm = M.trim(L);
+    // bearded bit: lofted outward from the eye, thinning to the edge and dropping into a beard
+    const head = new THREE.Group(); head.position.set(0.012, 0.56, 0); head.rotation.z = -Math.PI / 2; g.add(head);
+    const bit = mk(carve([
+      { y: 0.0, w: 0.05, t: 0.028, x: 0 }, { y: 0.05, w: 0.044, t: 0.022, x: 0.004 }, { y: 0.11, w: 0.075, t: 0.015, x: 0.02 },
+      { y: 0.18, w: 0.13, t: 0.009, x: 0.04 }, { y: 0.235, w: 0.16, t: 0.004, x: 0.05 }, { y: 0.255, w: 0.15, t: 0.0012, x: 0.052 },
+    ], bladeSection), bm, head);
+    bit.userData.breakable = true;
+    // eye socket around the haft and a short back spike
+    mk(carve([{ y: 0.5, a: 0.036, b: 0.03 }, { y: 0.52, a: 0.04, b: 0.034 }, { y: 0.6, a: 0.04, b: 0.034 }, { y: 0.62, a: 0.034, b: 0.028 }], octSection), tm, g);
+    const spike = new THREE.Group(); spike.position.set(-0.03, 0.56, 0); spike.rotation.z = Math.PI / 2; g.add(spike);
+    mk(carve([{ y: 0, r: 0.026 }, { y: 0.05, r: 0.018 }, { y: 0.1, r: 0.002 }], ringSection(5)), M.blade(L), spike);
+    if (L.gem) mk(gemGeo(0.018), glowM(L.gem, 1.6), g, [0, 0.56, 0.036], [Math.PI / 2, 0, 0]);
+    if (L.glow) { const e = mk(sweep(curve([0.25, 0.495, 0], [0.275, 0.56, 0], [0.25, 0.64, 0], null, 6).map(([x, y, z]) => [x + 0.012, y - 0.05, z]), 0.005, { n: 4, capStart: true }), glowM(L.glow, 2.4), g); e.castShadow = false; }
     if (L.fangs) addFangs(g, L, 0.5, 0.62, -0.1, 1);
     g.userData.tip = 0.66;
   },
   hammer(g, L) {
-    const bm = bladeMaterial(L); g.userData.bladeMats.push(bm);
-    mk(new THREE.CylinderGeometry(0.024, 0.028, 0.86, 6), toonM('#6a4226'), g, [0, 0.16, 0]);
-    mk(new THREE.CylinderGeometry(0.03, 0.03, 0.18, 6), toonM(L.wrap), g, [0, -0.02, 0]);
-    const head = mk(new THREE.BoxGeometry(0.32, 0.16, 0.16), bm, g, [0, 0.6, 0]);
+    const bm = M.blade(L); g.userData.bladeMats.push(bm);
+    mk(haftGeo(-0.28, 0.6, 0.028, 0.024, 0.006), M.wood(L, '#6a4226'), g);
+    mk(gripGeo(-0.12, 0.06, 0.03, 6), M.wrap(L), g);
+    const tm = M.trim(L);
+    // octagonal head, flared striking faces, waisted middle
+    const hg = new THREE.Group(); hg.position.set(0, 0.6, 0); hg.rotation.z = -Math.PI / 2; g.add(hg);
+    const head = mk(carve([
+      { y: -0.165, a: 0.064, b: 0.064, c: 0.026 }, { y: -0.15, a: 0.082, b: 0.082, c: 0.028 }, { y: -0.11, a: 0.075, b: 0.075 }, { y: 0, a: 0.068, b: 0.068 },
+      { y: 0.11, a: 0.075, b: 0.075 }, { y: 0.15, a: 0.082, b: 0.082, c: 0.028 }, { y: 0.165, a: 0.064, b: 0.064, c: 0.026 },
+    ], octSection), bm, hg);
     head.userData.breakable = true;
-    for (const sx of [-1, 1]) mk(new THREE.BoxGeometry(0.04, 0.18, 0.18), toonM(L.trim), g, [sx * 0.15, 0.6, 0]);
-    if (L.core) mk(new THREE.IcosahedronGeometry(0.05, 0), glowM('#ffb84a', 2.2), g, [0, 0.6, 0.08]);
-    else if (L.gem) mk(new THREE.OctahedronGeometry(0.035), glowM(L.gem, 1.6), g, [0, 0.6, 0.085]);
-    if (L.glow) for (const sx of [-1, 1]) { const e = mk(new THREE.BoxGeometry(0.012, 0.19, 0.19), glowM(L.glow, 2.4), g, [sx * 0.175, 0.6, 0]); e.castShadow = false; }
-    if (L.fangs) for (let i = 0; i < 3; i++) mk(new THREE.ConeGeometry(0.02, 0.06, 4), toonM('#f4ecd8'), g, [-0.09 + i * 0.09, 0.69, 0]);
+    for (const sy of [-1, 1]) mk(carve([{ y: sy * 0.118 - 0.009, a: 0.08, b: 0.08 }, { y: sy * 0.118 + 0.009, a: 0.08, b: 0.08 }], octSection), tm, hg);
+    for (const sz of [-1, 1]) mk(carve([{ y: 0.42, a: 0.012, b: 0.004 }, { y: 0.53, a: 0.014, b: 0.005 }], octSection), tm, g, [0, 0, sz * 0.03]); // langets
+    if (L.core) mk(new THREE.IcosahedronGeometry(0.045, 0), glowM('#ffb84a', 2.2), g, [0, 0.6, 0.07]);
+    else if (L.gem) mk(gemGeo(0.026), glowM(L.gem, 1.6), g, [0, 0.6, 0.07], [Math.PI / 2, 0, 0]);
+    if (L.glow) for (const sx of [-1, 1]) { const e = mk(carve([{ y: -0.004, a: 0.05, b: 0.05 }, { y: 0.004, a: 0.05, b: 0.05 }], octSection), glowM(L.glow, 2.4), g, [sx * 0.168, 0.6, 0], [0, 0, Math.PI / 2]); e.castShadow = false; }
+    if (L.fangs) for (let i = 0; i < 3; i++) mk(fangGeo(0.06, 0.016, 0.2), toonM('#efe4cc'), g, [-0.08 + i * 0.08, 0.66, 0]);
     g.userData.tip = 0.68;
   },
   spear(g, L) {
-    const bm = bladeMaterial(L); g.userData.bladeMats.push(bm);
-    mk(new THREE.CylinderGeometry(0.018, 0.02, 1.25, 6), toonM('#8a5a33'), g, [0, 0.22, 0]);
-    mk(new THREE.CylinderGeometry(0.023, 0.023, 0.16, 6), toonM(L.wrap), g, [0, 0, 0]);
-    mk(new THREE.CylinderGeometry(0.03, 0.026, 0.06, 6), toonM(L.trim), g, [0, 0.86, 0]);
-    const tip = mk(extrude([[-0.045, 0], [0, -0.02], [0.045, 0], [0.03, 0.15], [0, 0.26], [-0.03, 0.15]], 0.02), bm, g, [0, 0.89, 0]);
+    const bm = M.blade(L); g.userData.bladeMats.push(bm);
+    mk(haftGeo(-0.42, 0.86, 0.019, 0.017, 0.008), M.wood(L, '#8a5a33'), g);
+    mk(gripGeo(-0.08, 0.08, 0.021, 5), M.wrap(L), g);
+    const tm = M.trim(L);
+    mk(carve([{ y: 0.82, r: 0.02 }, { y: 0.84, r: 0.026 }, { y: 0.9, r: 0.022 }, { y: 0.93, r: 0.012 }], ringSection(8)), tm, g);
+    const tip = mk(carve([
+      { y: 0.92, w: 0.012, t: 0.009 }, { y: 0.97, w: 0.042, t: 0.009 }, { y: 1.03, w: 0.044, t: 0.008 }, { y: 1.1, w: 0.024, t: 0.006 }, { y: 1.16, w: 0.0008, t: 0.0008 },
+    ], bladeSection), bm, g);
     tip.userData.breakable = true;
-    addRunes(g, L, 0.92, 1.08, 0.01);
-    if (L.gem) mk(new THREE.OctahedronGeometry(0.022), glowM(L.gem, 1.6), g, [0, 0.86, 0.03]);
+    addRunes(g, L, 0.96, 1.08, 0.0065, 0.022);
+    if (L.gem) mk(gemGeo(0.014), glowM(L.gem, 1.6), g, [0, 0.87, 0.024], [Math.PI / 2, 0, 0]);
     const tas = toonM(L.glow || '#c8402a');
-    for (const sx of [-1, 1]) mk(new THREE.BoxGeometry(0.015, 0.1, 0.015), tas, g, [sx * 0.03, 0.8, 0], [0, 0, sx * 0.2]);
+    for (let i = 0; i < 3; i++) { const a = (i / 3) * TAU; mk(sweep(curve([Math.cos(a) * 0.02, 0.83, Math.sin(a) * 0.02], [Math.cos(a) * 0.035, 0.78, Math.sin(a) * 0.035], [Math.cos(a) * 0.03, 0.71, Math.sin(a) * 0.03], null, 4), (t) => 0.007 * (1 - t * 0.5), { n: 4 }), tas, g); }
     g.userData.tip = 1.15;
   },
   staff(g, L) {
-    const wood = toonM(L.bladeKind === 'bone' ? '#efe6d0' : '#6a4226');
-    let y = -0.42;
-    const segs = [[0.024, 0.28, 0.06], [0.022, 0.3, -0.08], [0.024, 0.28, 0.05], [0.026, 0.22, 0]];
-    const shaft = new THREE.Group(); g.add(shaft);
-    let x = 0;
-    for (const [r, h, lean] of segs) {
-      mk(new THREE.CylinderGeometry(r * 0.9, r, h, 5), wood, shaft, [x + lean * h * 0.5, y + h / 2, 0], [0, 0, -lean]);
-      x += lean * h; y += h;
-    }
-    mk(new THREE.CylinderGeometry(0.03, 0.03, 0.14, 6), toonM(L.wrap), g, [0, 0, 0]);
-    const orbC = L.glow || L.gem || L.blade;
-    const orb = mk(new THREE.IcosahedronGeometry(0.065, 0), glowM(orbC, 2.0), g, [x, y + 0.08, 0]);
-    orb.userData.breakable = true; orb.castShadow = false;
-    const bm = bladeMaterial(L); g.userData.bladeMats.push(bm);
+    const wood = M.wood(L, '#6a4226');
+    // gnarled shaft: a wandering path with knots
+    const path = [], R = [];
+    for (let i = 0; i <= 10; i++) { const t = i / 10; path.push([Math.sin(t * 5.1) * 0.018 + t * 0.02, -0.42 + t * 1.02, Math.cos(t * 4.3) * 0.01]); R.push(0.022 + (i % 3 === 1 ? 0.005 : 0) + t * 0.004); }
+    mk(sweep(path, R, { n: 6, capStart: true }), wood, g);
+    mk(gripGeo(-0.06, 0.08, 0.026, 5), M.wrap(L), g);
+    const top = path[path.length - 1], x = top[0], y = top[1];
+    mk(carve([{ y: y - 0.02, r: 0.03 }, { y: y + 0.005, r: 0.034 }, { y: y + 0.02, r: 0.028 }], ringSection(8)), M.trim(L), g, [x, 0, top[2]]);
+    // three roots curling up around a cut crystal
     for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2;
-      mk(new THREE.ConeGeometry(0.014, 0.16, 4), bm, g, [x + Math.cos(a) * 0.06, y + 0.06, Math.sin(a) * 0.06], [Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5]);
+      const a = (i / 3) * TAU + 0.4;
+      mk(sweep(curve([x + Math.cos(a) * 0.02, y, top[2] + Math.sin(a) * 0.02], [x + Math.cos(a) * 0.07, y + 0.05, top[2] + Math.sin(a) * 0.07], [x + Math.cos(a) * 0.05, y + 0.14, top[2] + Math.sin(a) * 0.05], [x + Math.cos(a + 0.6) * 0.015, y + 0.19, top[2] + Math.sin(a + 0.6) * 0.015], 7), (t) => 0.013 * (1 - t) + 0.002, { n: 5 }), wood, g);
     }
-    mk(new THREE.CylinderGeometry(0.035, 0.028, 0.04, 6), toonM(L.trim), g, [x, y, 0]);
-    g.userData.tip = y + 0.15;
+    const orbC = L.glow || L.gem || L.blade;
+    const orb = mk(carve([{ y: -0.06, r: 0.004 }, { y: -0.02, r: 0.042 }, { y: 0.045, r: 0.036 }, { y: 0.085, r: 0.002 }], ringSection(6)), glowM(orbC, 2.0), g, [x, y + 0.095, top[2]], [0, 0.3, 0.12]);
+    orb.userData.breakable = true; orb.castShadow = false;
+    const bm = M.blade(L); g.userData.bladeMats.push(bm);
+    g.userData.tip = y + 0.19;
     g.userData.orb = orb;
   },
   pickaxe(g, L) {
-    const bm = bladeMaterial(L); g.userData.bladeMats.push(bm);
-    mk(new THREE.CylinderGeometry(0.022, 0.026, 0.7, 6), toonM('#7a4a2a'), g, [0, 0.12, 0]);
-    mk(new THREE.CylinderGeometry(0.027, 0.027, 0.14, 6), toonM(L.wrap), g, [0, -0.04, 0]);
-    for (const sx of [-1, 1]) {
-      const p = mk(new THREE.CylinderGeometry(0.012, 0.035, 0.26, 5), bm, g, [sx * 0.13, 0.43, 0], [0, 0, sx * 1.85]);
+    const bm = M.blade(L); g.userData.bladeMats.push(bm);
+    mk(haftGeo(-0.24, 0.48, 0.023, 0.02, 0.01), M.wood(L), g);
+    mk(gripGeo(-0.12, 0.04, 0.025, 5), M.wrap(L), g);
+    const tm = M.trim(L);
+    mk(carve([{ y: 0.42, a: 0.034, b: 0.028 }, { y: 0.44, a: 0.038, b: 0.032 }, { y: 0.5, a: 0.038, b: 0.032 }, { y: 0.52, a: 0.032, b: 0.026 }], octSection), tm, g);
+    for (const sx of [-1, 1]) { // curved picks, square-ish in section, drawn to a point
+      const p = mk(sweep(curve([0, 0.47, 0], [sx * 0.12, 0.48, 0], [sx * 0.24, 0.42, 0], [sx * 0.29, 0.36, 0], 8), (t) => 0.028 * (1 - t) + 0.002, { n: 4, aspect: 1.25, phase: Math.PI / 4 }), bm, g);
       p.userData.breakable = true;
+      if (L.glow) { const e = mk(gemGeo(0.012), glowM(L.glow, 2.4), g, [sx * 0.285, 0.365, 0], [0, 0, sx * 2.3]); e.castShadow = false; }
     }
-    mk(new THREE.BoxGeometry(0.07, 0.07, 0.06), toonM(L.trim), g, [0, 0.47, 0]);
-    if (L.gem) mk(new THREE.OctahedronGeometry(0.022), glowM(L.gem, 1.6), g, [0, 0.47, 0.035]);
-    if (L.glow) for (const sx of [-1, 1]) { const e = mk(new THREE.ConeGeometry(0.014, 0.05, 4), glowM(L.glow, 2.4), g, [sx * 0.245, 0.39, 0], [0, 0, sx * 2.3]); e.castShadow = false; }
+    if (L.gem) mk(gemGeo(0.016), glowM(L.gem, 1.6), g, [0, 0.47, 0.034], [Math.PI / 2, 0, 0]);
     g.userData.tip = 0.5;
   },
 };
@@ -226,13 +349,13 @@ export function buildWeaponMesh(w = {}) {
   g.userData.bladeMats = [];
   (BUILD[w.bp] || BUILD.sword)(g, L);
   if (L.masterwork) {
-    const halo = mk(new THREE.OctahedronGeometry(0.02), glowM('#ffe08a', 2.5), g, [0, (g.userData.tip || 0.6) * 0.98, 0.02]);
+    const halo = mk(gemGeo(0.018), glowM('#ffe08a', 2.5), g, [0, (g.userData.tip || 0.6) * 0.98, 0.02]);
     halo.castShadow = false;
     g.userData.sparkle = halo;
   }
   if (L.star) {
     const sm = glowM('#ffe08a', 2.4);
-    for (let i = 0; i < 5; i++) { const s = mk(new THREE.BoxGeometry(0.008, 0.008, 0.03), sm, g, [((i * 37) % 7 - 3) * 0.008, 0.2 + i * 0.09, 0]); s.castShadow = false; }
+    for (let i = 0; i < 5; i++) { const s = mk(gemGeo(0.008), sm, g, [((i * 37) % 7 - 3) * 0.008, 0.2 + i * 0.09, 0.012], [Math.PI / 2, 0, 0]); s.castShadow = false; }
   }
   return g;
 }

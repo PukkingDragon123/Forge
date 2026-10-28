@@ -138,7 +138,7 @@ export class CrossroadsScene extends Scene {
     this.say(`{gold}${SIDE[this.choices.length][i]}.{/} Into the ${(TUNNELS[c.tunnel] || TUNNELS.tunnel).name.toLowerCase()}…`);
     this.game.audio.play('footstep');
     this.hero.play('walk', { loop: true });
-    this.hero.group.rotation.y = Math.PI + clamp((m.x - this.heroPos.x) / 500, -0.9, 0.9);
+    this.hero.group.rotation.y = Math.PI - clamp((m.x - this.heroPos.x) / 500, -0.9, 0.9);
     this.tw.to(this.heroPos, { x: m.x, y: m.y + 18, s: 0.5 }, 1.5, { ease: 'inOutQuad' });
     this.tw.to(this.cam, { zoom: 1.45 }, 1.6, { ease: 'inOutCubic' });
     this.zoomTo = { x: (m.x - 480) * PX * 0.6, y: (270 - (m.y - m.h * 0.4)) * PX * 0.6 };
@@ -164,7 +164,7 @@ export class CrossroadsScene extends Scene {
       if (k >= 1) { this.walkIn = null; this.hero.play('idle', { loop: true }); }
     }
     if (!this.walkIn && !this.leaving) {
-      const target = this.hover >= 0 ? Math.PI + clamp((this.mouthScreen(this.hover).x - 480) / 600, -0.8, 0.8) : Math.PI * 0.82;
+      const target = this.hover >= 0 ? Math.PI - clamp((this.mouthScreen(this.hover).x - 480) / 600, -0.8, 0.8) : Math.PI * 0.82;
       const r = this.hero.group.rotation;
       r.y += (target - r.y) * Math.min(1, dt * 5);
     }

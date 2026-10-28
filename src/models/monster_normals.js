@@ -1,64 +1,77 @@
-// Normal + elite monster archetypes. Each: { S?, reach?, die?, build(m, md), anim(m, dt), phase?, intro? }
-// Grid axes: x = body length (front/head at low x → faces −X), y = up, z = depth.
-import { grid, pk, gl, tone, shadeBody, mirrorZ, eye, spike, crystals, mix } from './monster_kit.js';
-import { hash3, clamp } from '../core/math.js';
+// Normal + elite monster archetypes, each sculpted as ONE continuous SDF mesh driven by a skeleton.
+// Each: { reach?, die?, build(m, md), anim(m, dt), intro? }. Units are metres (before md.scale).
+// Axes: head toward −X, up +Y; "F"/"l" limbs at −Z (mirrored to the camera side at runtime), "B"/"r" at +Z.
+// Sculpt API (bone-local coordinates): m.ell / m.sph / m.cap / m.tube / m.box / m.tor / m.plate / m.cry,
+// options { k: smooth blend, op: 'add'|'sub'|'paint'|'bind', noise, nf, rot, dir }.
+import { hornPath } from './monster_kit.js';
+import { shadeHex as shade, mixHex as mix } from '../core/math.js';
 
-const W = '#fff6e0';
-const sin = Math.sin, cos = Math.cos;
-
-/** Vertical limb (pivot at top centre). foot: extra toe voxels toward −x. */
-function limb(len, w, d, col, o = {}) {
-  const g = grid(w + (o.foot || 0), len + 1, d);
-  const f = o.foot || 0;
-  g.box(f, 1, 0, f + w, len + 1, d, (x, y, z) => tone(col, (y / len) * 0.12 - 0.04));
-  if (o.foot) g.box(0, 0, 0, f + w, 2, d, tone(o.footCol || col, -0.12));
-  else g.box(f, 0, 0, f + w, 1, d, tone(o.footCol || col, -0.14));
-  if (o.claw) for (let z = 0; z < d; z += 2) g.set(0, 0, z, pk(o.claw));
-  g._pivot = [f + w / 2, len + 1, d / 2];
-  return g;
+const sin = Math.sin, cos = Math.cos, PI = Math.PI;
+const SIDES = [-1, 1];
+const walk = (m, names, speed, amp, phase = PI) => names.forEach((n, i) => { const p = m.P(n); if (p) p.rotation.z += sin(m.t * speed + i * phase) * amp; });
+/** Small beady eye: socket carve + glossy bead (optional faint glow so it reads in the dark). */
+function beady(m, bone, c, r, glowCol, gk = 1.1) {
+  const eye = m.mat('eye', '#120a0e', glowCol ? { glow: glowCol, gk, full: true } : {});
+  m.sph(bone, c, r * 1.35, null, { op: 'sub', k: r * 0.5 });
+  m.sph(bone, c, r, eye, { k: r * 0.25 });
 }
-const legPivot = (g) => g._pivot;
+const glowMat = (m, col, gk = 2.4, tile = 'crystal') => m.mat(tile, col, { glow: col, gk, full: true });
+/** Wing-plane point: (chord x, span y) → bone space for a membrane tilted up by `lift`, spanning ±z by side s. */
+const wp = (x, y, s, lift = 0.25) => [x, y * Math.sin(lift), s * y * Math.cos(lift)];
 
-/** Thin bone segment along a polyline (for skeletons, spider legs, fingers). */
-function bones(g, pts, col, r = 0.5) {
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [a, b] = [pts[i], pts[i + 1]];
-    g.line(a[0], a[1], a[2], b[0], b[1], b[2], r, typeof col === 'function' ? col : () => col);
-  }
-}
-
-const walk = (m, names, speed, amp, phase = Math.PI) => names.forEach((n, i) => { const p = m.P(n); if (p) p.rotation.z += sin(m.t * speed + i * phase) * amp; });
-
-// ============================================================================ RAT
+// ============================================================================ RAT (rustrat)
 const rat = {
   reach: 0.32,
   build(m, md) {
-    const b = grid(17, 12, 11);
-    const sb = shadeBody(md.body, 5, 4.4, 5.5, 4.2, { belly: md.belly, bellyY: -0.35, spots: 0.1, spotColor: md.accent, seed: 2 });
-    b.ellipsoid(8.5, 5, 5.5, 6.4, 3.9, 4, sb);
-    b.ellipsoid(11.5, 6, 5.5, 4.4, 4.6, 4.2, sb);
-    for (let x = 6; x < 15; x += 2) b.set(x, 10 + (x > 9 && x < 13 ? 1 : 0), 5, tone(md.body, -0.12));
-    m.part('body', b, [9, 0, 5.5], [0, 0, 0]);
-    const h = grid(12, 12, 9);
-    const hs = shadeBody(md.body, 5, 3.4, 4.5, 3.2, { belly: md.belly, bellyY: -0.45 });
-    h.ellipsoid(7.5, 5, 4.5, 3.8, 3.4, 3.2, hs);
-    h.ellipsoid(4.5, 4.4, 4.5, 2.6, 2.4, 2.4, hs);
-    h.ellipsoid(2, 3.8, 4.5, 1.9, 1.6, 1.6, hs);
-    h.set(0, 4, 4, pk('#ff7a8a')); h.set(0, 4, 5, pk('#ff7a8a')); h.set(0, 5, 4, pk('#ffb0b8'));
-    for (const z of [2, 6]) { h.set(5, 6, z, gl(md.eye)); h.set(5, 6, z + 1, gl(md.eye)); h.set(5, 7, z + (z < 4 ? 1 : 0), tone(md.body, -0.25)); }
-    h.box(1, 1, 4, 2, 3, 6, pk('#fff6d0'));
-    for (const z of [1, 7]) for (let k = 0; k < 2; k++) h.set(1, 4 + k, z + (z < 4 ? -1 : 1), pk('#f0e6d0'));
-    for (const z of [1.5, 7.5]) { h.ellipsoid(9, 9.5, z, 1.7, 2.3, 0.9, (x, y, zz) => (Math.abs(zz + 0.5 - z) < 0.6 && x < 10 ? pk('#ff9aaa') : tone(md.body, 0.05))); }
-    m.part('head', h, [9, 3, 4.5], [-6, 5, 0], 'body');
-    const t = grid(16, 9, 3);
-    for (let i = 0; i <= 15; i++) { const y = 1 + sin(i * 0.35) * 2 + i * 0.25; t.set(i, Math.round(y), 1, pk(mix('#d89a9a', md.accent, i / 30))); if (i < 6) t.set(i, Math.round(y) + 1, 1, pk('#c88a8a')); }
-    m.part('tail', t, [0, 1, 1], [7, 4, 0], 'body');
-    const leg = limb(3, 2, 2, md.body, { foot: 1, footCol: '#d89a9a' });
-    m.part('lf', leg, legPivot(leg), [-4, 3, -3], 'body');
-    m.twin('lb', 'lf', [4, 3, -3]);
-    m.twin('rf', 'lf', [-4, 3, 3]);
-    m.twin('rb', 'lf', [4, 3, 3]);
-    m.points({ hit: [-0.25, 0.42, 0], mouth: [-0.75, 0.42, 0], cuts: [[-0.45, 0.5, 0], [0, 0.55, 0], [0.25, 0.45, 0], [0.55, 0.35, 0], [-0.1, 0.25, 0]] });
+    const fur = m.mat('fur', md.body, { acc: md.accent });
+    const belly = m.mat('fur', md.belly, { j: 0.04 });
+    const pink = m.mat('wart', '#c88a88', { acc: '#a86a6a' });
+    const tailM = m.mat('scale', '#a8807a', { ts: 2.2 });
+    const tooth = m.mat('smooth', '#e8c870');
+    const rust = m.mat('rust', '#5a4a46', { acc: '#a8643a' });
+    const gum = m.mat('flesh', '#5a1a24');
+    m.bone('body', [0.05, 0.3, 0]);
+    // pear-shaped body: heavy rump, narrower shoulders, mangy lumps
+    m.ell('body', [0.15, 0.02, 0], [0.28, 0.23, 0.22], fur, { noise: 0.008, nf: 16 });
+    m.ell('body', [-0.12, 0.01, 0], [0.22, 0.19, 0.17], fur, { k: 0.1, noise: 0.008, nf: 16 });
+    m.ell('body', [-0.01, 0.1, 0], [0.22, 0.13, 0.15], fur, { k: 0.08 });
+    m.ell('body', [0.02, -0.15, 0], [0.34, 0.11, 0.19], belly, { op: 'paint' });
+    // chewed scrap plates grown into the hide (it's a RUSTrat)
+    m.box('body', [0.1, 0.21, 0.03], [0.12, 0.04, 0.1], 0.02, rust, { rot: [0.15, 0.2, -0.2], k: 0.012 });
+    m.box('body', [-0.09, 0.18, -0.04], [0.08, 0.035, 0.08], 0.018, rust, { rot: [-0.2, -0.3, 0.15], k: 0.012 });
+    // head: skull + tapering snout, round ears, beady eyes, yellow incisors
+    m.bone('head', [-0.3, 0.07, 0], 'body');
+    m.ell('head', [-0.06, 0.03, 0], [0.13, 0.11, 0.115], fur, { k: 0.07 });
+    m.ell('head', [-0.12, -0.02, 0], [0.09, 0.07, 0.1], fur, { k: 0.05 }); // cheeks
+    m.cap('head', [-0.1, 0.02, 0], [-0.29, -0.015, 0], 0.08, 0.034, fur, { k: 0.05 });
+    m.sph('head', [-0.31, -0.008, 0], 0.03, pink, { k: 0.012 });
+    m.ell('head', [-0.24, -0.052, 0], [0.065, 0.014, 0.05], gum, { op: 'sub', k: 0.01 });
+    for (const s of SIDES) {
+      m.box('head', [-0.282, -0.068, s * 0.011], [0.01, 0.03, 0.009], 0.004, tooth, { k: 0.004 });
+      const ear = [[-0.06, 0], [0.0, -0.01], [0.06, 0.02], [0.07, 0.08], [0.03, 0.13], [-0.03, 0.12], [-0.07, 0.06]];
+      m.plate('head', [0.0, 0.11, s * 0.07], ear, 0.006, 0.008, fur, { rot: [s * 0.45, s * 0.5, 0.1], k: 0.025 });
+      m.ell('head', [-0.02, 0.17, s * 0.085], [0.035, 0.05, 0.035], pink, { op: 'paint' });
+      beady(m, 'head', [-0.175, 0.065, s * 0.06], 0.021, md.eye);
+    }
+    // tail: long, ringed, tapering
+    m.bone('tail', [0.4, -0.04, 0], 'body');
+    m.tube('tail', [[0, 0, 0], [0.15, -0.07, 0], [0.32, -0.1, 0.03], [0.48, -0.06, 0.05], [0.6, 0.04, 0.04], [0.65, 0.17, 0]], (t) => 0.045 * (1 - t) + 0.016, tailM, { k: 0.04 });
+    // legs: shoulder/haunch muscle → shin → long pink paw with toes
+    const leg = (name, at, hind) => {
+      m.bone(name, at, 'body');
+      if (hind) {
+        m.ell(name, [0.02, -0.02, 0], [0.11, 0.12, 0.07], fur, { k: 0.06 });
+        m.tube(name, [[0.04, -0.06, 0], [0.06, -0.15, 0], [0.0, -0.205, 0]], [0.04, 0.03, 0.022], fur, { k: 0.03 });
+        m.ell(name, [-0.04, -0.215, 0], [0.065, 0.018, 0.032], pink, { k: 0.015 });
+      } else {
+        m.ell(name, [0, -0.01, 0], [0.07, 0.09, 0.06], fur, { k: 0.05 });
+        m.tube(name, [[0, -0.04, 0], [0.02, -0.13, 0], [-0.01, -0.2, 0]], [0.036, 0.028, 0.022], fur, { k: 0.03 });
+        m.ell(name, [-0.035, -0.213, 0], [0.045, 0.017, 0.034], pink, { k: 0.015 });
+      }
+    };
+    leg('lf', [-0.2, -0.08, -0.12], false); leg('lb', [0.24, -0.06, -0.13], true);
+    leg('rf', [-0.2, -0.08, 0.12], false); leg('rb', [0.24, -0.06, 0.13], true);
+    m.points({ hit: [-0.2, 0.42, 0], mouth: [-0.6, 0.35, 0], cuts: [[-0.45, 0.45, 0], [0, 0.55, 0], [0.25, 0.45, 0], [0.55, 0.3, 0], [-0.1, 0.25, 0]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -71,87 +84,110 @@ const rat = {
   },
 };
 
-// ============================================================================ BAT
+// ============================================================================ BAT (cave / shard / cinder)
 const bat = {
   reach: 0.45, die: 'fall',
   build(m, md) {
-    m.fly = 0.95;
-    const b = grid(11, 15, 10);
-    b.ellipsoid(5.5, 5.5, 5, 4.2, 5, 3.9, shadeBody(md.body, 5.5, 5, 5, 3.9, { belly: md.belly, bellyY: -0.1, bellyW: 0.6, noise: 0.12 }));
-    // ears
-    for (const z of [2.5, 7.5]) { b.line(5, 9, z, 6, 14, z + (z < 5 ? -0.8 : 0.8), 1.1, () => tone(md.body, 0.05)); b.line(5, 10, z, 5.5, 13, z, 0.4, () => pk(md.accent)); }
-    eye(b, 1, 6, 3, md.eye); eye(b, 1, 6, 5, md.eye);
-    b.set(1, 3, 3, pk(W)); b.set(1, 3, 5, pk(W)); b.set(1, 2, 3, pk(W));
-    b.set(4, 0, 3, tone(md.body, -0.3)); b.set(5, 0, 5, tone(md.body, -0.3));
-    if (md.crystals) crystals(b, 7, 9, 4, md.crystals, 3, 3, 4);
-    if (md.glow) { for (let y = 3; y < 7; y++) for (let z = 3; z < 6; z++) b.set(1 + (y > 5 ? 1 : 0), y, z, gl(md.belly)); }
-    m.part('body', b, [5, 5, 4.5], [0, 0, 0]);
-    const w = grid(17, 14, 2);
-    const tips = [[1, 13], [6, 13], [11, 11], [16, 7]];
-    // membrane: fill between consecutive finger rays with a scalloped edge
-    for (let y = 0; y < 14; y++) for (let x = 0; x < 17; x++) {
-      const a = Math.atan2(y, x - 3), r = Math.hypot(x - 3, y);
-      if (a < 0.35 || a > 1.95) continue;
-      const k = (a - 0.35) / 1.6; // 0 (back) .. 1 (front)
-      const reach = 11 + 3 * Math.sin(k * Math.PI) - 2.5 * Math.abs(Math.sin(k * Math.PI * 3));
-      if (r > reach) continue;
-      w.set(x, y, 0, tone(md.body, -0.14 + (r > reach - 1 ? -0.08 : 0)));
+    m.fly = 0.95; m.res = 84;
+    const fur = m.mat('fur', md.body, { acc: md.accent, ts: 1.6 });
+    const chest = m.mat('fur', md.belly, { ts: 1.6 });
+    const mem = m.mat('membrane', shade(md.body, 0.05), { acc: shade(md.body, -0.3), glow: md.glow ? '#ffb04a' : null, gk: 2.6 });
+    const skin = m.mat('wart', mix(md.body, '#c88a9a', 0.5));
+    const claw = m.mat('smooth', '#1a1418');
+    const tooth = m.mat('smooth', '#f4ecd8');
+    m.bone('body', [0, 0, 0]);
+    // compact furry torso with a shaggy ruff
+    m.ell('body', [0.03, -0.01, 0], [0.13, 0.1, 0.095], fur, { noise: 0.008, nf: 22 });
+    m.ell('body', [-0.07, 0.02, 0], [0.08, 0.09, 0.1], fur, { k: 0.05, noise: 0.012, nf: 22 });
+    m.ell('body', [-0.04, -0.06, 0], [0.09, 0.05, 0.07], chest, { op: 'paint' });
+    // head: pug face, leaf nose, tall ears, little fangs
+    m.ell('body', [-0.14, 0.05, 0], [0.075, 0.068, 0.07], fur, { k: 0.04 });
+    m.cap('body', [-0.17, 0.04, 0], [-0.21, 0.025, 0], 0.042, 0.03, skin, { k: 0.02 });
+    m.plate('body', [-0.222, 0.05, 0], [[-0.022, 0], [0.022, 0], [0.004, 0.05], [-0.004, 0.05]], 0.003, 0.004, skin, { rot: [0, PI / 2, 0], k: 0.008 });
+    m.ell('body', [-0.205, 0.0, 0], [0.03, 0.011, 0.026], m.mat('flesh', '#4a1420'), { op: 'sub', k: 0.008 });
+    for (const s of SIDES) {
+      m.cap('body', [-0.205, 0.008, s * 0.015], [-0.206, -0.03, s * 0.012], 0.01, 0.005, tooth, { k: 0.003 });
+      const ear = [[-0.034, 0], [0.03, 0.005], [0.014, 0.08], [-0.004, 0.14], [-0.022, 0.09]];
+      m.plate('body', [-0.115, 0.1, s * 0.045], ear, 0.004, 0.006, fur, { rot: [s * 0.35, PI / 2, 0], k: 0.02 });
+      m.ell('body', [-0.13, 0.16, s * 0.05], [0.015, 0.045, 0.02], skin, { op: 'paint' });
+      beady(m, 'body', [-0.19, 0.07, s * 0.038], 0.014, md.eye, 1.4);
+      // little hind feet with hooked claws
+      m.cap('body', [0.1, -0.06, s * 0.04], [0.14, -0.12, s * 0.05], 0.015, 0.011, fur, { k: 0.02 });
+      m.cap('body', [0.14, -0.12, s * 0.05], [0.12, -0.15, s * 0.05], 0.009, 0.005, claw, { k: 0.005 });
     }
-    for (const [tx, ty] of tips) w.line(3, 0, 0, tx, ty, 0, 0.4, () => pk(md.accent));
-    for (const [tx, ty] of tips) { w.set(tx, ty, 1, tone(md.accent, -0.2)); }
-    w.line(3, 0, 1, 1, 13, 1, 0.4, () => tone(md.accent, 0.1));
-    if (md.crystals) for (const [tx, ty] of tips) { w.set(tx, ty, 1, gl(md.crystals)); w.set(tx, Math.max(0, ty - 1), 1, gl(md.crystals)); }
-    if (md.glow) for (let k = 0; k < 7; k++) w.set(4 + k * 1.5, 3 + (k * 5) % 7, 1, gl('#ffb04a'));
-    m.part('wingL', w, [3, 0, 1], [1, 3, 3.5], 'body');
-    m.part('wingR', w, [3, 0, 1], [1, 3, -3.5], 'body');
+    if (md.crystals) {
+      const cry = glowMat(m, md.crystals, 1.8);
+      for (const [c, d, l] of [[[0.04, 0.08, 0], [0.3, 1, 0], 0.14], [[0.1, 0.05, 0.04], [0.6, 0.8, 0.3], 0.1], [[0.08, 0.07, -0.05], [0.5, 0.9, -0.4], 0.09]]) m.cry('body', c, l, 0.03, cry, { dir: d });
+    }
+    if (md.glow) m.ell('body', [-0.03, -0.06, 0], [0.07, 0.05, 0.06], glowMat(m, '#ff8a2a', 2.2, 'lava'), { op: 'paint' });
+    // wings: arm + finger bones under a scalloped membrane
+    const tips = [[-0.02, 0.5], [0.11, 0.44], [0.2, 0.3], [0.24, 0.12]];
+    const W = [[-0.07, 0.0], [-0.1, 0.18], [-0.07, 0.34], tips[0], [0.04, 0.36], tips[1], [0.12, 0.3], tips[2], [0.18, 0.16], tips[3], [0.12, 0.02]];
+    for (const s of SIDES) {
+      const n = s > 0 ? 'wingL' : 'wingR';
+      m.bone(n, [0.0, 0.04, s * 0.075], 'body');
+      m.plate(n, [0, 0, 0], W, 0.005, 0.006, mem, { rot: [s * (PI / 2 - 0.25), 0, 0], k: 0.012 });
+      m.cap(n, [-0.03, 0, 0], wp(-0.1, 0.18, s), 0.02, 0.014, fur, { k: 0.02 });
+      for (const [x, y] of tips) m.cap(n, wp(-0.1, 0.18, s), wp(x, y, s), 0.011, 0.006, skin, { k: 0.006 });
+      m.cap(n, wp(-0.1, 0.18, s), wp(-0.14, 0.2, s), 0.01, 0.005, claw, { k: 0.004 });
+      if (md.crystals) for (const [x, y] of tips.slice(0, 3)) m.cry(n, wp(x, y, s), 0.06, 0.016, glowMat(m, md.crystals, 1.8), { dir: [0.2, 1, s * 0.5] });
+    }
     if (md.glow) m.emitter({ pos: [0.05, -0.1, 0], rate: 10, vel: [0.1, -0.4, 0], spread: 0.3, life: [0.4, 0.9], size: 1, color: ['#ffb04a', '#ff6a1a'], gravity: 1, glow: 2.5 });
-    if (md.crystals) m.emitter({ pos: [0.1, 0.3, 0], rate: 3, vel: [0, -0.2, 0], spread: 0.2, life: [0.6, 1.2], size: 1, color: md.crystals, glow: 2.5 });
-    m.points({ hit: [0, 0.1, 0], mouth: [-0.3, 0, 0], cuts: [[-0.15, 0.15, 0], [0.1, 0, 0], [0, 0.3, 0.3], [0, 0.3, -0.3], [0.05, -0.2, 0]] });
+    if (md.crystals) m.emitter({ pos: [0.1, 0.2, 0], rate: 3, vel: [0, -0.2, 0], spread: 0.2, life: [0.6, 1.2], size: 1, color: md.crystals, glow: 2.5 });
+    m.points({ hit: [-0.05, 0.03, 0], mouth: [-0.22, 0.02, 0], cuts: [[-0.15, 0.06, 0], [0.08, 0, 0], [0, 0.12, 0.3], [0, 0.12, -0.3], [0.05, -0.08, 0]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
     const sp = 13 + e.strike * 10 + e.multi * 12;
     const flap = sin(t * sp);
-    m.P('wingL').rotation.z += flap * 0.85 - 0.15 - e.wind * 0.5;
-    m.P('wingR').rotation.z += sin(t * sp - 0.5) * 0.85 - 0.15 - e.wind * 0.5;
-    m.P('wingL').rotation.x += -0.25 - Math.max(0, flap) * 0.3; m.P('wingR').rotation.x += 0.25 + Math.max(0, flap) * 0.3;
-    m.root.position.y += sin(t * sp) * 0.05 + sin(t * 1.3) * 0.08 - e.strike * 0.25;
+    const a = flap * 0.75 + 0.1 + e.wind * 0.7;
+    m.P('wingL').rotation.x += -a; m.P('wingR').rotation.x += a;
+    m.P('wingL').rotation.y += flap * 0.18; m.P('wingR').rotation.y -= flap * 0.18;
+    m.root.position.y += -flap * 0.05 + sin(t * 1.3) * 0.08 - e.strike * 0.25;
     m.root.position.x += sin(t * 0.9) * 0.08;
-    m.P('body').rotation.z += e.strike * 0.5;
+    m.P('body').rotation.z += e.strike * 0.5 - e.wind * 0.2;
   },
 };
 
-// ============================================================================ SLIME
+// ============================================================================ SLIME (ooze / gem / magma)
 const slime = {
   reach: 0.38, die: 'flatten',
   build(m, md) {
-    const n = grid(18, 14, 16);
-    const cy = 4.2;
-    const body = (x, y, z) => {
-      const ny = (y + 0.5 - cy) / 7;
-      if (y === 0) return tone(md.body, -0.25);
-      if (md.glow && hash3(x, y, z, 7) > 0.86) return gl(md.belly);
-      return tone(md.body, ny * 0.25 + (hash3(x >> 1, y >> 1, z >> 1, 5) - 0.5) * 0.06);
-    };
-    n.ellipsoid(9, cy, 8, 8.2, 8.6, 7.2, (x, y, z) => (y >= 0 ? body(x, y, z) : null));
-    // drippy rim
-    for (let x = 1; x < 17; x += 3) n.set(x, 0, hash3(x, 0, 0, 2) > 0.5 ? 2 : 13, tone(md.body, -0.2));
-    // highlight
-    n.box(5, 10, 4, 7, 11, 6, pk(md.glow ? '#fff4b0' : mix(md.belly, '#ffffff', 0.6)));
-    n.set(4, 9, 4, pk(mix(md.belly, '#ffffff', 0.4)));
-    // face
-    for (const z of [5, 10]) { n.box(1, 6, z, 2, 9, z + 1, pk('#141018')); n.set(1, 8, z + (z < 8 ? 0 : 0), pk('#ffffff')); }
-    n.box(1, 4, 7, 2, 5, 9, pk('#2a0e14'));
+    const hot = !!md.glow;
+    const gel = hot ? m.mat('crust', '#3a120a', { glow: '#ff8a2a', gk: 2.6 }) : m.mat('slime', md.body, { acc: md.accent });
+    const sheen = hot ? glowMat(m, md.body, 1.6, 'lava') : m.mat('slime', md.belly, { acc: md.body, j: 0.05 });
+    const mouthM = m.mat('flesh', hot ? '#ff8a2a' : shade(md.accent, -0.35));
+    m.bone('body', [0, 0, 0]);
+    // gelatinous mound: sagging base, rounded crown, droopy peak, puddle lobes
+    m.ell('body', [0, 0.24, 0], [0.5, 0.3, 0.46], gel, { noise: 0.016, nf: 6 });
+    m.ell('body', [0.04, 0.44, 0], [0.33, 0.22, 0.3], gel, { k: 0.18, noise: 0.012, nf: 9 });
+    m.ell('body', [0.12, 0.62, 0.02], [0.12, 0.09, 0.11], gel, { k: 0.12 });
+    for (let i = 0; i < 7; i++) { const a = (i / 7) * PI * 2 + 0.3; m.ell('body', [cos(a) * 0.46, 0.05, sin(a) * 0.42], [0.11, 0.06, 0.1], gel, { k: 0.09 }); }
+    m.box('body', [0, -0.25, 0], [1, 0.25, 1], 0.01, null, { op: 'sub', k: 0.03 });
+    m.ell('body', [0.05, 0.56, 0], [0.3, 0.13, 0.27], sheen, { op: 'paint' });
+    // a dull little face — eyes are just dark beads suspended in the jelly
+    for (const s of SIDES) beady(m, 'body', [-0.41, 0.38, s * 0.12], 0.026, null);
+    m.ell('body', [-0.47, 0.25, 0], [0.04, 0.022, 0.07], mouthM, { op: 'sub', k: 0.015 });
     if (md.inside === 'copper') {
-      for (const [x, y, z] of [[3, 3, 12], [9, 12, 6], [14, 6, 3], [12, 9, 13], [6, 2, 2]]) n.ellipsoid(x, y, z, 1.4, 1.2, 1.3, (a, b2, c) => tone(hash3(a, b2, c, 1) > 0.6 ? '#5fbf9a' : '#c8743a', 0.05));
+      const cu = m.mat('rust', '#c8743a', { acc: '#3a9a7a' });
+      const sunk = m.mat('slime', mix(md.body, '#c8743a', 0.55), { acc: md.accent });
+      for (const [p, r] of [[[0.3, 0.46, 0.25], 0.075], [[-0.12, 0.6, -0.2], 0.06], [[0.36, 0.22, -0.32], 0.07], [[0.04, 0.35, 0.42], 0.065]]) m.ell('body', p, [r, r * 0.85, r], cu, { k: 0.012, noise: 0.018, nf: 20 });
+      for (const p of [[-0.2, 0.3, 0.38], [0.2, 0.55, -0.12], [-0.3, 0.15, -0.36]]) m.sph('body', p, 0.09, sunk, { op: 'paint' });
     }
     if (md.inside === 'gem') {
-      for (const [x, y, z] of [[4, 10, 11], [12, 11, 5], [15, 5, 9], [8, 2, 14]]) crystals(n, x, y, z, hash3(x, y, z, 3) > 0.5 ? '#ff9af0' : '#9ae8ff', 2, 2, x);
+      const pink = glowMat(m, '#ff9af0', 1.7), cyan = glowMat(m, '#9ae8ff', 1.7);
+      m.cry('body', [0.18, 0.45, 0.18], 0.24, 0.05, pink, { dir: [0.4, 1, 0.4] });
+      m.cry('body', [0.2, 0.3, -0.25], 0.18, 0.045, cyan, { dir: [0.6, 0.6, -0.6] });
+      m.cry('body', [-0.12, 0.55, -0.1], 0.15, 0.04, pink, { dir: [-0.3, 1, -0.4] });
+      m.cry('body', [0.3, 0.1, 0.3], 0.14, 0.04, cyan, { dir: [0.7, 0.3, 0.6] });
+      for (const p of [[-0.25, 0.3, 0.35], [0.1, 0.6, 0.15]]) m.sph('body', p, 0.08, m.mat('slime', mix(md.body, '#ff9af0', 0.5)), { op: 'paint' });
     }
-    if (md.glow) { n.ellipsoid(9, 12, 8, 3, 1.5, 3, gl('#fff0a0')); }
-    m.part('body', n, [9, 0, 8]);
-    if (md.glow) m.emitter({ pos: [0, 0.75, 0], rate: 7, vel: [0, 0.7, 0], spread: 0.35, life: [0.5, 1.2], size: 1, color: ['#ffd04a', '#ff6a1a', '#fff0a0'], gravity: -0.3, glow: 3 });
-    m.points({ hit: [-0.2, 0.45, 0], mouth: [-0.48, 0.3, 0], cuts: [[-0.3, 0.4, 0], [0, 0.7, 0], [0.3, 0.4, 0], [0, 0.2, 0.2], [0.1, 0.5, -0.2]] });
+    if (hot) {
+      const bub = glowMat(m, '#ffd04a', 2.2, 'lava');
+      for (const [p, r] of [[[0.1, 0.66, 0.08], 0.05], [[-0.1, 0.58, -0.15], 0.04], [[0.25, 0.5, -0.12], 0.035], [[0.0, 0.62, 0.22], 0.03]]) m.sph('body', p, r, bub, { k: 0.02 });
+      m.emitter({ pos: [0, 0.75, 0], rate: 7, vel: [0, 0.7, 0], spread: 0.35, life: [0.5, 1.2], size: 1, color: ['#ffd04a', '#ff6a1a', '#fff0a0'], gravity: -0.3, glow: 3 });
+    }
+    m.points({ hit: [-0.2, 0.45, 0], mouth: [-0.48, 0.28, 0], cuts: [[-0.3, 0.4, 0], [0, 0.66, 0], [0.3, 0.4, 0], [0, 0.2, 0.2], [0.1, 0.5, -0.2]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -164,44 +200,67 @@ const slime = {
   },
 };
 
-// ============================================================================ KOBOLD
+// ============================================================================ KOBOLD (tunnel miner)
 const kobold = {
   reach: 0.3,
   build(m, md) {
-    const b = grid(9, 10, 8);
-    b.ellipsoid(4.5, 5, 4, 3.6, 4.6, 3.5, shadeBody(md.body, 5, 4.6, 4, 3.5, { belly: md.belly, bellyY: -0.6, bellyW: 0.5 }));
-    b.box(1, 4, 1, 3, 9, 7, (x, y, z) => (x === 1 ? tone(md.belly, -0.05) : null));
-    b.box(2, 2, 0, 8, 4, 8, pk('#6a4a2a')); // belt
-    b.set(1, 3, 4, pk('#ffd24a'));
-    m.part('body', b, [4.5, 0, 4], [0, 6, 0]);
-    const h = grid(12, 12, 9);
-    h.ellipsoid(6, 4, 4.5, 3.6, 3.4, 3.4, shadeBody(md.body, 4, 3.4, 4.5, 3.4, {}));
-    h.ellipsoid(2.5, 3, 4.5, 2.6, 1.8, 2, shadeBody(md.body, 3, 1.8, 4.5, 2, { belly: md.belly, bellyY: -0.2 }));
-    h.set(0, 3, 4, pk('#2a1a14')); h.set(0, 3, 5, pk('#2a1a14'));
-    h.set(1, 1, 3, pk(W)); h.set(1, 1, 6, pk(W));
-    eye(h, 3, 5, 2, md.eye); eye(h, 3, 5, 7, md.eye);
-    for (const z of [1, 8]) h.line(7, 6, z, 10, 9, z < 4 ? -0.5 : 9.5, 0.7, () => tone(md.body, 0.05));
-    // mining helmet with lamp
-    h.ellipsoid(6, 6.8, 4.5, 3.9, 2.6, 3.9, (x, y) => (y >= 7 ? tone('#c8a040', (y - 7) * 0.05) : null));
-    h.box(2, 7, 0, 10, 8, 9, (x, y, z) => (Math.hypot(x - 6, z - 4.5) < 4.6 ? tone('#a07a30', -0.05) : null));
-    h.box(2, 8, 4, 3, 10, 6, gl('#fff0a0'));
-    m.part('head', h, [6, 1, 4.5], [0.5, 9, 0], 'body');
-    const arm = limb(5, 2, 2, md.body, { footCol: md.belly });
-    m.part('armF', arm, legPivot(arm), [-1, 8, -4], 'body');
-    m.twin('armB', 'armF', [1, 8, 4]);
-    // pickaxe in front hand
-    const pick = grid(9, 12, 3);
-    pick.box(4, 0, 1, 5, 11, 2, (x, y) => tone('#8a5a33', y * 0.01));
-    pick.line(0, 9, 1, 8, 11, 1, 0.5, () => tone('#9aa3b2', 0.1));
-    pick.set(0, 8, 1, pk('#dfe6ee')); pick.set(8, 10, 1, pk('#5b6170'));
-    m.part('pick', pick, [4.5, 1, 1.5], [-1, -6, -1], 'armF', { rot: [0, 0, 0.5] });
-    const leg = limb(4, 2, 2, md.body, { foot: 2, footCol: md.belly, claw: '#2a1a14' });
-    m.part('legF', leg, legPivot(leg), [-1, 1, -1.5], 'body');
-    m.twin('legB', 'legF', [1, 1, 1.5]);
-    const tail = grid(9, 5, 3);
-    tail.line(0, 3, 1, 8, 0.5, 1, 0.9, (x) => tone(md.body, -0.05));
-    m.part('tail', tail, [0, 3, 1], [3, 2, 0], 'body');
-    m.points({ hit: [0, 0.75, 0], mouth: [-0.3, 0.75, 0], cuts: [[0, 0.95, 0], [0, 0.5, 0], [-0.15, 0.6, -0.2], [0.25, 0.25, 0], [0, 0.15, 0.1]] });
+    m.res = 80;
+    const scl = m.mat('scale', md.body, { acc: md.accent, ts: 1.6 });
+    const bellyM = m.mat('plate', md.belly, { acc: shade(md.belly, -0.15), ts: 2 });
+    const leather = m.mat('cloth', '#6a4a2a', { acc: '#3a2a1a' });
+    const brass = m.mat('metal', '#b08a3a', { acc: '#f0d070' });
+    const iron = m.mat('metal', '#8a92a0', { acc: '#c8d0d8' });
+    const wood = m.mat('wood', '#7a5030', { ts: 1.5 });
+    const tooth = m.mat('smooth', '#f0e6c8');
+    const claw = m.mat('smooth', '#2a1a14');
+    m.bone('body', [0, 0.36, 0]);
+    // pot-bellied, hunched little torso
+    m.ell('body', [0.02, 0.17, 0], [0.14, 0.2, 0.13], scl, { rot: [0, 0, -0.18] });
+    m.ell('body', [-0.04, 0.07, 0], [0.13, 0.12, 0.12], scl, { k: 0.08 });
+    m.ell('body', [-0.08, 0.1, 0], [0.1, 0.13, 0.1], bellyM, { op: 'paint' });
+    m.tor('body', [0, 0.03, 0], 0.13, 0.02, leather, { k: 0.01, rot: [0, 0, 0.08] });
+    m.box('body', [0.0, 0.02, -0.14], [0.045, 0.045, 0.028], 0.016, leather, { k: 0.01 });
+    m.cap('body', [0.1, 0.31, -0.07], [-0.11, 0.02, 0.11], 0.016, 0.016, leather, { k: 0.008 });
+    m.box('body', [-0.12, 0.04, 0], [0.012, 0.025, 0.025], 0.008, brass, { k: 0.006 });
+    // head: lizard-dog skull, frill ears, mining helmet with lamp
+    m.bone('head', [-0.01, 0.37, 0], 'body');
+    m.ell('head', [0.0, 0.06, 0], [0.115, 0.1, 0.105], scl, { k: 0.05 });
+    m.cap('head', [-0.06, 0.03, 0], [-0.21, 0.0, 0], 0.068, 0.04, scl, { k: 0.04 });
+    m.ell('head', [-0.15, -0.035, 0], [0.075, 0.015, 0.048], m.mat('flesh', '#6a1a24'), { op: 'sub', k: 0.01 });
+    for (const s of SIDES) {
+      m.sph('head', [-0.215, 0.012, s * 0.016], 0.008, null, { op: 'sub', k: 0.003 });
+      m.cap('head', [-0.17, -0.04, s * 0.036], [-0.18, -0.005, s * 0.04], 0.011, 0.005, tooth, { k: 0.004 });
+      m.plate('head', [0.03, 0.04, s * 0.085], [[0, 0], [0.13, 0.03], [0.1, 0.06], [0.14, 0.1], [0.02, 0.075]], 0.004, 0.006, scl, { rot: [s * 0.6, 0, 0.15], k: 0.02 });
+      beady(m, 'head', [-0.09, 0.075, s * 0.062], 0.019, md.eye, 1.3);
+    }
+    m.ell('head', [0.02, 0.15, 0], [0.155, 0.085, 0.145], brass, { k: 0.01 });
+    m.tor('head', [0.02, 0.1, 0], 0.15, 0.012, brass, { k: 0.006 });
+    m.cap('head', [-0.11, 0.17, 0], [-0.15, 0.17, 0], 0.032, 0.03, iron, { k: 0.008 });
+    m.sph('head', [-0.155, 0.17, 0], 0.024, glowMat(m, '#ffe08a', 3), { k: 0.004 });
+    // arms + pickaxe
+    for (const s of SIDES) {
+      const n = s < 0 ? 'armF' : 'armB';
+      m.bone(n, [-0.02, 0.3, s * 0.16], 'body');
+      m.ell(n, [0, 0, 0], [0.05, 0.055, 0.05], scl, { k: 0.04 });
+      m.tube(n, [[0, -0.02, 0], [0.03, -0.12, 0], [-0.03, -0.22, 0]], [0.034, 0.03, 0.026], scl, { k: 0.03 });
+      m.ell(n, [-0.045, -0.25, 0], [0.04, 0.035, 0.035], scl, { k: 0.02 });
+      for (let f = -1; f <= 1; f++) m.cap(n, [-0.07, -0.26, f * 0.018], [-0.09, -0.28, f * 0.02], 0.009, 0.005, claw, { k: 0.004 });
+    }
+    m.bone('pick', [-0.045, -0.25, 0], 'armF', { rot: [0, 0, 0.5] });
+    m.cap('pick', [0, -0.12, 0], [0, 0.42, 0], 0.017, 0.017, wood, { k: 0.01 });
+    m.tube('pick', [[-0.2, 0.36, 0], [-0.08, 0.42, 0], [0.04, 0.43, 0], [0.15, 0.38, 0]], (t) => 0.024 * (1 - Math.abs(t - 0.45)) + 0.01, iron, { k: 0.01 });
+    // digitigrade legs
+    for (const s of SIDES) {
+      const n = s < 0 ? 'legF' : 'legB';
+      m.bone(n, [-0.0, 0.0, s * 0.075], 'body');
+      m.ell(n, [0, -0.04, 0], [0.06, 0.08, 0.055], scl, { k: 0.05 });
+      m.tube(n, [[0, -0.08, 0], [0.05, -0.18, 0], [0.02, -0.32, 0]], [0.04, 0.032, 0.026], scl, { k: 0.03 });
+      m.ell(n, [-0.04, -0.338, 0], [0.065, 0.024, 0.04], scl, { k: 0.02 });
+      for (let f = -1; f <= 1; f++) m.cap(n, [-0.09, -0.34, f * 0.02], [-0.12, -0.355, f * 0.024], 0.01, 0.006, claw, { k: 0.004 });
+    }
+    m.bone('tail', [0.12, 0.05, 0], 'body');
+    m.tube('tail', [[0, 0, 0], [0.16, -0.1, 0], [0.32, -0.24, 0.03], [0.42, -0.31, 0.02]], (t) => 0.05 * (1 - t) + 0.014, scl, { k: 0.03 });
+    m.points({ hit: [0, 0.6, 0], mouth: [-0.25, 0.76, 0], cuts: [[0, 0.95, 0], [0, 0.5, 0], [-0.15, 0.6, -0.2], [0.25, 0.25, 0], [0, 0.15, 0.1]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -214,32 +273,35 @@ const kobold = {
   },
 };
 
-// ============================================================================ BEETLE
+// ============================================================================ BEETLE (rock beetle)
 const beetle = {
   reach: 0.35, die: 'flatten',
   build(m, md) {
-    const b = grid(20, 12, 15);
-    const shell = (x, y, z) => {
-      if (Math.abs(z + 0.5 - 7.5) < 0.6 && y > 6) return tone(md.body, -0.3);
-      if (y > 7 && Math.abs(z + 0.5 - 5) < 1.2 && x > 6 && x < 14) return pk(md.accent); // glossy shine
-      return tone(md.body, (y - 6) * 0.04 + (hash3(x, y, z, 4) > 0.9 ? -0.08 : 0));
-    };
-    b.ellipsoid(11.5, 5, 7.5, 7.5, 6.2, 6.6, (x, y, z) => (y >= 2 ? shell(x, y, z) : null));
-    b.box(5, 2, 2, 18, 4, 13, (x, y, z) => (Math.hypot((x - 11.5) / 7, (z - 7.5) / 6) < 1 ? tone(md.belly, 0) : null));
-    // head + horn + mandibles
-    b.ellipsoid(4.5, 4.5, 7.5, 2.8, 2.6, 3.2, (x, y, z) => tone(md.body, -0.15));
-    b.line(3, 6, 7.5, 0, 10, 7.5, 0.9, (x, y) => tone(md.body, y > 9 ? 0.2 : -0.05));
-    for (const z of [5, 10]) { b.line(2, 3, z, 0, 2, z + (z < 7 ? 1 : -1), 0.5, () => tone('#2a2a2a', 0)); }
-    eye(b, 2, 5, 5, md.eye); eye(b, 2, 5, 10, md.eye);
-    m.part('body', b, [11.5, 0, 7.5], [0, 1, 0]);
-    const leg = grid(5, 5, 5);
-    bones(leg, [[1, 4, 0], [2, 4, 3], [1, 0, 4]], tone('#2a2a3a', 0.05));
-    m.part('l0', leg, [1, 4, 0], [-4, 3, 4], 'body');
-    m.twin('l1', 'l0', [0, 3, 4]); m.twin('l2', 'l0', [4, 3, 4]);
-    const legR = mirrorZ(leg);
-    m.part('r0', legR, [1, 4, 4], [-4, 3, -4], 'body');
-    m.twin('r1', 'r0', [0, 3, -4]); m.twin('r2', 'r0', [4, 3, -4]);
-    m.points({ hit: [-0.1, 0.55, 0], mouth: [-0.65, 0.3, 0], cuts: [[-0.45, 0.4, 0], [0, 0.75, 0], [0.4, 0.55, 0], [-0.1, 0.35, 0.35], [0.2, 0.3, -0.35]] });
+    const shell = m.mat('chitin', md.body, { acc: md.accent });
+    const rock = m.mat('stone', mix(md.body, '#7a7068', 0.5), { acc: md.accent });
+    const under = m.mat('chitin', md.belly, { acc: shade(md.belly, 0.25) });
+    m.bone('body', [0, 0, 0]);
+    m.ell('body', [0.08, 0.2, 0], [0.38, 0.12, 0.27], under);
+    m.ell('body', [0.08, 0.34, 0], [0.42, 0.22, 0.32], shell, { k: 0.04 });
+    m.box('body', [0.12, 0.56, 0], [0.36, 0.012, 0.009], 0.004, null, { op: 'sub', k: 0.01 });
+    // rocky crust grown on the wing cases
+    for (const [p, r] of [[[0.18, 0.5, 0.13], [0.11, 0.06, 0.1]], [[-0.02, 0.52, -0.12], [0.1, 0.06, 0.09]], [[0.32, 0.44, -0.06], [0.09, 0.05, 0.1]], [[0.05, 0.47, 0.22], [0.07, 0.04, 0.06]]]) m.ell('body', p, r, rock, { k: 0.03, noise: 0.018, nf: 16 });
+    // pronotum, head, curved horn, mandibles
+    m.ell('body', [-0.27, 0.32, 0], [0.16, 0.14, 0.22], shell, { k: 0.03 });
+    m.ell('body', [-0.4, 0.26, 0], [0.09, 0.08, 0.11], under, { k: 0.03 });
+    m.tube('body', hornPath([-0.43, 0.29, 0], [-1, 0.25, 0], [0, 1, 0], 0.32, 1.1, 5), (t) => 0.05 * (1 - t) + 0.012, shell, { k: 0.03 });
+    m.tube('body', hornPath([-0.3, 0.43, 0], [-1, 0.5, 0], [0, -1, 0], 0.18, 0.6, 3), (t) => 0.035 * (1 - t) + 0.01, shell, { k: 0.03 });
+    for (const s of SIDES) {
+      m.tube('body', [[-0.45, 0.2, s * 0.05], [-0.52, 0.18, s * 0.07], [-0.56, 0.18, s * 0.03]], [0.019, 0.015, 0.01], under, { k: 0.01 });
+      beady(m, 'body', [-0.44, 0.29, s * 0.082], 0.02, md.eye, 1.4);
+    }
+    for (let i = 0; i < 3; i++) for (const s of [1, -1]) {
+      const n = (s > 0 ? 'l' : 'r') + i;
+      m.bone(n, [-0.22 + i * 0.22, 0.22, s * 0.2], 'body');
+      m.tube(n, [[0, 0, 0], [-0.02, 0.07, s * 0.14], [-0.05, -0.12, s * 0.24], [-0.07, -0.21, s * 0.27]], [0.028, 0.024, 0.018, 0.012], under, { k: 0.02 });
+      m.cap(n, [-0.035, -0.02, s * 0.2], [-0.06, -0.02, s * 0.23], 0.01, 0.005, under, { k: 0.004 });
+    }
+    m.points({ hit: [-0.1, 0.5, 0], mouth: [-0.6, 0.3, 0], cuts: [[-0.45, 0.4, 0], [0, 0.6, 0], [0.4, 0.5, 0], [-0.1, 0.35, 0.3], [0.2, 0.3, -0.3]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -249,30 +311,41 @@ const beetle = {
   },
 };
 
-// ============================================================================ MOLE (Burrow Brute)
+// ============================================================================ MOLE (burrow brute)
 const mole = {
   reach: 0.5,
   build(m, md) {
-    const b = grid(20, 18, 18);
-    b.ellipsoid(10.5, 8, 9, 8.4, 8, 8, shadeBody(md.body, 8, 8, 9, 8, { belly: md.belly, bellyY: -0.15, bellyW: 0.55, noise: 0.12 }));
-    // fur tufts
-    for (let i = 0; i < 12; i++) { const x = 6 + (i % 4) * 3, z = 4 + Math.floor(i / 4) * 5; b.set(x, 16, z, tone(md.body, 0.08)); }
-    // snout + star nose
-    b.ellipsoid(2.6, 8, 9, 2.6, 2.4, 2.4, tone(md.body, 0.04));
-    for (const [dy, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) b.set(0, 8 + dy, 9 + dz, pk(dy === 0 && dz === 0 ? '#ff7a9a' : '#e08a9a'));
-    b.set(3, 10, 6, pk('#1a0a0a')); b.set(3, 10, 12, pk('#1a0a0a'));
-    b.set(3, 11, 6, gl('#ff5a3a')); b.set(3, 11, 12, gl('#ff5a3a'));
-    m.part('body', b, [10.5, 0, 9], [0, 2, 0]);
-    const arm = grid(9, 9, 6);
-    arm.ellipsoid(5, 6, 3, 3, 3, 2.6, shadeBody(md.body, 6, 3, 3, 2.6, {}));
-    arm.ellipsoid(3, 3, 3, 2.6, 2, 2.6, tone(md.belly, 0));
-    for (let c = 0; c < 3; c++) arm.line(2.5, 2, 1 + c * 2, -0.4, 0, 1 + c * 2, 0.6, (x) => pk(x < 1 ? '#fff6e0' : md.accent));
-    m.part('clawF', arm, [5, 7, 3], [-6, 8, -6], 'body');
-    m.twin('clawB', 'clawF', [-5, 8, 6]);
-    const leg = limb(3, 3, 3, md.body, { foot: 1, footCol: md.belly });
-    m.part('legF', leg, legPivot(leg), [3, 2, -4], 'body');
-    m.twin('legB', 'legF', [3, 2, 4]);
-    m.points({ hit: [-0.2, 0.75, 0], mouth: [-0.65, 0.6, 0], cuts: [[-0.4, 0.6, 0], [0, 0.95, 0], [0.35, 0.6, 0], [-0.55, 0.45, -0.3], [0.1, 0.3, 0.3]] });
+    const fur = m.mat('fur', md.body, { acc: shade(md.body, 0.25), ts: 1.3 });
+    const pink = m.mat('wart', md.belly, { acc: shade(md.belly, -0.2) });
+    const clawM = m.mat('bone', md.accent);
+    m.bone('body', [0, 0, 0]);
+    m.ell('body', [0.06, 0.52, 0], [0.44, 0.46, 0.42], fur, { noise: 0.012, nf: 9 });
+    m.ell('body', [0.1, 0.26, 0], [0.47, 0.26, 0.43], fur, { k: 0.15 });
+    m.ell('body', [-0.2, 0.66, 0], [0.25, 0.21, 0.26], fur, { k: 0.15 });
+    m.box('body', [0, -0.25, 0], [1, 0.25, 1], 0.01, null, { op: 'sub', k: 0.02 });
+    // snout ending in the star nose: a ring of fleshy feelers
+    m.cap('body', [-0.3, 0.63, 0], [-0.58, 0.61, 0], 0.15, 0.07, fur, { k: 0.08 });
+    m.sph('body', [-0.62, 0.61, 0], 0.035, pink, { k: 0.02 });
+    for (let i = 0; i < 11; i++) { const a = (i / 11) * PI * 2; m.cap('body', [-0.6, 0.61 + sin(a) * 0.035, cos(a) * 0.035], [-0.66, 0.61 + sin(a) * 0.085, cos(a) * 0.085], 0.019, 0.011, pink, { k: 0.008 }); }
+    m.ell('body', [-0.5, 0.53, 0], [0.06, 0.016, 0.06], m.mat('flesh', '#4a1a20'), { op: 'sub', k: 0.01 });
+    for (const s of SIDES) beady(m, 'body', [-0.43, 0.74, s * 0.13], 0.015, null);
+    m.ell('body', [-0.15, 0.3, 0], [0.3, 0.22, 0.3], m.mat('fur', mix(md.body, md.belly, 0.35)), { op: 'paint' });
+    // huge spade hands with four curved claws
+    for (const s of SIDES) {
+      const n = s < 0 ? 'clawF' : 'clawB';
+      m.bone(n, [-0.36, 0.5, s * 0.34], 'body');
+      m.cap(n, [0.08, 0.06, 0], [-0.02, -0.08, 0], 0.11, 0.09, fur, { k: 0.08 });
+      m.ell(n, [-0.04, -0.18, 0], [0.15, 0.17, 0.07], fur, { k: 0.04 });
+      m.ell(n, [-0.06, -0.2, -s * 0.04], [0.12, 0.13, 0.03], pink, { op: 'paint' });
+      for (let i = 0; i < 4; i++) m.tube(n, hornPath([-0.07, -0.29, -0.075 + i * 0.05], [-0.3, -1, 0], [1, 0, 0], 0.2, 0.9, 4), (t) => 0.03 * (1 - t) + 0.009, clawM, { k: 0.015 });
+    }
+    for (const s of SIDES) {
+      const n = s < 0 ? 'legF' : 'legB';
+      m.bone(n, [0.18, 0.18, s * 0.26], 'body');
+      m.ell(n, [0, -0.06, 0], [0.1, 0.1, 0.08], fur, { k: 0.06 });
+      m.ell(n, [-0.06, -0.15, 0], [0.12, 0.03, 0.07], pink, { k: 0.03 });
+    }
+    m.points({ hit: [-0.25, 0.75, 0], mouth: [-0.66, 0.6, 0], cuts: [[-0.4, 0.6, 0], [0, 0.95, 0], [0.35, 0.6, 0], [-0.55, 0.45, -0.3], [0.1, 0.3, 0.3]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -283,63 +356,72 @@ const mole = {
   },
 };
 
-// ============================================================================ GOLEM (crystal / rune / basalt / bones)
+// ============================================================================ GOLEM (crystal / rune / cinder / grave colossus)
 const golem = {
   reach: 0.45,
   build(m, md) {
-    const stone = (x, y, z) => {
-      if (md.bones) {
-        if ((y % 3 === 0) && x > 2) return pk('#efe6d0');
-        return tone(hash3(x, y, z, 2) > 0.5 ? md.body : '#c8c0b0', -0.05);
-      }
-      if (md.glow && hash3(x, y, z, 11) > 0.94) return gl(md.accent);
-      // masonry: chunky plates with darker seams
-      const ox = (y >> 2) % 2 ? 2 : 0;
-      const seam = (x + ox) % 4 === 0 || y % 4 === 0;
-      const plate = hash3((x + ox) >> 2, y >> 2, z >> 2, 6);
-      if (seam) return md.glow && plate > 0.6 ? gl(md.accent) : tone(md.body, -0.2);
-      return tone(md.body, (y - 7) * 0.02 + (plate - 0.5) * 0.22 + (hash3(x, y, z, 1) > 0.9 ? 0.06 : 0));
-    };
-    const t = grid(16, 16, 13);
-    // tapered boulder torso: narrow waist, broad shoulders, hunched forward
-    t.ellipsoid(8, 9, 6.5, 6.6, 7, 6, stone);
-    t.ellipsoid(8.5, 3, 6.5, 4.6, 3.6, 4.4, stone);
-    for (const z of [2, 11]) t.ellipsoid(8, 12, z, 4, 3.4, 2.6, (x, y, zz) => tone(md.body, 0.06 + (hash3(x >> 1, y >> 1, zz, 8) - 0.5) * 0.12));
-    t.box(3, 0, 3, 13, 2, 10, (x, y, z) => tone(md.belly, -0.05));
-    if (md.runes) for (let y = 5; y < 13; y++) { t.set(1 + (y > 9 ? 1 : 0), y, 6 + (y % 3 === 0 ? 1 : 0), gl(md.runes)); if (y % 4 === 0) t.box(1, y, 4, 2, y + 1, 9, gl(md.runes)); }
-    if (md.glow) for (let y = 3; y < 14; y++) t.set(1 + Math.round(Math.abs(y - 9) * 0.3), y, 6 + Math.round(sin(y) * 1.5), gl(md.accent));
-    if (md.bones) {
-      for (let y = 5; y < 13; y += 2) for (let z = 2; z < 11; z++) t.set(1 + Math.round(Math.abs(z - 6.5) * 0.4), y, z, pk('#efe6d0'));
-      t.box(1, 4, 5, 3, 13, 8, pk(md.belly));
-      for (const [y, z] of [[12, 3], [7, 10]]) { t.ellipsoid(2, y, z, 1.6, 1.6, 1.6, pk('#efe6d0')); t.set(1, y, z - 1, gl(md.eye)); t.set(1, y, z + 1, gl(md.eye)); }
+    m.res = 64;
+    const rock = md.bones ? m.mat('bone', md.body, { acc: shade(md.body, -0.25) }) : md.glow ? m.mat('crust', md.body, { glow: md.accent, gk: 2.4 }) : m.mat('stone', md.body, { acc: shade(md.body, 0.2) });
+    const dark = md.bones ? m.mat('stone', md.belly) : m.mat('stone', md.belly, { acc: md.body });
+    const eyeG = glowMat(m, md.eye, 3);
+    const N = { noise: 0.03, nf: 5 };
+    m.bone('torso', [0, 0.42, 0]);
+    m.ell('torso', [0.06, 0.44, 0], [0.42, 0.42, 0.36], rock, { ...N, rot: [0, 0, 0.15] });
+    for (const s of SIDES) m.ell('torso', [0.0, 0.82, s * 0.36], [0.22, 0.2, 0.2], rock, { k: 0.08, ...N });
+    m.ell('torso', [0.14, 0.88, 0], [0.3, 0.17, 0.32], rock, { k: 0.1, ...N });
+    m.ell('torso', [0.12, 0.08, 0], [0.25, 0.16, 0.28], dark, { k: 0.08, ...N });
+    // sunken boulder head with a glowing visor slit
+    m.bone('head', [-0.24, 0.86, 0], 'torso');
+    m.ell('head', [0, 0.1, 0], [0.18, 0.16, 0.18], rock, { k: 0.06, noise: 0.022, nf: 7 });
+    m.box('head', [-0.12, 0.17, 0], [0.07, 0.045, 0.16], 0.03, rock, { k: 0.03, rot: [0, 0, -0.3] });
+    m.box('head', [-0.17, 0.1, 0], [0.07, 0.024, 0.13], 0.01, dark, { op: 'sub', k: 0.01 });
+    for (const s of SIDES) m.sph('head', [-0.13, 0.1, s * 0.06], 0.03, eyeG, { k: 0.004 });
+    // arms: boulder shoulder → forearm → giant fist
+    for (const s of SIDES) {
+      const n = s < 0 ? 'armF' : 'armB';
+      m.bone(n, [-0.06, 0.78, s * 0.54], 'torso');
+      m.ell(n, [0, 0, 0], [0.16, 0.16, 0.16], rock, { k: 0.06, ...N });
+      m.cap(n, [0, -0.05, 0], [0.02, -0.35, 0], 0.11, 0.1, rock, { k: 0.05, noise: 0.015, nf: 8 });
+      m.cap(n, [0.02, -0.35, 0], [-0.02, -0.58, 0], 0.12, 0.13, rock, { k: 0.05, noise: 0.015, nf: 8 });
+      m.ell(n, [-0.03, -0.68, 0], [0.19, 0.2, 0.18], rock, { k: 0.05, ...N });
+      for (let f = -1; f <= 1; f++) m.ell(n, [-0.19, -0.7, f * 0.08], [0.06, 0.07, 0.055], rock, { k: 0.04, noise: 0.012, nf: 10 });
     }
-    if (md.crystals) { crystals(t, 6, 14, 3, md.crystals, 3, 6, 1); crystals(t, 10, 15, 9, md.crystals, 4, 7, 2); crystals(t, 13, 11, 6, md.crystals, 3, 5, 3); crystals(t, 9, 14, 6, '#ffffff', 2, 3, 4); }
-    m.part('torso', t, [8, 0, 6.5], [0, 7, 0]);
-    const h = grid(8, 8, 8);
-    h.box(0, 0, 0, 8, 7, 8, stone);
-    h.box(0, 4, 0, 1, 6, 8, (x, y, z) => tone(md.body, 0.1));
-    h.box(0, 2, 1, 1, 4, 7, pk('#120c10'));
-    h.set(0, 3, 2, gl(md.eye)); h.set(0, 3, 5, gl(md.eye)); h.set(0, 2, 2, gl(md.eye)); h.set(0, 2, 5, gl(md.eye));
-    if (md.bones) { h.box(0, 0, 0, 8, 7, 8, pk('#efe6d0')); h.box(0, 2, 1, 1, 5, 7, pk('#141018')); h.set(0, 3, 2, gl(md.eye)); h.set(0, 3, 5, gl(md.eye)); h.box(0, 0, 2, 1, 1, 6, pk('#c8c0b0')); }
-    if (md.crystals) crystals(h, 4, 6, 4, md.crystals, 3, 4, 9);
-    m.part('head', h, [4, 0, 4], [-4, 12, 0], 'torso');
-    const arm = grid(9, 17, 9);
-    arm.ellipsoid(4.5, 14, 4.5, 3, 3, 3, stone);
-    arm.ellipsoid(4.5, 9, 4.5, 2.4, 4, 2.4, stone);
-    arm.ellipsoid(4.5, 3.5, 4.5, 4.2, 3.6, 4.2, stone);
-    if (md.runes) for (let y = 7; y < 14; y += 3) arm.box(2, y, 3, 3, y + 1, 6, gl(md.runes));
-    if (md.glow) for (let y = 2; y < 6; y++) arm.set(1, y, 4, gl(md.accent));
-    if (md.crystals) crystals(arm, 4, 16, 4, md.crystals, 2, 4, 4);
-    m.part('armF', arm, [4.5, 15, 4.5], [-1, 11, -9], 'torso');
-    m.twin('armB', 'armF', [1, 11, 9]);
-    const leg = grid(7, 9, 7);
-    leg.ellipsoid(3.5, 4.5, 3.5, 3, 4.4, 3, stone);
-    leg.box(0, 0, 1, 6, 2, 6, (x, y, z) => tone(md.body, -0.12));
-    m.part('legF', leg, [3.5, 9, 3.5], [0, 2, -3.5], 'torso');
-    m.twin('legB', 'legF', [0, 2, 3.5]);
+    for (const s of SIDES) {
+      const n = s < 0 ? 'legF' : 'legB';
+      m.bone(n, [0.02, 0.1, s * 0.22], 'torso');
+      m.cap(n, [0, -0.05, 0], [0, -0.36, 0], 0.15, 0.12, dark, { k: 0.06, noise: 0.015, nf: 8 });
+      m.ell(n, [-0.05, -0.44, 0], [0.21, 0.085, 0.16], dark, { k: 0.05, noise: 0.012, nf: 9 });
+    }
+    if (md.crystals) {
+      const cry = glowMat(m, md.crystals, 1.8);
+      for (const [c, d, l, r] of [[[-0.05, 0.95, -0.2], [-0.3, 1, -0.4], 0.45, 0.08], [[0.12, 0.98, 0.12], [0.3, 1, 0.3], 0.55, 0.09], [[0.25, 0.85, -0.05], [0.8, 0.8, 0], 0.4, 0.07], [[0.06, 0.92, 0.32], [0.2, 0.8, 0.8], 0.32, 0.06], [[0.14, 0.88, -0.34], [0.3, 0.8, -0.7], 0.3, 0.06]]) m.cry('torso', c, l, r, cry, { dir: d });
+      m.cry('head', [0.03, 0.2, 0], 0.22, 0.05, cry, { dir: [0.4, 1, 0] });
+      for (const s of SIDES) m.cry(s < 0 ? 'armF' : 'armB', [0.02, 0.1, 0], 0.2, 0.05, cry, { dir: [0.3, 1, s * 0.5] });
+    }
+    if (md.runes) {
+      const rune = m.mat('rune', md.body, { acc: md.runes, glow: md.runes, gk: 2.6 });
+      m.box('torso', [-0.35, 0.5, 0], [0.12, 0.28, 0.3], 0.02, rune, { op: 'paint' });
+      for (const s of SIDES) m.cap(s < 0 ? 'armF' : 'armB', [0.02, -0.25, 0], [0, -0.55, 0], 0.15, 0.15, rune, { op: 'paint' });
+      m.ell('torso', [-0.4, 0.5, 0], [0.08, 0.12, 0.1], null, { op: 'sub', k: 0.02 });
+      m.sph('torso', [-0.36, 0.5, 0], 0.08, glowMat(m, md.runes, 2.6), { k: 0.01 });
+    }
+    if (md.glow) {
+      m.ell('torso', [-0.42, 0.48, 0], [0.1, 0.16, 0.13], null, { op: 'sub', k: 0.03 });
+      m.ell('torso', [-0.36, 0.48, 0], [0.08, 0.13, 0.11], glowMat(m, '#ffb04a', 2.4, 'lava'), { k: 0.01 });
+    }
+    if (md.bones) {
+      const skull = m.mat('bone', '#e8e0d0', { acc: '#a89880' });
+      const voidM = m.mat('smooth', '#0a060c');
+      for (const [p, r] of [[[-0.37, 0.56, -0.18], 0.1], [[-0.36, 0.3, 0.2], 0.09], [[-0.22, 0.78, 0.3], 0.085]]) {
+        m.ell('torso', p, [r * 0.9, r, r], skull, { k: 0.02 });
+        for (const s of SIDES) { m.sph('torso', [p[0] - r * 0.75, p[1] + r * 0.1, p[2] + s * r * 0.38], r * 0.3, voidM, { op: 'sub', k: 0.01 }); m.sph('torso', [p[0] - r * 0.62, p[1] + r * 0.1, p[2] + s * r * 0.38], r * 0.13, eyeG, { k: 0.003 }); }
+      }
+      for (let k = 0; k < 4; k++) for (const s of SIDES) m.tube('torso', [[-0.1, 0.3 + k * 0.13, s * 0.36], [-0.4, 0.3 + k * 0.13, s * 0.22], [-0.47, 0.28 + k * 0.13, 0]], 0.028, skull, { k: 0.01 });
+      for (const [c, r] of [[[0.3, 1.0, -0.15], [0, 0, -0.5]], [[0.36, 0.8, 0.2], [0.3, 0, -0.8]]]) m.box('torso', c, [0.05, 0.2, 0.12], 0.04, m.mat('stone', '#6a6470', { acc: '#8a8090' }), { rot: r, k: 0.02 });
+    }
     if (md.glow) m.emitter({ pos: [0, 1.2, 0], rate: 6, vel: [0, 0.6, 0], spread: 0.25, posSpread: [0.3, 0.3, 0.2], life: [0.5, 1.2], size: 1, color: ['#ffb84a', '#ff6a1a'], glow: 2.5 });
     if (md.runes) m.emitter({ pos: [-0.3, 0.9, 0], rate: 3, vel: [0, 0.3, 0], spread: 0.15, posSpread: [0.1, 0.4, 0.3], life: [0.8, 1.6], size: 1, color: md.runes, glow: 2.5 });
-    m.points({ hit: [-0.1, 1.05, 0], mouth: [-0.4, 1.3, 0], cuts: [[-0.3, 1.0, 0], [0, 1.35, 0], [-0.3, 0.6, -0.5], [0.2, 0.75, 0.5], [0, 0.35, 0]] });
+    m.points({ hit: [-0.25, 1.0, 0], mouth: [-0.45, 1.36, 0], cuts: [[-0.3, 1.0, 0], [0, 1.35, 0], [-0.3, 0.6, -0.5], [0.2, 0.75, 0.5], [0, 0.35, 0]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -351,33 +433,44 @@ const golem = {
   },
 };
 
-// ============================================================================ CRAB
+// ============================================================================ CRAB (crystal crab)
 const crab = {
   reach: 0.35, die: 'flatten',
   build(m, md) {
-    const b = grid(16, 12, 18);
-    b.ellipsoid(8, 4.5, 9, 6.5, 3.6, 8, shadeBody(md.body, 4.5, 3.6, 9, 8, { belly: md.belly, bellyY: -0.4, bellyW: 0.9 }));
-    // geode hat
-    b.ellipsoid(9, 8.5, 9, 4, 2.6, 4, (x, y, z) => (y > 7 ? tone('#7a6a5a', (y - 8) * 0.05) : null));
-    if (md.crystals) { crystals(b, 9, 10, 9, md.crystals, 5, 4, 7); crystals(b, 6, 8, 5, md.crystals, 2, 2, 2); crystals(b, 11, 8, 13, md.crystals, 2, 2, 3); }
-    // eye stalks
-    for (const z of [6, 12]) { b.line(3, 6, z, 2, 9, z, 0.4, () => tone(md.body, 0)); b.set(2, 10, z, pk('#141018')); b.set(2, 10, z + 1, pk('#ffffff')); }
-    m.part('body', b, [8, 0, 9], [0, 1, 0]);
-    const claw = grid(10, 9, 6);
-    claw.ellipsoid(5.5, 4, 3, 4, 3.4, 2.8, shadeBody(md.body, 4, 3.4, 3, 2.8, { belly: md.belly }));
-    claw.line(3, 5, 3, 0, 8, 3, 1.5, () => tone(md.body, 0.08));
-    claw.line(3, 3, 3, 0, 1.5, 3, 1.2, () => tone(md.body, -0.05));
-    claw.set(0, 7, 3, pk(md.accent)); claw.set(0, 2, 3, pk(md.accent));
-    claw.line(9, 4, 3, 7, 4, 3, 0.8, () => tone(md.body, -0.1));
-    m.part('clawF', claw, [9, 4, 3], [-6, 4, -6], 'body', { rot: [0, 0, -0.3] });
-    m.twin('clawB', 'clawF', [-5, 4, 7], null, {});
-    m.P('clawB').scale.setScalar(0.75); m._rest(m.P('clawB'));
-    const leg = grid(5, 5, 6);
-    bones(leg, [[1, 3, 0], [2, 5, 3], [1, 0, 5]], (x, y) => tone(md.body, y > 3 ? 0.05 : -0.15));
-    m.part('l0', leg, [1, 3, 0], [-2, 3, 6], 'body'); m.twin('l1', 'l0', [1, 3, 6]); m.twin('l2', 'l0', [4, 3, 6]);
-    const lr = mirrorZ(leg);
-    m.part('r0', lr, [1, 3, 5], [-2, 3, -6], 'body'); m.twin('r1', 'r0', [1, 3, -6]); m.twin('r2', 'r0', [4, 3, -6]);
-    m.points({ hit: [0, 0.45, 0], mouth: [-0.4, 0.4, 0], cuts: [[-0.3, 0.35, 0], [0.1, 0.55, 0], [-0.55, 0.4, -0.35], [0.3, 0.3, 0.3], [0.05, 0.25, -0.3]] });
+    const shell = m.mat('chitin', md.body, { acc: md.accent });
+    const under = m.mat('plate', md.belly, { acc: md.body, ts: 1.5 });
+    const geo = m.mat('stone', '#7a6a5a', { acc: '#a89880' });
+    const cry = glowMat(m, md.crystals || md.accent, 1.8);
+    const cry2 = glowMat(m, '#9ae8ff', 1.6);
+    m.bone('body', [0, 0, 0]);
+    m.ell('body', [0, 0.3, 0], [0.36, 0.16, 0.44], shell, { noise: 0.006, nf: 12 });
+    m.ell('body', [0.02, 0.21, 0], [0.3, 0.08, 0.36], under, { k: 0.06 });
+    for (let i = -3; i <= 3; i++) m.cap('body', [-0.28, 0.3, i * 0.1], [-0.36, 0.31, i * 0.115], 0.03, 0.012, shell, { k: 0.02 });
+    // a geode grown on its back, cracked open, crystals inside
+    m.ell('body', [0.04, 0.45, 0], [0.24, 0.15, 0.24], geo, { k: 0.06, noise: 0.02, nf: 9 });
+    m.ell('body', [0.04, 0.58, 0], [0.17, 0.1, 0.17], m.mat('crystal', shade(md.crystals || md.accent, -0.3)), { op: 'sub', k: 0.02 });
+    for (const [c, d, l, r, mm] of [[[0.04, 0.48, 0], [0, 1, 0], 0.28, 0.055, cry], [[-0.04, 0.48, 0.07], [-0.4, 1, 0.4], 0.2, 0.045, cry], [[0.12, 0.48, -0.06], [0.5, 1, -0.4], 0.22, 0.045, cry2], [[0.1, 0.48, 0.08], [0.4, 1, 0.5], 0.16, 0.04, cry], [[-0.04, 0.48, -0.09], [-0.3, 1, -0.6], 0.15, 0.035, cry2]]) m.cry('body', c, l, r, mm, { dir: d });
+    for (const s of SIDES) {
+      m.cap('body', [-0.26, 0.36, s * 0.1], [-0.32, 0.5, s * 0.12], 0.022, 0.017, shell, { k: 0.02 });
+      m.sph('body', [-0.325, 0.53, s * 0.12], 0.028, m.mat('eye', '#120a0e'), { k: 0.006 });
+    }
+    m.ell('body', [-0.3, 0.24, 0], [0.05, 0.04, 0.1], under, { k: 0.02 });
+    // claws: arm → swollen palm → fixed + hinged fingers
+    for (const s of SIDES) {
+      const n = s < 0 ? 'clawF' : 'clawB';
+      m.bone(n, s < 0 ? [-0.32, 0.28, -0.36] : [-0.28, 0.28, 0.42], 'body', { rot: [0, 0, -0.3], scale: s < 0 ? 1 : 0.75 });
+      m.cap(n, [0.08, 0, 0], [-0.06, 0.02, 0], 0.06, 0.055, shell, { k: 0.04 });
+      m.ell(n, [-0.15, 0.02, 0], [0.14, 0.1, 0.08], shell, { k: 0.04 });
+      m.cap(n, [-0.24, -0.02, 0], [-0.4, 0.02, 0], 0.055, 0.014, shell, { k: 0.03 });
+      m.cap(n, [-0.22, 0.08, 0], [-0.38, 0.1, 0], 0.045, 0.013, shell, { k: 0.02 });
+      m.cry(n, [-0.12, 0.1, 0], 0.09, 0.03, cry, { dir: [0.2, 1, 0] });
+    }
+    for (let i = 0; i < 3; i++) for (const s of [1, -1]) {
+      const n = (s > 0 ? 'l' : 'r') + i;
+      m.bone(n, [-0.1 + i * 0.18, 0.22, s * 0.32], 'body');
+      m.tube(n, [[0, 0, 0], [0.0, 0.1, s * 0.16], [-0.02, -0.08, s * 0.26], [-0.03, -0.22, s * 0.3]], [0.03, 0.026, 0.019, 0.01], shell, { k: 0.02 });
+    }
+    m.points({ hit: [0, 0.45, 0], mouth: [-0.4, 0.3, 0], cuts: [[-0.3, 0.35, 0], [0.1, 0.55, 0], [-0.55, 0.3, -0.35], [0.3, 0.3, 0.3], [0.05, 0.25, -0.3]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -385,27 +478,30 @@ const crab = {
     m.P('clawF').rotation.y += e.strike * -0.4;
     m.P('clawB').rotation.z += sin(t * 2.5 + 1) * 0.12 + e.strike * 0.5;
     walk(m, ['l0', 'r1', 'l2', 'r0', 'l1', 'r2'], 12, 0.2, 2.1);
-    m.root.position.z += sin(t * 1.2) * 0.04; // sideways scuttle
+    m.root.position.z += sin(t * 1.2) * 0.04;
   },
 };
 
-// ============================================================================ WISP
+// ============================================================================ WISP (prism wisp)
 const wisp = {
   reach: 0.4, die: 'fade',
   build(m, md) {
     m.fly = 0.85;
-    const g = grid(13, 18, 13);
-    g.ellipsoid(6.5, 6, 6.5, 5, 5, 5, (x, y, z, d) => (d < 0.35 ? gl('#ffffff') : d < 0.7 ? gl(md.belly) : gl(md.body)));
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      spike(g, 6.5 + cos(a) * 2.5, 9, 6.5 + sin(a) * 2.5, -cos(a) * 0.1, 1, -sin(a) * 0.1, 4 + (i % 3) * 2, 1.4, (t) => gl(t > 0.6 ? md.accent : md.body));
+    const flame = glowMat(m, md.body, 2.0);
+    const flame2 = glowMat(m, md.accent, 2.0);
+    const coreM = glowMat(m, md.belly, 2.6);
+    const ink = m.mat('smooth', '#1a2a4a');
+    m.bone('core', [0, 0, 0]);
+    m.ell('core', [0, 0, 0], [0.24, 0.24, 0.24], flame, { noise: 0.03, nf: 8 });
+    m.ell('core', [-0.05, -0.02, 0], [0.2, 0.2, 0.22], coreM, { op: 'paint' });
+    for (let i = 0; i < 7; i++) { const a = (i / 7) * PI * 2; m.cap('core', [cos(a) * 0.12, 0.1, sin(a) * 0.12], [cos(a) * 0.17, 0.4 + (i % 3) * 0.08, sin(a) * 0.17], 0.09, 0.012, i % 2 ? flame2 : flame, { k: 0.06 }); }
+    for (const s of SIDES) m.ell('core', [-0.22, 0.03, s * 0.075], [0.03, 0.045, 0.028], ink, { op: 'sub', k: 0.01 });
+    m.ell('core', [-0.235, -0.06, 0], [0.02, 0.012, 0.03], ink, { op: 'sub', k: 0.01 });
+    for (let i = 0; i < 3; i++) {
+      const a = (i * PI * 2) / 3;
+      m.bone('orb' + i, [cos(a) * 0.55, 0.05, sin(a) * 0.55], 'core');
+      m.cry('orb' + i, [0, -0.07, 0], 0.15, 0.04, i % 2 ? flame : flame2, { k: 0.002 });
     }
-    g.box(1, 6, 4, 2, 8, 5, pk('#1a2a4a')); g.box(1, 6, 8, 2, 8, 9, pk('#1a2a4a'));
-    g.set(1, 4, 6, pk('#1a2a4a')); g.set(1, 4, 7, pk('#1a2a4a'));
-    m.part('core', g, [6.5, 6, 6.5], [0, 0, 0]);
-    const shard = grid(3, 4, 3);
-    shard.box(1, 0, 1, 2, 4, 2, gl(md.accent)); shard.set(0, 2, 1, gl(md.accent)); shard.set(2, 1, 1, gl(md.body));
-    for (let i = 0; i < 3; i++) m.part('orb' + i, shard, [1.5, 2, 1.5], [0, 0, 0], 'core');
     m.emitter({ pos: [0, 0.2, 0], rate: 14, vel: [0.1, 0.5, 0], spread: 0.3, posSpread: 0.15, life: [0.5, 1.1], size: [1, 2], color: [md.body, md.accent, '#ffffff'], glow: 2.5, drag: 1 });
     m.points({ hit: [0, 0.05, 0], mouth: [-0.3, 0.05, 0], cuts: [[-0.15, 0.1, 0], [0.1, -0.1, 0], [0, 0.3, 0]] });
   },
@@ -414,37 +510,50 @@ const wisp = {
     const c = m.P('core');
     const fl = 1 + sin(t * 23) * 0.04 + sin(t * 37) * 0.03;
     c.scale.set(fl, fl * (1 + e.wind * 0.25), fl);
+    c.rotation.y += t * 0.6;
     m.root.position.y += sin(t * 2) * 0.1;
     for (let i = 0; i < 3; i++) {
-      const a = t * (2.5 + e.wind * 6) + (i * Math.PI * 2) / 3;
+      const a = t * (2.5 + e.wind * 6) + (i * PI * 2) / 3;
       const p = m.P('orb' + i);
       p.position.set(cos(a) * 0.55, sin(a * 1.3) * 0.15 + 0.05, sin(a) * 0.55);
-      p.rotation.y = a;
+      p.rotation.set(a, a * 0.5, 0.4);
     }
   },
 };
 
-// ============================================================================ SPIDER
+// ============================================================================ SPIDER (silk spider)
 const spider = {
   reach: 0.4, die: 'flatten',
   build(m, md) {
-    const b = grid(24, 14, 14);
-    b.ellipsoid(16.5, 7, 7, 6.6, 5.8, 5.8, shadeBody(md.body, 7, 5.8, 7, 5.8, { belly: md.belly, bellyY: -0.4, noise: 0.08 }));
-    // hourglass mark
-    for (let y = 9; y < 13; y++) { const w = Math.abs(y - 10.5) + 0.5; b.box(16 - w, y, 6, 17 + w, y + 1, 8, gl(md.accent)); }
-    b.ellipsoid(7, 5.5, 7, 4.4, 3.6, 4, shadeBody(md.body, 5.5, 3.6, 7, 4, { belly: md.belly }));
-    for (const [y, z] of [[7, 5], [7, 9], [8, 6], [8, 8], [6, 4], [6, 10]]) b.set(3, y, z, gl(md.eye));
-    for (const z of [6, 8]) b.line(3, 4, z, 2, 1, z, 0.5, () => pk('#1a1014'));
-    m.part('body', b, [12, 0, 7], [0, 3, 0]);
-    const leg = grid(4, 9, 10);
-    bones(leg, [[1, 5, 0], [2, 8, 5], [1, 0, 9]], (x, y, z) => ((z % 3 === 1) ? tone(md.belly, 0.1) : tone(md.body, y > 5 ? 0.1 : -0.04)));
+    m.res = 80;
+    const fur = m.mat('fur', md.body, { acc: md.belly, ts: 1.4 });
+    const chit = m.mat('chitin', md.body, { acc: md.belly });
+    const fang = m.mat('smooth', '#140c10');
+    const sig = glowMat(m, md.accent, 2.4, 'smooth');
+    m.bone('body', [0, 0, 0]);
+    m.ell('body', [0.42, 0.47, 0], [0.36, 0.3, 0.3], fur, { rot: [0, 0, -0.25], noise: 0.01, nf: 14 });
+    m.ell('body', [-0.07, 0.37, 0], [0.22, 0.16, 0.2], chit, { k: 0.06 });
+    m.cap('body', [0.72, 0.36, 0], [0.8, 0.31, 0], 0.045, 0.022, chit, { k: 0.03 });
+    m.plate('body', [0.45, 0.78, 0], [[-0.08, 0.11], [0.08, 0.11], [0.018, 0], [0.08, -0.11], [-0.08, -0.11], [-0.018, 0]], 0.12, 0.004, sig, { op: 'paint', rot: [PI / 2, 0, -0.25] });
+    // eight beady eyes clustered on the brow
+    for (const [y, z, r] of [[0.45, -0.045, 0.026], [0.45, 0.045, 0.026], [0.48, -0.1, 0.019], [0.48, 0.1, 0.019], [0.41, -0.11, 0.017], [0.41, 0.11, 0.017], [0.5, -0.03, 0.015], [0.5, 0.03, 0.015]]) {
+      const dy = (y - 0.37) / 0.16, dz = z / 0.2;
+      beady(m, 'body', [-0.07 - 0.22 * Math.sqrt(Math.max(0, 1 - dy * dy - dz * dz)) + r * 0.4, y, z], r, md.eye, 1.6);
+    }
+    for (const s of SIDES) {
+      m.ell('body', [-0.27, 0.3, s * 0.045], [0.05, 0.06, 0.04], chit, { k: 0.02 });
+      m.tube('body', [[-0.29, 0.26, s * 0.045], [-0.31, 0.2, s * 0.03], [-0.28, 0.16, s * 0.012]], [0.022, 0.016, 0.008], fang, { k: 0.008 });
+    }
     const angles = [-0.75, -0.25, 0.25, 0.7];
-    const lr = mirrorZ(leg);
     angles.forEach((a, i) => {
-      m.part('l' + i, leg, [1, 5, 0], [-3 + i * 2, 5, 3], 'body', { rot: [0, a, 0] });
-      m.part('r' + i, lr, [1, 5, 9], [-3 + i * 2, 5, -3], 'body', { rot: [0, -a, 0] });
+      for (const s of [1, -1]) {
+        const n = (s > 0 ? 'l' : 'r') + i;
+        m.bone(n, [-0.15 + i * 0.07, 0.38, s * 0.12], 'body', { rot: [0, s * a, 0] });
+        m.tube(n, [[0, 0, 0], [0.02, 0.22, s * 0.2], [0.04, 0.12, s * 0.34], [0.05, -0.38, s * 0.5]], [0.034, 0.03, 0.024, 0.012], fur, { k: 0.03, kj: 0.012 });
+        m.sph(n, [0.02, 0.22, s * 0.2], 0.036, chit, { k: 0.015 });
+      }
     });
-    m.points({ hit: [-0.2, 0.55, 0], mouth: [-0.55, 0.45, 0], cuts: [[-0.3, 0.55, 0], [0.3, 0.75, 0], [0.55, 0.55, 0], [-0.4, 0.3, 0.4], [0, 0.35, -0.45]] });
+    m.points({ hit: [-0.15, 0.45, 0], mouth: [-0.32, 0.3, 0], cuts: [[-0.2, 0.45, 0], [0.3, 0.75, 0], [0.55, 0.55, 0], [-0.4, 0.3, 0.4], [0, 0.35, -0.45]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -464,35 +573,46 @@ const mushroom = {
   reach: 0.3,
   build(m, md) {
     const big = (md.scale || 1) > 1.2;
-    const s = grid(10, 12, 10);
-    s.cylinderY(5, 5, 0, 11, 3.6, 3, (x, y, z) => tone(md.body, (y - 5) * 0.02 + (hash3(x, y, z, 1) > 0.85 ? -0.06 : 0)));
-    // angry face
-    s.box(1, 6, 3, 2, 8, 4, pk('#1a1414')); s.box(1, 6, 6, 2, 8, 7, pk('#1a1414'));
-    s.set(1, 8, 2, pk('#4a3020')); s.set(1, 8, 4, pk('#4a3020')); s.set(1, 9, 3, pk('#4a3020'));
-    s.set(1, 8, 7, pk('#4a3020')); s.set(1, 8, 5, pk('#4a3020')); s.set(1, 9, 6, pk('#4a3020'));
-    s.box(1, 4, 4, 2, 5, 6, pk('#3a1a14'));
-    // gills ring under cap
-    s.cylinderY(5, 5, 10, 12, 4.6, 4.6, (x, y, z) => tone(md.belly, -0.12));
-    m.part('stalk', s, [5, 0, 5], [0, 2, 0]);
-    const capCol = md.cap || md.accent;
-    const c = grid(19, 9, 19);
-    c.ellipsoid(9.5, 0.5, 9.5, 9, 7.5, 9, (x, y, z) => {
-      if (y < 1) return tone(capCol, -0.3);
-      const sx = Math.floor((x + 1) / 4), sz = Math.floor((z + 1) / 4);
-      if (hash3(sx, 0, sz, 5) > 0.55 && (x + 1) % 4 < 2 && (z + 1) % 4 < 2 && y > 2) return big ? gl(md.accent) : pk('#fff6e0');
-      return tone(capCol, (y - 3) * 0.05);
-    });
-    if (big) { crystals; for (const [x, z] of [[4, 6], [14, 12], [10, 3]]) { c.cylinderY(x, z, 5, 8, 0.8, 0.8, pk('#e8d8b8')); c.ellipsoid(x, 8, z, 2, 1.2, 2, gl(md.accent)); } }
-    m.part('cap', c, [9.5, 0, 9.5], [0, 11, 0], 'stalk');
-    const leg = limb(2, 3, 3, md.belly, { foot: 1 });
-    m.part('legF', leg, legPivot(leg), [-1, 1, -2], 'stalk');
-    m.twin('legB', 'legF', [1, 1, 2]);
-    const arm = limb(big ? 6 : 3, 2, 2, md.body);
-    if (big) arm.ellipsoid(1, 0.5, 1, 2, 1.5, 2, gl(md.accent));
-    m.part('armF', arm, legPivot(arm), [-1, 7, -5], 'stalk');
-    m.twin('armB', 'armF', [1, 7, 5]);
+    const stalkM = m.mat('bark', md.body, { acc: md.belly });
+    const capM = m.mat('cap', md.cap || md.accent, { acc: big ? md.accent : '#fff6e0', glow: big ? md.accent : null, gk: 2.2 });
+    const gillM = m.mat('gill', md.belly);
+    const ink = m.mat('flesh', '#2a1414');
+    m.bone('stalk', [0, 0.1, 0]);
+    m.cap('stalk', [0, 0.02, 0], [0, 0.6, 0], 0.2, 0.15, stalkM, { noise: 0.008, nf: 14 });
+    m.ell('stalk', [0, 0.06, 0], [0.22, 0.12, 0.21], stalkM, { k: 0.08 });
+    m.tor('stalk', [0, 0.5, 0], 0.16, 0.026, stalkM, { k: 0.02 });
+    for (const s of SIDES) {
+      beady(m, 'stalk', [-0.175, 0.39, s * 0.068], 0.023, null);
+      m.cap('stalk', [-0.19, 0.445, s * 0.03], [-0.17, 0.43, s * 0.1], 0.013, 0.011, ink, { k: 0.005 });
+    }
+    m.ell('stalk', [-0.19, 0.29, 0], [0.03, 0.02, 0.05], ink, { op: 'sub', k: 0.01 });
+    m.bone('cap', [0, 0.62, 0], 'stalk');
+    m.ell('cap', [0, 0.1, 0], [0.5, 0.28, 0.5], capM, { noise: 0.01, nf: 8 });
+    m.ell('cap', [0, -0.04, 0], [0.44, 0.13, 0.44], gillM, { op: 'sub', k: 0.03 });
+    m.cap('cap', [0, -0.2, 0], [0, 0.06, 0], 0.155, 0.13, stalkM, { k: 0.02 });
+    if (big) {
+      const glowCap = glowMat(m, md.accent, 2.2, 'cap');
+      for (const [x, z, s] of [[0.15, -0.2, 1], [-0.12, 0.2, 0.8], [0.25, 0.18, 0.7], [-0.25, -0.1, 0.6]]) {
+        const y = 0.36 - (x * x + z * z) * 0.9;
+        m.cap('cap', [x, y - 0.04, z], [x, y + 0.1 * s, z], 0.03 * s, 0.025 * s, m.mat('bark', '#e8d8b8'), { k: 0.02 });
+        m.ell('cap', [x, y + 0.12 * s, z], [0.08 * s, 0.045 * s, 0.08 * s], glowCap, { k: 0.01 });
+      }
+    }
+    for (const s of SIDES) {
+      const n = s < 0 ? 'legF' : 'legB';
+      m.bone(n, [-0.02, 0.04, s * 0.1], 'stalk');
+      m.ell(n, [-0.03, -0.08, 0], [0.1, 0.065, 0.085], stalkM, { k: 0.05 });
+    }
+    const L = big ? 0.42 : 0.2;
+    for (const s of SIDES) {
+      const n = s < 0 ? 'armF' : 'armB';
+      m.bone(n, [-0.02, 0.42, s * 0.19], 'stalk');
+      m.tube(n, [[0, 0, 0], [-0.03, -L * 0.5, 0], [-0.02, -L, 0]], [0.04, 0.035, 0.03], stalkM, { k: 0.04 });
+      if (big) m.ell(n, [-0.03, -L - 0.03, 0], [0.07, 0.06, 0.07], glowMat(m, md.accent, 2.2, 'cap'), { k: 0.02 });
+      else m.ell(n, [-0.025, -L - 0.02, 0], [0.04, 0.035, 0.035], stalkM, { k: 0.02 });
+    }
     m.emitter({ pos: [0, 1.1, 0], rate: big ? 8 : 2.5, vel: [0, 0.15, 0], spread: 0.25, posSpread: [0.4, 0.1, 0.4], life: [1.5, 3], size: 1, color: big ? [md.accent, '#ffe08a'] : ['#f0e08a', '#ffffff'], glow: 1.6, gravity: -0.05, drag: 0.5 });
-    m.points({ hit: [-0.15, 0.55, 0], mouth: [-0.3, 0.45, 0], cuts: [[-0.2, 0.5, 0], [0, 0.95, 0], [0.4, 0.85, 0], [-0.45, 0.85, 0], [0.05, 0.25, 0]] });
+    m.points({ hit: [-0.15, 0.5, 0], mouth: [-0.22, 0.4, 0], cuts: [[-0.2, 0.5, 0], [0, 0.95, 0], [0.4, 0.8, 0], [-0.45, 0.8, 0], [0.05, 0.25, 0]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -506,29 +626,35 @@ const mushroom = {
   },
 };
 
-// ============================================================================ SNAIL
+// ============================================================================ SNAIL (moss snail)
 const snail = {
   reach: 0.3, die: 'flatten',
   build(m, md) {
-    const b = grid(24, 7, 9);
-    b.ellipsoid(12, 2.5, 4.5, 11.5, 2.6, 3.8, (x, y, z) => (y >= 0 ? tone(md.body, (y - 2) * 0.08 + (hash3(x, y, z, 2) > 0.85 ? -0.1 : 0)) : null));
-    b.ellipsoid(2.5, 4, 4.5, 2.6, 2.6, 2.8, shadeBody(md.body, 4, 2.6, 4.5, 2.8, { belly: md.belly }));
-    b.box(0, 3, 3, 1, 4, 6, pk('#2a3a1a'));
-    m.part('body', b, [12, 0, 4.5], [0, 0, 0]);
-    const shell = grid(16, 16, 11);
-    shell.ellipsoid(8, 8, 5.5, 7.6, 7.6, 5.4, (x, y, z) => {
-      const a = Math.atan2(y - 8, x - 8), r = Math.hypot(x - 8, y - 8);
-      const sp = (r * 0.9 - a * 1.6) % 4.2;
-      if (md.belly && y > 12 && hash3(x, y, z, 7) > 0.55) return tone('#5a8a3a', 0);
-      return tone(md.accent, (sp < 1.2 ? -0.25 : 0.05) + (y - 8) * 0.02);
-    });
-    m.part('shell', shell, [8, 0, 5.5], [3, 3, 0], 'body');
-    const stalk = grid(3, 7, 3);
-    stalk.box(1, 0, 1, 2, 6, 2, tone(md.body, 0.05));
-    stalk.ellipsoid(1.5, 6.5, 1.5, 1.2, 1.2, 1.2, pk('#141418')); stalk.set(1, 7, 1, pk('#ffffff'));
-    m.part('eyeF', stalk, [1.5, 0, 1.5], [-10, 5, -1.5], 'body', { rot: [0.2, 0, 0.3] });
-    m.twin('eyeB', 'eyeF', [-10, 5, 1.5], null, { rot: [-0.2, 0, 0.3] });
-    m.points({ hit: [-0.1, 0.55, 0], mouth: [-0.7, 0.25, 0], cuts: [[-0.55, 0.25, 0], [0.1, 0.8, 0], [0.35, 0.55, 0], [0.5, 0.15, 0], [-0.2, 0.15, 0]] });
+    const skin = m.mat('slime', md.body, { acc: md.belly });
+    const shellM = m.mat('chitin', md.accent, { acc: shade(md.accent, 0.35) });
+    const moss = m.mat('moss', '#4a7a2a', { acc: '#9ac05a' });
+    m.bone('body', [0, 0, 0]);
+    for (const [x, y, ry, rz] of [[0.55, 0.06, 0.06, 0.12], [0.3, 0.08, 0.08, 0.16], [0.0, 0.1, 0.1, 0.18], [-0.3, 0.12, 0.11, 0.17], [-0.5, 0.18, 0.12, 0.15]]) m.ell('body', [x, y, 0], [0.22, ry, rz], skin, { k: 0.1 });
+    m.ell('body', [-0.62, 0.27, 0], [0.13, 0.13, 0.12], skin, { k: 0.1 });
+    m.box('body', [0, -0.25, 0], [1, 0.25, 1], 0.01, null, { op: 'sub', k: 0.02 });
+    m.ell('body', [-0.72, 0.2, 0], [0.04, 0.015, 0.05], m.mat('flesh', '#3a2a1a'), { op: 'sub', k: 0.01 });
+    for (const s of SIDES) m.cap('body', [-0.7, 0.24, s * 0.05], [-0.78, 0.2, s * 0.08], 0.022, 0.014, skin, { k: 0.015 });
+    m.bone('shell', [0.12, 0.42, 0], 'body');
+    const pts = [], rad = [], N = 26;
+    for (let k = 0; k <= N; k++) {
+      const th = (k / N) * 2.6 * PI * 2, rr = 0.3 * Math.pow(0.66, th / (PI * 2));
+      pts.push([cos(th + PI * 0.8) * rr, sin(th + PI * 0.8) * rr, (k / N) * 0.05]);
+      rad.push(0.17 * Math.pow(0.68, th / (PI * 2)) + 0.016);
+    }
+    m.tube('shell', pts, rad, shellM, { k: 0.03, kj: 0.01 });
+    for (const [p, r] of [[[0.05, 0.3, 0.06], [0.09, 0.05, 0.09]], [[-0.2, 0.24, -0.04], [0.07, 0.04, 0.07]], [[0.22, 0.18, 0.05], [0.06, 0.04, 0.06]]]) m.ell('shell', p, r, moss, { k: 0.02, noise: 0.02, nf: 22 });
+    for (const s of SIDES) {
+      const n = s < 0 ? 'eyeF' : 'eyeB';
+      m.bone(n, [-0.66, 0.36, s * 0.05], 'body', { rot: [s * 0.2, 0, 0.3] });
+      m.cap(n, [0, -0.02, 0], [0, 0.3, 0], 0.022, 0.016, skin, { k: 0.02 });
+      m.sph(n, [0, 0.32, 0], 0.03, m.mat('eye', '#120a0e'), { k: 0.008 });
+    }
+    m.points({ hit: [-0.1, 0.55, 0], mouth: [-0.75, 0.22, 0], cuts: [[-0.55, 0.25, 0], [0.1, 0.8, 0], [0.35, 0.55, 0], [0.5, 0.15, 0], [-0.2, 0.15, 0]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -539,70 +665,85 @@ const snail = {
   },
 };
 
-// ============================================================================ MOTH
+// ============================================================================ MOTH (lantern moth)
 const moth = {
   reach: 0.45, die: 'fall',
   build(m, md) {
-    m.fly = 1.0;
-    const b = grid(13, 9, 8);
-    b.ellipsoid(7, 4.5, 4, 5.6, 3.6, 3.2, (x, y, z) => tone(x % 3 === 0 ? md.body : mix(md.body, md.belly, 0.5), (y - 4) * 0.05 + (hash3(x, y, z, 2) > 0.7 ? 0.08 : 0)));
-    b.ellipsoid(2, 5, 4, 1.8, 2, 2.6, pk(md.belly));
-    eye(b, 0, 5, 2, md.eye, { big: true }); eye(b, 0, 5, 5, md.eye, { big: true });
-    for (const z of [3, 5]) b.line(1, 7, z, -1 + 0, 9, z + (z < 4 ? -2 : 2), 0.5, () => pk(md.belly));
-    m.part('body', b, [7, 4.5, 4], [0, 0, 0]);
-    const w = grid(16, 15, 2);
-    for (let y = 0; y < 15; y++) for (let x = 0; x < 16; x++) {
-      const fore = Math.hypot((x - 5) / 6.5, (y - 8.5) / 6.5) < 1; // forewing up-front
-      const hind = Math.hypot((x - 11) / 4.6, (y - 4) / 4.4) < 1; // hindwing back-low
-      if (!fore && !hind) continue;
-      const ex = fore ? x - 5 : x - 11, ey = fore ? y - 9 : y - 4;
-      const r = Math.hypot(ex, ey);
-      let col = tone(fore ? md.body : md.belly, (x + y) % 4 === 0 ? -0.1 : 0.02);
-      if (fore && r < 1.5) col = gl('#ffffff'); else if (fore && r < 2.6) col = gl(md.accent); else if (fore && r < 3.4) col = pk('#2a1a14');
-      if (hind && !fore && r < 1.6) col = gl(md.accent);
-      if (Math.abs(Math.hypot((x - 5) / 6.5, (y - 8.5) / 6.5) - 0.95) < 0.07 && fore) col = tone(md.body, -0.25);
-      w.set(x, y, 0, col);
+    m.fly = 1.0; m.res = 84;
+    const fuzz = m.mat('fur', md.body, { acc: md.belly, ts: 1.6 });
+    const fore = m.mat('membrane', md.body, { acc: shade(md.body, -0.35), glow: md.accent, gk: 2.0 });
+    const hind = m.mat('membrane', md.belly, { acc: shade(md.belly, -0.3), glow: md.accent, gk: 1.8 });
+    const ring = m.mat('smooth', '#2a1a14');
+    const spot = glowMat(m, md.accent, 2.4, 'smooth');
+    m.bone('body', [0, 0, 0]);
+    m.ell('body', [-0.03, 0, 0], [0.13, 0.11, 0.11], fuzz, { noise: 0.012, nf: 20 });
+    m.cap('body', [0.06, -0.02, 0], [0.32, -0.1, 0], 0.09, 0.035, fuzz, { k: 0.05 });
+    m.ell('body', [-0.12, 0.02, 0], [0.08, 0.09, 0.12], fuzz, { k: 0.04, noise: 0.018, nf: 24 });
+    m.ell('body', [-0.17, 0.02, 0], [0.065, 0.065, 0.065], fuzz, { k: 0.03 });
+    for (const s of SIDES) {
+      beady(m, 'body', [-0.215, 0.035, s * 0.04], 0.022, md.eye, 1.2);
+      m.tube('body', [[-0.2, 0.07, s * 0.03], [-0.26, 0.18, s * 0.08], [-0.25, 0.3, s * 0.13]], [0.012, 0.01, 0.008], fuzz, { k: 0.01 });
+      m.plate('body', [-0.245, 0.2, s * 0.095], [[0, -0.1], [0.03, 0], [0, 0.1], [-0.03, 0]], 0.003, 0.004, fuzz, { rot: [s * 0.45, 0, 0.3], k: 0.006 });
+      for (let k = 0; k < 3; k++) m.cap('body', [-0.08 + k * 0.06, -0.08, s * 0.04], [-0.1 + k * 0.07, -0.16, s * 0.07], 0.01, 0.007, fuzz, { k: 0.008 });
     }
-    m.part('wingL', w, [4, 2, 1], [1, 3, 3], 'body');
-    m.part('wingR', w, [4, 2, 1], [1, 3, -3], 'body');
+    const F = [[-0.06, 0], [-0.12, 0.2], [-0.1, 0.42], [0.0, 0.5], [0.1, 0.42], [0.12, 0.22], [0.06, 0.04]];
+    const H = [[0.02, 0], [0.0, 0.14], [0.06, 0.3], [0.2, 0.3], [0.26, 0.16], [0.16, 0.02]];
+    for (const s of SIDES) {
+      const n = s > 0 ? 'wingL' : 'wingR';
+      m.bone(n, [0.0, 0.06, s * 0.09], 'body');
+      m.plate(n, [0, 0, 0], F, 0.005, 0.006, fore, { rot: [s * (PI / 2 - 0.2), 0, 0], k: 0.012 });
+      m.plate(n, [0.02, -0.01, 0], H, 0.005, 0.006, hind, { rot: [s * (PI / 2 - 0.05), 0, 0], k: 0.012 });
+      m.sph(n, wp(0.0, 0.32, s, 0.2), 0.065, ring, { op: 'paint' });
+      m.sph(n, wp(0.0, 0.32, s, 0.2), 0.045, spot, { op: 'paint' });
+    }
     m.emitter({ pos: [0.1, 0, 0], rate: 6, vel: [0, -0.3, 0], spread: 0.4, posSpread: [0.4, 0.1, 0.5], life: [0.8, 1.6], size: 1, color: [md.accent, '#fff0c0'], glow: 1.8 });
-    m.points({ hit: [0, 0, 0], mouth: [-0.35, 0, 0], cuts: [[-0.2, 0.05, 0], [0.2, 0, 0], [0, 0.2, 0.4], [0, 0.2, -0.4]] });
+    m.points({ hit: [-0.05, 0, 0], mouth: [-0.25, 0.02, 0], cuts: [[-0.15, 0.05, 0], [0.2, 0, 0], [0, 0.15, 0.35], [0, 0.15, -0.35]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
     const sp = 8 + e.multi * 10 + e.strike * 6;
     const flap = sin(t * sp);
-    m.P('wingL').rotation.z += flap * 0.6 + 0.15 - e.wind * 0.4 - e.special * 0.5;
-    m.P('wingR').rotation.z += sin(t * sp - 0.4) * 0.6 + 0.15 - e.wind * 0.4 - e.special * 0.5;
-    m.P('wingL').rotation.x += -0.35 - Math.max(0, -flap) * 0.4; m.P('wingR').rotation.x += 0.35 + Math.max(0, -flap) * 0.4;
-    m.root.position.y += sin(t * sp) * 0.04 + sin(t * 1.1) * 0.12;
+    const a = flap * 0.6 + 0.25 + e.wind * 0.6 + e.special * 0.4;
+    m.P('wingL').rotation.x += -a; m.P('wingR').rotation.x += a;
+    m.P('wingL').rotation.y += flap * 0.12; m.P('wingR').rotation.y -= flap * 0.12;
+    m.root.position.y += -flap * 0.04 + sin(t * 1.1) * 0.12;
     m.root.position.z += sin(t * 0.7) * 0.1;
   },
 };
 
-// ============================================================================ TOAD
+// ============================================================================ TOAD (bloat toad)
 const toad = {
   reach: 0.4,
   build(m, md) {
-    const b = grid(18, 12, 16);
-    b.ellipsoid(10, 5, 8, 8, 5.4, 7.4, shadeBody(md.body, 5, 5.4, 8, 7.4, { belly: md.belly, bellyY: -0.15, bellyW: 0.75, spots: 0.1, spotColor: md.accent, seed: 4 }));
-    // bulging eyes on top
-    for (const z of [4, 12]) { b.ellipsoid(5, 9.5, z, 1.8, 1.6, 1.8, tone(md.body, 0.1)); b.set(4, 10, z, gl(md.eye)); b.set(3, 10, z, gl(md.eye)); b.set(3, 10, z + (z < 8 ? -1 : 1) * 0, pk('#1a1a1a')); }
-    b.box(2, 4, 3, 3, 5, 13, pk('#3a1a1a')); // mouth line upper lip
-    m.part('body', b, [10, 0, 8], [0, 1, 0]);
-    const jaw = grid(10, 4, 14);
-    jaw.ellipsoid(6, 2, 7, 5.6, 2, 6.4, (x, y) => tone(y < 2 ? md.belly : md.body, 0));
-    jaw.box(1, 3, 3, 8, 4, 11, pk('#7a2a3a'));
-    m.part('jaw', jaw, [9, 2, 7], [-1, 3, 0], 'body');
-    const tongue = grid(12, 2, 3);
-    tongue.box(0, 0, 0, 12, 2, 3, pk(md.accent)); tongue.box(0, 0, 0, 2, 2, 3, tone(md.accent, 0.2));
-    m.part('tongue', tongue, [11, 1, 1.5], [-2, 2, 0], 'jaw');
-    const leg = grid(7, 6, 4);
-    leg.ellipsoid(4, 3, 2, 3.2, 2.6, 1.9, tone(md.body, -0.05));
-    leg.box(0, 0, 0, 3, 1, 4, tone(md.belly, -0.1));
-    m.part('legF', leg, [4, 3, 2], [5, 2, -7], 'body');
-    m.twin('legB', 'legF', [5, 2, 7]);
-    m.points({ hit: [-0.1, 0.5, 0], mouth: [-0.6, 0.3, 0], cuts: [[-0.4, 0.35, 0], [0, 0.65, 0], [0.4, 0.45, 0], [0.3, 0.15, -0.4], [-0.1, 0.2, 0.4]] });
+    const skin = m.mat('wart', md.body, { acc: md.accent });
+    const belly = m.mat('hide', md.belly);
+    const mouthM = m.mat('flesh', '#7a2a3a');
+    m.bone('body', [0, 0, 0]);
+    m.ell('body', [0.08, 0.34, 0], [0.42, 0.3, 0.4], skin, { noise: 0.012, nf: 10 });
+    m.ell('body', [-0.2, 0.36, 0], [0.26, 0.2, 0.34], skin, { k: 0.14 });
+    m.box('body', [0, -0.25, 0], [1, 0.27, 1], 0.01, null, { op: 'sub', k: 0.03 });
+    m.ell('body', [-0.14, 0.13, 0], [0.36, 0.14, 0.3], belly, { op: 'paint' });
+    for (const s of SIDES) {
+      m.ell('body', [-0.24, 0.55, s * 0.17], [0.08, 0.07, 0.08], skin, { k: 0.05 });
+      beady(m, 'body', [-0.3, 0.585, s * 0.18], 0.028, md.eye, 0.9);
+      m.ell('body', [-0.03, 0.55, s * 0.24], [0.11, 0.05, 0.07], skin, { k: 0.05 });
+      m.cap('body', [-0.28, 0.2, s * 0.26], [-0.4, 0.04, s * 0.3], 0.05, 0.04, skin, { k: 0.05 });
+      m.ell('body', [-0.43, 0.025, s * 0.31], [0.07, 0.022, 0.06], skin, { k: 0.03 });
+    }
+    m.ell('body', [-0.34, 0.3, 0], [0.18, 0.026, 0.3], mouthM, { op: 'sub', k: 0.012 });
+    m.bone('jaw', [-0.08, 0.29, 0], 'body');
+    m.ell('jaw', [-0.18, -0.07, 0], [0.24, 0.1, 0.34], null, { op: 'bind' });
+    m.ell('jaw', [-0.18, -0.02, 0], [0.18, 0.03, 0.26], mouthM, { k: 0.01 });
+    m.bone('tongue', [-0.12, 0.0, 0], 'jaw');
+    m.tube('tongue', [[0.06, 0, 0], [-0.1, 0.01, 0], [-0.24, 0.01, 0]], [0.035, 0.04, 0.055], m.mat('flesh', md.accent), { k: 0.01 });
+    for (const s of SIDES) {
+      const n = s < 0 ? 'legF' : 'legB';
+      m.bone(n, [0.32, 0.16, s * 0.36], 'body');
+      m.ell(n, [0, 0, 0], [0.2, 0.14, 0.12], skin, { k: 0.08 });
+      m.ell(n, [-0.14, -0.14, 0], [0.13, 0.025, 0.08], skin, { k: 0.04 });
+      for (let f = -1; f <= 1; f++) m.cap(n, [-0.2, -0.145, f * 0.04], [-0.28, -0.15, f * 0.07], 0.018, 0.012, skin, { k: 0.01 });
+    }
+    m.points({ hit: [-0.1, 0.5, 0], mouth: [-0.55, 0.3, 0], cuts: [[-0.4, 0.35, 0], [0, 0.62, 0], [0.4, 0.45, 0], [0.3, 0.15, -0.4], [-0.1, 0.2, 0.4]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -618,49 +759,62 @@ const toad = {
   },
 };
 
-// ============================================================================ SKELETON (Bonepicker)
+// ============================================================================ SKELETON (bonepicker)
 const skeleton = {
   reach: 0.3, die: 'kneel',
   build(m, md) {
-    const bone = md.body;
-    const t = grid(9, 15, 9);
-    bones(t, [[6, 0, 4], [6, 14, 4]], (x, y) => tone(bone, y % 2 ? -0.12 : 0));
-    for (let y = 6; y < 14; y += 2) {
-      const rx = 2.6 + (y > 9 ? 0.6 : 0) - (y > 12 ? 0.8 : 0), rz = 3.2 - (y > 12 ? 0.6 : 0);
-      for (let a = -2.6; a <= 2.6; a += 0.18) { const x = Math.round(4 + Math.cos(Math.PI - a) * rx * -1 * -1), z = Math.round(4 + Math.sin(a) * rz); t.set(Math.round(4 - Math.cos(a) * rx * 0 + (Math.cos(a) > 0 ? -Math.cos(a) * rx : -Math.cos(a) * rx * 0.6)), y, z, tone(bone, 0.02)); }
+    m.res = 84;
+    const bone = m.mat('bone', md.body, { acc: md.belly });
+    const helm = m.mat('rust', '#7a6a4a', { acc: md.accent });
+    const voidM = m.mat('smooth', '#0a0608');
+    const eyeG = glowMat(m, md.eye, 3);
+    const rag = m.mat('cloth', '#5a4a3a', { acc: '#3a2a1a' });
+    m.bone('torso', [0, 0.56, 0]);
+    m.ell('torso', [0.02, 0.04, 0], [0.08, 0.06, 0.12], bone, { k: 0.02 });
+    m.tube('torso', [[0.03, 0.04, 0], [0.06, 0.2, 0], [0.05, 0.42, 0], [0.02, 0.58, 0]], 0.026, bone, { k: 0.02 });
+    for (let k = 0; k < 4; k++) {
+      const y = 0.3 + k * 0.07, w = 0.13 - Math.abs(k - 1.5) * 0.015;
+      for (const s of SIDES) m.tube('torso', [[0.05, y, 0], [0.0, y - 0.02, s * w], [-0.1, y - 0.05, s * w * 0.75], [-0.14, y - 0.06, s * 0.02]], 0.019, bone, { k: 0.01 });
     }
-    t.box(1, 7, 4, 2, 14, 5, tone(bone, 0.05));
-    t.box(3, 0, 1, 8, 2, 8, tone(bone, -0.05)); t.box(4, 2, 3, 7, 3, 6, tone(bone, -0.1));
-    t.ellipsoid(4, 10, 4, 1, 1.2, 1, gl(md.eye));
-    m.part('torso', t, [5, 0, 4.5], [0, 9, 0]);
-    const h = grid(8, 9, 8);
-    h.ellipsoid(4, 4.5, 4, 3.6, 3.6, 3.4, tone(bone, 0.05));
-    h.box(0, 3, 2, 2, 6, 3, pk('#141018')); h.box(0, 3, 5, 2, 6, 6, pk('#141018'));
-    h.set(0, 4, 2, gl(md.eye)); h.set(0, 4, 5, gl(md.eye));
-    h.set(0, 2, 3, pk('#2a1a14')); h.set(0, 2, 4, pk('#2a1a14'));
-    // miner helmet
-    h.ellipsoid(4, 6.5, 4, 4, 2.4, 4, (x, y) => (y >= 7 ? tone(md.accent, -0.05) : null));
-    h.box(0, 7, 3, 1, 9, 5, gl('#ffe08a'));
-    m.part('head', h, [4, 1, 4], [0, 14, 0], 'torso');
-    const jaw = grid(6, 2, 6);
-    jaw.box(0, 0, 0, 5, 2, 6, tone(bone, -0.05));
-    for (let z = 1; z < 6; z += 2) jaw.set(0, 1, z, pk('#ffffff'));
-    m.part('jaw', jaw, [4, 1, 3], [0, 0, 0], 'head');
-    const arm = grid(3, 12, 3);
-    bones(arm, [[1, 11, 1], [1, 5, 1], [1, 0, 1]], tone(bone, 0));
-    arm.set(1, 5, 1, tone(bone, 0.15));
-    m.part('armF', arm, [1, 11, 1], [0, 12, -5], 'torso');
-    m.twin('armB', 'armF', [0, 12, 5]);
-    const pick = grid(11, 16, 3);
-    pick.box(5, 0, 1, 6, 15, 2, (x, y) => tone('#8a5a33', y * 0.01));
-    pick.line(0, 13, 1, 10, 15, 1, 0.6, () => tone('#9aa3b2', 0.05));
-    m.part('pick', pick, [5.5, 2, 1.5], [0, 0, -1], 'armF', { rot: [0, 0, 0.6] });
-    const leg = grid(3, 10, 3);
-    bones(leg, [[1, 9, 1], [1, 4, 1], [1, 0, 1]], tone(bone, -0.03));
-    leg.box(0, 0, 0, 3, 1, 3, tone(bone, -0.1));
-    m.part('legF', leg, [1, 9, 1], [0, 1, -2], 'torso');
-    m.twin('legB', 'legF', [0, 1, 2]);
-    m.points({ hit: [0, 1.0, 0], mouth: [-0.25, 1.15, 0], cuts: [[0, 1.2, 0], [0, 0.85, 0], [0, 0.55, 0], [0, 0.35, -0.15], [0, 0.95, 0.3]] });
+    m.cap('torso', [-0.14, 0.27, 0], [-0.13, 0.5, 0], 0.022, 0.022, bone, { k: 0.01 });
+    m.ell('torso', [0.01, 0.0, 0], [0.11, 0.08, 0.14], rag, { k: 0.02, noise: 0.012, nf: 18 });
+    m.sph('torso', [-0.03, 0.38, 0], 0.045, eyeG, { k: 0.006 });
+    m.bone('head', [0, 0.6, 0], 'torso');
+    m.ell('head', [0, 0.13, 0], [0.12, 0.12, 0.11], bone);
+    m.ell('head', [-0.06, 0.06, 0], [0.08, 0.06, 0.08], bone, { k: 0.04 });
+    for (const s of SIDES) { m.sph('head', [-0.1, 0.12, s * 0.045], 0.034, voidM, { op: 'sub', k: 0.01 }); m.sph('head', [-0.088, 0.12, s * 0.045], 0.016, eyeG, { k: 0.003 }); }
+    m.ell('head', [-0.13, 0.07, 0], [0.02, 0.026, 0.016], voidM, { op: 'sub', k: 0.006 });
+    m.box('head', [-0.12, 0.025, 0], [0.02, 0.016, 0.05], 0.006, bone, { k: 0.006 });
+    m.ell('head', [0.0, 0.2, 0], [0.15, 0.08, 0.14], helm, { k: 0.01 });
+    m.tor('head', [0, 0.17, 0], 0.14, 0.013, helm, { k: 0.005 });
+    m.cap('head', [-0.12, 0.24, 0], [-0.16, 0.24, 0], 0.03, 0.028, helm, { k: 0.006 });
+    m.sph('head', [-0.163, 0.24, 0], 0.022, glowMat(m, '#ffe08a', 3), { k: 0.003 });
+    m.bone('jaw', [0.02, 0.04, 0], 'head');
+    m.ell('jaw', [-0.07, -0.025, 0], [0.075, 0.026, 0.068], bone, { k: 0.01 });
+    m.box('jaw', [-0.13, -0.005, 0], [0.018, 0.014, 0.045], 0.006, bone, { k: 0.005 });
+    m.ell('jaw', [-0.08, -0.03, 0], [0.09, 0.04, 0.085], null, { op: 'bind' });
+    for (const s of SIDES) {
+      const n = s < 0 ? 'armF' : 'armB';
+      m.bone(n, [0, 0.55, s * 0.16], 'torso');
+      m.sph(n, [0, 0, 0], 0.035, bone, { k: 0.02 });
+      m.cap(n, [0, 0, 0], [0.01, -0.22, 0], 0.024, 0.022, bone, { k: 0.01 });
+      m.sph(n, [0.01, -0.22, 0], 0.03, bone, { k: 0.01 });
+      m.cap(n, [0.01, -0.22, 0], [-0.02, -0.44, 0], 0.022, 0.02, bone, { k: 0.01 });
+      m.ell(n, [-0.025, -0.47, 0], [0.035, 0.032, 0.025], bone, { k: 0.01 });
+      for (let f = -1; f <= 1; f++) m.cap(n, [-0.04, -0.49, f * 0.014], [-0.06, -0.53, f * 0.016], 0.011, 0.008, bone, { k: 0.004 });
+    }
+    m.bone('pick', [-0.025, -0.47, 0], 'armF', { rot: [0, 0, 0.6] });
+    m.cap('pick', [0, -0.12, 0], [0, 0.6, 0], 0.018, 0.018, m.mat('wood', '#7a5030', { ts: 1.5 }), { k: 0.01 });
+    m.tube('pick', [[-0.24, 0.52, 0], [-0.1, 0.6, 0], [0.04, 0.61, 0], [0.18, 0.54, 0]], (t) => 0.026 * (1 - Math.abs(t - 0.45)) + 0.011, m.mat('metal', '#8a92a0', { acc: '#c8d0d8' }), { k: 0.01 });
+    for (const s of SIDES) {
+      const n = s < 0 ? 'legF' : 'legB';
+      m.bone(n, [0, 0.03, s * 0.08], 'torso');
+      m.cap(n, [0, 0, 0], [0.01, -0.26, 0], 0.027, 0.024, bone, { k: 0.02 });
+      m.sph(n, [0.01, -0.26, 0], 0.033, bone, { k: 0.01 });
+      m.cap(n, [0.01, -0.26, 0], [0, -0.52, 0], 0.024, 0.022, bone, { k: 0.01 });
+      m.ell(n, [-0.04, -0.565, 0], [0.07, 0.022, 0.036], bone, { k: 0.015 });
+    }
+    m.points({ hit: [0, 1.0, 0], mouth: [-0.2, 1.22, 0], cuts: [[0, 1.25, 0], [0, 0.95, 0], [0, 0.6, 0], [0, 0.35, -0.15], [0, 0.95, 0.3]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -673,63 +827,76 @@ const skeleton = {
   },
 };
 
-// ============================================================================ KNIGHT (gilded / cursed)
+// ============================================================================ KNIGHT (gilded guard / cursed knight)
 const knight = {
   reach: 0.4, die: 'kneel',
   build(m, md) {
+    m.res = 76;
     const cursed = m.id === 'cursed_knight';
-    const plate = (x, y, z) => tone(md.body, (y - 6) * 0.03 + ((x + y) % 5 === 0 ? 0.1 : 0) + (hash3(x, y, z, 1) > 0.9 ? -0.08 : 0));
-    const t = grid(10, 12, 10);
-    t.box(1, 0, 1, 9, 12, 9, plate);
-    t.box(0, 4, 2, 1, 11, 8, plate);
-    t.box(0, 0, 2, 3, 3, 8, tone(md.belly, 0));
-    t.box(0, 7, 4, 1, 9, 6, cursed ? gl(md.accent) : pk(md.accent));
-    // pauldrons
-    for (const z of [0, 7]) t.box(2, 9, z, 8, 12, z + 3, (x, y) => tone(md.body, 0.08));
-    m.part('torso', t, [5, 0, 5], [0, 10, 0]);
-    const h = grid(8, 10, 8);
-    h.box(1, 0, 1, 7, 7, 7, plate);
-    h.box(0, 2, 2, 1, 6, 6, plate);
-    h.box(0, 3, 2, 1, 4, 6, pk('#0a080c'));
-    h.set(0, 3, 3, gl(md.eye)); h.set(0, 3, 5, gl(md.eye));
-    if (cursed) { for (const z of [1, 6]) h.line(4, 6, z, 6, 10, z < 4 ? -1 : 8, 0.6, () => tone('#2a2238', 0.1)); }
-    else for (let x = 2; x < 8; x++) h.set(x, 7 + (x < 5 ? 1 : 0), 4, pk(md.accent));
-    m.part('head', h, [4, 0, 4], [0, 12, 0], 'torso');
-    const arm = limb(9, 3, 3, md.body, { footCol: md.belly });
-    m.part('armF', arm, legPivot(arm), [0, 11, -6], 'torso');
-    m.twin('armB', 'armF', [0, 11, 6]);
-    // weapon
-    const wpn = grid(5, 26, 3);
+    const plate = m.mat(cursed ? 'rune' : 'metal', md.body, { acc: cursed ? md.accent : '#ffe8a0', glow: cursed ? md.accent : null, gk: 2.2 });
+    const plate2 = m.mat('metal', shade(md.body, -0.15), { acc: cursed ? '#5a4a6a' : '#ffe8a0' });
+    const cloth = m.mat('cloth', md.belly, { acc: cursed ? md.accent : '#c8a040', glow: cursed ? md.accent : null, gk: 1.8 });
+    const voidM = m.mat('smooth', '#06040a');
+    const eyeG = glowMat(m, md.eye, 3.2);
+    m.bone('torso', [0, 0.56, 0]);
+    m.ell('torso', [0, 0.32, 0], [0.2, 0.25, 0.26], plate, { rot: [0, 0, 0.05] });
+    m.box('torso', [-0.17, 0.3, 0], [0.04, 0.2, 0.014], 0.012, plate, { k: 0.05, rot: [0, 0, -0.1] });
+    m.cap('torso', [0, 0.05, 0], [0, 0.2, 0], 0.15, 0.17, plate2, { k: 0.04 });
+    m.cap('torso', [0.0, 0.08, 0], [0.0, -0.14, 0], 0.17, 0.24, plate2, { k: 0.02 });
+    m.tor('torso', [0, 0.52, 0], 0.1, 0.035, plate2, { k: 0.02 });
+    for (const s of SIDES) {
+      m.ell('torso', [0.0, 0.48, s * 0.27], [0.15, 0.1, 0.13], plate, { k: 0.03, rot: [s * 0.35, 0, 0] });
+      m.tor('torso', [0.0, 0.45, s * 0.27], 0.13, 0.016, plate2, { k: 0.01, rot: [s * 0.35, 0, 0] });
+    }
+    m.sph('torso', [-0.2, 0.34, 0], 0.035, cursed ? glowMat(m, md.accent, 2.6) : glowMat(m, md.accent, 1.2), { k: 0.008 });
+    m.bone('head', [0, 0.55, 0], 'torso');
+    m.cap('head', [0, 0.02, 0], [0, 0.2, 0], 0.12, 0.13, plate, { k: 0.02 });
+    m.ell('head', [0, 0.21, 0], [0.13, 0.1, 0.13], plate, { k: 0.03 });
+    m.box('head', [-0.125, 0.15, 0], [0.04, 0.013, 0.09], 0.004, voidM, { op: 'sub', k: 0.006 });
+    for (const s of SIDES) m.sph('head', [-0.1, 0.15, s * 0.04], 0.017, eyeG, { k: 0.003 });
+    m.plate('head', [0.0, 0.29, 0], [[-0.12, 0], [0.12, 0], [0.1, 0.035], [-0.1, 0.035]], 0.009, 0.008, plate, { k: 0.01 });
+    if (cursed) for (const s of SIDES) m.tube('head', hornPath([0.0, 0.2, s * 0.11], [0, 0.4, s * 1], [0, 1, 0], 0.22, 1.2, 5), (t) => 0.04 * (1 - t) + 0.01, m.mat('bone', '#2a2238', { acc: '#4a3a5a' }), { k: 0.02 });
+    else m.tube('head', [[0.02, 0.3, 0], [0.12, 0.42, 0], [0.24, 0.4, 0], [0.32, 0.3, 0]], [0.04, 0.05, 0.04, 0.02], m.mat('feather', md.accent, { acc: shade(md.accent, -0.3) }), { k: 0.02 });
+    for (const s of SIDES) {
+      const n = s < 0 ? 'armF' : 'armB';
+      m.bone(n, [0, 0.42, s * 0.34], 'torso');
+      m.cap(n, [0, 0, 0], [0.015, -0.24, 0], 0.065, 0.055, plate2, { k: 0.02 });
+      m.sph(n, [0.015, -0.24, 0], 0.07, plate, { k: 0.02 });
+      m.cap(n, [0.015, -0.24, 0], [-0.01, -0.42, 0], 0.055, 0.062, plate2, { k: 0.02 });
+      m.ell(n, [-0.012, -0.48, 0], [0.07, 0.065, 0.065], plate2, { k: 0.02 });
+    }
+    m.bone('weapon', [-0.012, -0.48, 0], 'armF', { rot: [0, 0, cursed ? 0.9 : 0.25] });
     if (cursed) {
-      wpn.box(2, 0, 1, 3, 5, 2, tone('#2a1a2a', 0));
-      wpn.box(0, 5, 1, 5, 6, 2, tone(md.body, 0.1));
-      for (let y = 6; y < 22; y++) wpn.box(1, y, 1, 4 - (y > 18 ? 1 : 0), y + 1, 2, y % 4 === 0 ? gl(md.accent) : tone('#4a425a', 0.1));
+      m.plate('weapon', [0, 0, 0], [[-0.042, 0], [0.042, 0], [0.046, 0.74], [0, 0.88], [-0.046, 0.74]], 0.008, 0.008, m.mat('rune', '#4a425a', { acc: md.accent, glow: md.accent, gk: 2.4 }), { k: 0.01 });
+      m.cap('weapon', [-0.12, 0, 0], [0.12, 0, 0], 0.024, 0.024, plate2, { k: 0.008 });
+      m.cap('weapon', [0, -0.2, 0], [0, -0.02, 0], 0.02, 0.02, cloth, { k: 0.008 });
+      m.sph('weapon', [0, -0.22, 0], 0.03, plate2, { k: 0.006 });
     } else {
-      wpn.box(2, 0, 1, 3, 22, 2, (x, y) => tone('#6a4a2a', 0));
-      wpn.ellipsoid(1, 21, 1.5, 2.2, 3, 0.8, tone('#dfe6ee', 0));
-      wpn.line(2, 22, 1, 2, 25, 1, 0.5, () => pk('#dfe6ee'));
+      m.cap('weapon', [0, -0.15, 0], [0, 1.25, 0], 0.02, 0.02, m.mat('wood', '#6a4a2a', { ts: 1.5 }), { k: 0.01 });
+      m.plate('weapon', [0, 1.0, 0], [[0, 0], [-0.18, -0.08], [-0.24, 0.06], [-0.2, 0.2], [0, 0.12]], 0.008, 0.007, m.mat('metal', '#dfe6ee', { acc: '#ffffff' }), { k: 0.01 });
+      m.cap('weapon', [0, 1.25, 0], [0, 1.45, 0], 0.03, 0.009, m.mat('metal', '#dfe6ee'), { k: 0.008 });
+      m.bone('shield', [-0.03, -0.3, 0.06], 'armB', { rot: [0, -PI / 2 + 0.3, 0] });
+      m.plate('shield', [0, 0, 0], [[-0.17, 0.2], [0.17, 0.2], [0.17, -0.02], [0, -0.25], [-0.17, -0.02]], 0.016, 0.014, plate, { k: 0.01 });
+      m.sph('shield', [0, 0.04, 0.04], 0.045, plate2, { k: 0.01 });
+      m.plate('shield', [0, 0.02, 0.03], [[0, 0.1], [0.06, 0], [0, -0.1], [-0.06, 0]], 0.05, 0.004, m.mat('metal', md.accent), { op: 'paint' });
     }
-    m.part('weapon', wpn, [2.5, 3, 1.5], [0, -8, -1], 'armF', { rot: [0, 0, cursed ? 0.9 : 0.25] });
-    // shield (gilded) or cape (cursed)
-    if (!cursed) {
-      const sh = grid(3, 11, 9);
-      sh.box(0, 0, 0, 2, 11, 9, (x, y, z) => (Math.abs(z - 4) + Math.max(0, 4 - y) > 6 ? null : tone(md.body, x === 0 ? 0.1 : -0.1)));
-      sh.box(0, 4, 3, 1, 8, 6, pk(md.accent));
-      m.part('shield', sh, [1, 5, 4.5], [-3, -5, 1], 'armB');
+    m.bone('cape', [0.12, 0.5, 0], 'torso');
+    m.plate('cape', [0, 0, 0], [[-0.25, 0], [0.25, 0], [0.31, -0.74], [0.16, -0.68], [0.03, -0.78], [-0.13, -0.68], [-0.31, -0.75]], 0.007, 0.008, cloth, { rot: [0, PI / 2, 0], k: 0.02 });
+    for (const s of SIDES) {
+      const n = s < 0 ? 'legF' : 'legB';
+      m.bone(n, [0, 0.04, s * 0.13], 'torso');
+      m.cap(n, [0, 0, 0], [0.02, -0.25, 0], 0.075, 0.065, plate2, { k: 0.02 });
+      m.sph(n, [0.02, -0.25, 0], 0.075, plate, { k: 0.02 });
+      m.cap(n, [0.02, -0.25, 0], [0, -0.5, 0], 0.065, 0.06, plate2, { k: 0.02 });
+      m.ell(n, [-0.05, -0.56, 0], [0.11, 0.045, 0.065], plate, { k: 0.02 });
     }
-    const cape = grid(4, 14, 10);
-    cape.box(0, 0, 0, 2, 14, 10, (x, y, z) => (y < 2 && (z + y) % 3 === 0 ? null : tone(md.belly, (y - 7) * 0.02)));
-    m.part('cape', cape, [1, 13, 5], [5, 11, 0], 'torso');
-    const leg = limb(9, 3, 3, md.body, { foot: 1, footCol: md.belly });
-    m.part('legF', leg, legPivot(leg), [0, 1, -2.5], 'torso');
-    m.twin('legB', 'legF', [0, 1, 2.5]);
-    if (cursed) m.emitter({ pos: [0.05, 1.25, 0], rate: 6, vel: [0, 0.4, 0], spread: 0.2, posSpread: [0.15, 0.1, 0.15], life: [0.5, 1], size: 1, color: [md.accent, md.eye], glow: 2.5 });
-    m.points({ hit: [0, 1.0, 0], mouth: [-0.3, 1.35, 0], cuts: [[0, 1.4, 0], [0, 1.0, 0], [0, 0.7, -0.3], [0, 0.4, 0], [0.1, 0.9, 0.35]] });
+    if (cursed) m.emitter({ pos: [0.05, 1.3, 0], rate: 6, vel: [0, 0.4, 0], spread: 0.2, posSpread: [0.15, 0.1, 0.15], life: [0.5, 1], size: 1, color: [md.accent, md.eye], glow: 2.5 });
+    m.points({ hit: [0, 0.95, 0], mouth: [-0.2, 1.27, 0], cuts: [[0, 1.4, 0], [0, 1.0, 0], [0, 0.7, -0.3], [0, 0.4, 0], [0.1, 0.9, 0.35]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
     m.P('armF').rotation.z += -e.wind * 2.6 + e.strike * 2.4 + e.multi * sin(t * 16) * 1.2 + sin(t * 1.5) * 0.04;
-    if (m.P('shield')) m.P('armB').rotation.z += e.special * 1.2 + e.strike * (m.state === 'attack' ? 0 : 0) + sin(t * 1.5 + 1) * 0.04;
+    if (m.P('shield')) m.P('armB').rotation.z += e.special * 1.2 + sin(t * 1.5 + 1) * 0.04;
     m.P('cape').rotation.z += -0.1 - sin(t * 2) * 0.08 - e.strike * 0.3;
     m.P('head').rotation.y += sin(t * 0.7) * 0.1;
     walk(m, ['legF', 'legB'], 2.5, 0.05 + e.strike * 0.2);
@@ -741,27 +908,32 @@ const sentinel = {
   reach: 0.25, die: 'fall',
   build(m, md) {
     m.fly = 0.55;
-    const h = grid(14, 15, 12);
-    h.box(1, 0, 0, 14, 15, 12, (x, y, z) => tone(md.body, (y - 7) * 0.025 + (hash3(x >> 1, y >> 1, z, 3) - 0.5) * 0.12));
-    h.box(0, 3, 2, 1, 12, 10, (x, y, z) => tone(md.body, 0.05));
-    // brow, nose, mouth
-    h.box(0, 9, 1, 1, 10, 11, tone(md.body, 0.15)); h.box(-0, 5, 5, 1, 9, 7, tone(md.body, 0.1));
-    h.box(0, 3, 3, 1, 4, 9, pk('#1a140e'));
-    // closed side eyes + great eye on forehead
-    h.box(0, 7, 2, 1, 8, 4, pk('#1a140e')); h.box(0, 7, 8, 1, 8, 10, pk('#1a140e'));
-    h.box(0, 10, 4, 1, 14, 8, pk(md.accent));
-    h.box(0, 11, 5, 1, 13, 7, gl(md.eye)); h.set(0, 11, 6, gl('#ffffff'));
-    // gold band + runes
-    h.box(0, 13, 0, 14, 15, 12, (x, y, z) => ((x + z) % 3 === 0 ? gl(md.eye) : tone(md.accent, -0.05)));
-    for (let y = 2; y < 10; y += 3) h.set(13, y, 6, gl(md.eye));
-    h.box(3, 0, 2, 12, 1, 10, (x, z) => (hash3(x, 0, z, 2) > 0.5 ? null : tone(md.belly, -0.1)));
-    m.part('head', h, [7, 0, 6], [0, 0, 0]);
-    const rock = grid(4, 4, 4);
-    rock.ellipsoid(2, 2, 2, 1.8, 1.6, 1.8, (x, y, z) => tone(md.belly, y * 0.04));
-    rock.set(2, 3, 2, gl(md.eye));
-    for (let i = 0; i < 4; i++) m.part('rock' + i, rock, [2, 2, 2], [0, 0, 0], 'head');
+    const stone = m.mat('stone', md.body, { acc: shade(md.body, 0.15) });
+    const stone2 = m.mat('stone', md.belly, { acc: md.body });
+    const moss = m.mat('moss', '#4a6a2a', { acc: '#8aa04a' });
+    const gold = m.mat('rune', md.accent, { acc: '#fff0a0', glow: md.eye, gk: 2.2 });
+    const voidM = m.mat('smooth', '#1a140e');
+    const eyeM = m.mat('eye', '#0a1a1a', { glow: md.eye, gk: 3, full: true });
+    m.bone('head', [0, 0, 0]);
+    m.box('head', [0.04, 0.44, 0], [0.33, 0.4, 0.3], 0.13, stone, { noise: 0.014, nf: 7 });
+    m.box('head', [-0.29, 0.58, 0], [0.06, 0.05, 0.27], 0.03, stone, { k: 0.04 });
+    m.plate('head', [-0.3, 0.3, 0], [[0, 0], [-0.11, 0], [0, 0.22]], 0.05, 0.02, stone, { k: 0.03 });
+    m.box('head', [-0.3, 0.13, 0], [0.06, 0.06, 0.19], 0.03, stone, { k: 0.04 });
+    m.box('head', [-0.35, 0.2, 0], [0.03, 0.009, 0.13], 0.004, voidM, { op: 'sub', k: 0.004 });
+    for (const s of SIDES) m.box('head', [-0.34, 0.47, s * 0.15], [0.03, 0.009, 0.075], 0.004, voidM, { op: 'sub', k: 0.004, rot: [s * 0.15, 0, 0] });
+    m.tor('head', [-0.32, 0.73, 0], 0.08, 0.022, gold, { rot: [0, 0, PI / 2], k: 0.01 });
+    m.sph('head', [-0.31, 0.73, 0], 0.062, eyeM, { k: 0.005 });
+    m.tor('head', [0.04, 0.8, 0], 0.37, 0.03, gold, { k: 0.01 });
+    m.ell('head', [0.1, 0.86, 0.05], [0.28, 0.07, 0.24], moss, { op: 'paint' });
+    for (const [p, r] of [[[0.18, 0.84, -0.1], [0.12, 0.04, 0.1]], [[-0.05, 0.85, 0.12], [0.09, 0.03, 0.08]]]) m.ell('head', p, r, moss, { k: 0.02, noise: 0.015, nf: 20 });
+    for (let i = 0; i < 4; i++) {
+      const a = (i * PI) / 2;
+      m.bone('rock' + i, [cos(a) * 0.65, 0.2, sin(a) * 0.65], 'head');
+      m.ell('rock' + i, [0, 0, 0], [0.09, 0.08, 0.09], stone2, { noise: 0.02, nf: 12 });
+      m.sph('rock' + i, [-0.085, 0.02, 0], 0.02, eyeM, { k: 0.004 });
+    }
     m.emitter({ pos: [0, -0.05, 0], rate: 4, vel: [0, -0.25, 0], spread: 0.1, posSpread: [0.3, 0, 0.3], life: [0.6, 1.2], size: 1, color: '#c8b890', glow: 1, gravity: 0.5 });
-    m.points({ hit: [-0.4, 0.75, 0], mouth: [-0.45, 0.72, 0], cuts: [[-0.4, 0.5, 0], [-0.2, 0.8, 0.3], [0.1, 0.3, 0], [0, 0.85, -0.3]] });
+    m.points({ hit: [-0.35, 0.72, 0], mouth: [-0.38, 0.73, 0], cuts: [[-0.35, 0.5, 0], [-0.2, 0.8, 0.3], [0.1, 0.3, 0], [0, 0.85, -0.3]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -769,36 +941,45 @@ const sentinel = {
     m.P('head').rotation.y += sin(t * 0.5) * 0.12;
     m.P('head').rotation.z += -e.wind * 0.2 + e.special * 0.1;
     for (let i = 0; i < 4; i++) {
-      const a = t * 1.3 + (i * Math.PI) / 2;
+      const a = t * 1.3 + (i * PI) / 2;
       const p = m.P('rock' + i);
-      p.position.set(cos(a) * 0.65 + 0.4 * 0, 0.2 + sin(a * 2) * 0.12 - e.wind * 0.1, sin(a) * 0.65);
+      p.position.set(cos(a) * 0.65, 0.2 + sin(a * 2) * 0.12 - e.wind * 0.1, sin(a) * 0.65);
       p.rotation.set(a, a * 0.7, 0);
     }
   },
 };
 
-// ============================================================================ OWL
+// ============================================================================ OWL (ruin owl)
 const owl = {
   reach: 0.45, die: 'fall',
   build(m, md) {
     m.fly = 0.6;
-    const b = grid(12, 15, 11);
-    b.ellipsoid(6, 7, 5.5, 5.4, 7, 5, (x, y, z) => {
-      if (x < 4 && y < 9 && Math.abs(z - 5.5) < 3.5) return (y + Math.abs(z - 5.5)) % 3 === 0 ? tone(md.body, -0.05) : tone(md.belly, 0);
-      return tone(md.body, (y - 7) * 0.03 + ((x * 3 + y) % 4 === 0 ? -0.08 : 0));
-    });
-    // face disk + eyes
-    b.box(0, 9, 2, 2, 13, 9, (x) => tone(md.belly, 0.05));
-    for (const z of [3, 7]) { b.box(0, 10, z, 1, 12, z + 2, gl(md.eye)); b.set(0, 11, z + (z < 5 ? 1 : 0), pk('#1a0a0a')); }
-    b.set(0, 9, 5, pk(md.accent)); b.set(0, 8, 5, tone(md.accent, -0.2));
-    for (const z of [2, 8]) { b.set(2, 14, z, tone(md.body, 0.05)); b.set(2, 15, z, tone(md.body, 0.05)); b.set(1, 14, z, tone(md.body, -0.1)); }
-    for (const z of [3, 7]) b.box(2, 0, z, 5, 1, z + 2, pk(md.accent));
-    m.part('body', b, [6, 0, 5.5], [0, 0, 0]);
-    const w = grid(9, 11, 3);
-    w.box(0, 0, 0, 8, 11, 2, (x, y) => (y < 3 && x > 5 - y ? null : tone(md.body, (y - 5) * 0.03 + (x % 2 ? -0.06 : 0.02))));
-    m.part('wingL', w, [4, 10, 1], [1, 11, 5], 'body');
-    m.twin('wingR', 'wingL', [1, 11, -6]);
-    m.points({ hit: [-0.2, 0.55, 0], mouth: [-0.35, 0.55, 0], cuts: [[-0.25, 0.45, 0], [0, 0.75, 0], [0.1, 0.4, 0.3], [0.1, 0.35, -0.3]] });
+    const fea = m.mat('feather', md.body, { acc: shade(md.body, -0.25), ts: 1.4 });
+    const disk = m.mat('feather', md.belly, { acc: shade(md.belly, -0.2), ts: 2 });
+    const chest = m.mat('feather', md.belly, { acc: md.body, ts: 1.4 });
+    const beak = m.mat('smooth', md.accent);
+    const talon = m.mat('smooth', '#2a2018');
+    m.bone('body', [0, 0, 0]);
+    m.ell('body', [0.02, 0.38, 0], [0.26, 0.36, 0.25], fea, { rot: [0, 0, 0.12] });
+    m.ell('body', [-0.2, 0.33, 0], [0.13, 0.26, 0.19], chest, { op: 'paint' });
+    m.ell('body', [-0.04, 0.72, 0], [0.2, 0.17, 0.22], fea, { k: 0.1 });
+    m.ell('body', [-0.27, 0.7, 0], [0.1, 0.15, 0.17], disk, { op: 'sub', k: 0.04 });
+    for (const s of SIDES) {
+      m.cap('body', [-0.04, 0.84, s * 0.12], [0.02, 0.98, s * 0.16], 0.04, 0.012, fea, { k: 0.03 });
+      beady(m, 'body', [-0.21, 0.74, s * 0.075], 0.03, md.eye, 1.3);
+      m.ell('body', [-0.04, 0.04, s * 0.08], [0.06, 0.04, 0.045], fea, { k: 0.04 });
+      for (let f = -1; f <= 1; f++) m.tube('body', [[-0.08, 0.03, s * 0.08 + f * 0.025], [-0.13, 0.01, s * 0.08 + f * 0.035], [-0.14, -0.03, s * 0.08 + f * 0.04]], [0.013, 0.01, 0.006], talon, { k: 0.005 });
+    }
+    m.tube('body', [[-0.23, 0.69, 0], [-0.28, 0.65, 0], [-0.27, 0.6, 0]], [0.026, 0.016, 0.006], beak, { k: 0.01 });
+    m.plate('body', [0.22, 0.12, 0], [[0, -0.08], [0.18, -0.12], [0.22, 0], [0.18, 0.12], [0, 0.08]], 0.012, 0.01, fea, { rot: [PI / 2, 0, 0.35], k: 0.02 });
+    const W = [[-0.08, 0], [0.1, 0.02], [0.2, -0.12], [0.26, -0.36], [0.22, -0.5], [0.14, -0.42], [0.06, -0.5], [0.0, -0.3]];
+    for (const s of SIDES) {
+      const n = s > 0 ? 'wingL' : 'wingR';
+      m.bone(n, [0.06, 0.62, s * 0.24], 'body');
+      m.plate(n, [0, 0, 0], W, 0.02, 0.014, fea, { k: 0.02 });
+      m.ell(n, [0.17, -0.44, 0], [0.09, 0.09, 0.04], m.mat('feather', shade(md.body, -0.3), { acc: md.belly, ts: 1.4 }), { op: 'paint' });
+    }
+    m.points({ hit: [-0.2, 0.55, 0], mouth: [-0.3, 0.62, 0], cuts: [[-0.25, 0.45, 0], [0, 0.75, 0], [0.1, 0.4, 0.3], [0.1, 0.35, -0.3]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -811,36 +992,45 @@ const owl = {
   },
 };
 
-// ============================================================================ SALAMANDER
+// ============================================================================ SALAMANDER (lava salamander)
 const salamander = {
   reach: 0.35,
   build(m, md) {
-    const b = grid(18, 8, 11);
-    b.ellipsoid(9, 4, 5.5, 8.6, 3.2, 4.4, shadeBody(md.body, 4, 3.2, 5.5, 4.4, { belly: md.belly, bellyY: -0.25, spots: 0.12, spotColor: md.accent, seed: 8 }));
-    for (let x = 2; x < 17; x += 2) { b.set(x, 7, 5, gl(x % 4 ? '#ffd04a' : '#ff6a1a')); if (x % 4 === 0) b.set(x, 8, 5, gl('#ff8a2a')); }
-    m.part('body', b, [9, 0, 5.5], [0, 2, 0]);
-    const h = grid(10, 7, 9);
-    h.ellipsoid(5.5, 3.5, 4.5, 4.6, 2.8, 3.6, shadeBody(md.body, 3.5, 2.8, 4.5, 3.6, { belly: md.belly }));
-    eye(h, 3, 5, 1, md.eye); eye(h, 3, 5, 7, md.eye);
-    h.set(0, 4, 3, pk('#1a0a0a')); h.set(0, 4, 5, pk('#1a0a0a'));
-    m.part('head', h, [8, 3, 4.5], [-8, 4, 0], 'body');
-    const jaw = grid(8, 2, 7);
-    jaw.box(0, 0, 0, 8, 2, 7, tone(md.belly, 0)); jaw.box(0, 1, 2, 6, 2, 5, pk('#ff6a3a'));
-    m.part('jaw', jaw, [7, 1, 3.5], [0, 1, 0], 'head');
-    const tl = grid(9, 4, 5);
-    tl.ellipsoid(4.5, 2, 2.5, 4.6, 1.6, 2, shadeBody(md.body, 2, 1.6, 2.5, 2, { belly: md.belly }));
-    m.part('tail0', tl, [0, 2, 2.5], [8, 4, 0], 'body');
-    m.part('tail1', tl, [0, 2, 2.5], [8, 0, 0], 'tail0', {});
-    m.P('tail1').scale.setScalar(0.75); m._rest(m.P('tail1'));
-    const tip = grid(5, 5, 3); tip.line(0, 2, 1, 4, 4, 1, 0.8, (x, y) => gl(y > 3 ? '#fff0a0' : '#ff8a2a'));
-    m.part('tail2', tip, [0, 2, 1], [8, 0, 0], 'tail1');
-    const leg = limb(2, 2, 2, md.body, { foot: 2, footCol: md.belly, claw: '#3a1a1a' });
-    m.part('lf', leg, legPivot(leg), [-5, 2, -4], 'body', { rot: [0.5, 0, 0] });
-    m.part('lb', leg, legPivot(leg), [5, 2, -4], 'body', { rot: [0.5, 0, 0] });
-    m.part('rf', leg, legPivot(leg), [-5, 2, 4], 'body', { rot: [-0.5, 0, 0] });
-    m.part('rb', leg, legPivot(leg), [5, 2, 4], 'body', { rot: [-0.5, 0, 0] });
-    m.emitter({ pos: [0, 0.55, 0], rate: 8, vel: [0, 0.6, 0], spread: 0.2, posSpread: [0.45, 0, 0.05], life: [0.3, 0.8], size: 1, color: ['#ffd04a', '#ff6a1a'], glow: 3 });
-    m.points({ hit: [-0.2, 0.35, 0], mouth: [-0.95, 0.4, 0], cuts: [[-0.6, 0.35, 0], [-0.2, 0.4, 0], [0.25, 0.35, 0], [0.7, 0.3, 0], [0, 0.2, 0.25]] });
+    const scl = m.mat('scale', md.body, { acc: md.belly, glow: '#ff8a2a', gk: 1.4, ts: 1.4 });
+    const belly = m.mat('plate', md.belly, { acc: md.body, ts: 1.6 });
+    const spine = glowMat(m, '#ffb04a', 2.2);
+    const mouthM = glowMat(m, '#ff6a3a', 2, 'lava');
+    const claw = m.mat('smooth', md.accent);
+    m.bone('body', [0, 0.18, 0]);
+    m.ell('body', [0.25, 0.02, 0], [0.3, 0.12, 0.15], scl);
+    m.ell('body', [-0.12, 0.03, 0], [0.3, 0.12, 0.15], scl, { k: 0.1 });
+    m.ell('body', [-0.38, 0.03, 0], [0.14, 0.1, 0.13], scl, { k: 0.08 });
+    m.ell('body', [0, -0.1, 0], [0.6, 0.08, 0.14], belly, { op: 'paint' });
+    for (let i = 0; i < 7; i++) m.cry('body', [-0.35 + i * 0.12, 0.11, 0], 0.08 + (i % 2) * 0.05, 0.025, spine, { dir: [0.35, 1, 0] });
+    m.bone('head', [-0.5, 0.06, 0], 'body');
+    m.ell('head', [-0.08, 0.02, 0], [0.15, 0.07, 0.12], scl, { k: 0.05 });
+    m.cap('head', [-0.12, 0.0, 0], [-0.25, -0.01, 0], 0.07, 0.045, scl, { k: 0.04 });
+    m.ell('head', [-0.17, -0.025, 0], [0.11, 0.012, 0.08], mouthM, { op: 'sub', k: 0.008 });
+    for (const s of SIDES) beady(m, 'head', [-0.11, 0.07, s * 0.065], 0.02, md.eye, 1.4);
+    m.bone('jaw', [0.02, -0.02, 0], 'head');
+    m.ell('jaw', [-0.11, -0.025, 0], [0.15, 0.03, 0.1], scl, { k: 0.02 });
+    m.ell('jaw', [-0.12, -0.03, 0], [0.17, 0.04, 0.12], null, { op: 'bind' });
+    m.bone('tail0', [0.48, 0, 0], 'body');
+    m.cap('tail0', [0, 0, 0], [0.3, 0, 0], 0.1, 0.085, scl, { k: 0.04 });
+    m.bone('tail1', [0.3, 0, 0], 'tail0', { scale: 0.7 });
+    m.cap('tail1', [0, 0, 0], [0.3, 0, 0], 0.12, 0.1, scl, { k: 0.03 });
+    m.bone('tail2', [0.3, 0, 0], 'tail1');
+    m.cap('tail2', [0, 0, 0], [0.26, 0, 0], 0.1, 0.03, scl, { k: 0.03 });
+    m.cry('tail2', [0.2, 0, 0], 0.18, 0.04, spine, { dir: [1, 0.15, 0] });
+    for (const [n, x, s] of [['lf', -0.3, -1], ['lb', 0.3, -1], ['rf', -0.3, 1], ['rb', 0.3, 1]]) {
+      m.bone(n, [x, 0.0, s * 0.12], 'body', { rot: [-s * 0.5, 0, 0] });
+      m.cap(n, [0, 0, 0], [-0.02, -0.1, 0], 0.045, 0.035, scl, { k: 0.04 });
+      m.cap(n, [-0.02, -0.1, 0], [-0.04, -0.18, 0], 0.035, 0.03, scl, { k: 0.02 });
+      m.ell(n, [-0.08, -0.19, 0], [0.07, 0.02, 0.05], scl, { k: 0.02 });
+      for (let f = -1; f <= 1; f++) m.cap(n, [-0.12, -0.195, f * 0.025], [-0.15, -0.2, f * 0.035], 0.01, 0.006, claw, { k: 0.004 });
+    }
+    m.emitter({ pos: [0, 0.4, 0], rate: 8, vel: [0, 0.6, 0], spread: 0.2, posSpread: [0.45, 0, 0.05], life: [0.3, 0.8], size: 1, color: ['#ffd04a', '#ff6a1a'], glow: 3 });
+    m.points({ hit: [-0.2, 0.25, 0], mouth: [-0.85, 0.22, 0], cuts: [[-0.6, 0.3, 0], [-0.2, 0.32, 0], [0.25, 0.3, 0], [0.7, 0.22, 0], [0, 0.15, 0.2]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -853,56 +1043,55 @@ const salamander = {
   },
 };
 
-// ============================================================================ WYRM (wyrmling — segmented serpent)
+// ============================================================================ WYRM (lava wyrmling)
 const wyrm = {
   reach: 0.5,
   build(m, md) {
-    const seg = (r) => {
-      const n = Math.ceil(r * 2 + 2);
-      const g = grid(n, n, n);
-      const c = n / 2;
-      g.ellipsoid(c, c, c, r, r, r * 0.9, (x, y, z) => {
-        if (y < c - r * 0.4 && Math.abs(z + 0.5 - c) < r * 0.6) return md.glow && (x + y) % 3 === 0 ? gl(md.belly) : tone(md.belly, 0);
-        if (y > c + r * 0.7 && Math.abs(z + 0.5 - c) < 1) return tone(md.accent, 0.1);
-        return tone(md.body, (y - c) / r * 0.15 + (hash3(x, y, z, 3) > 0.88 ? -0.15 : 0));
-      });
-      g._c = [c, c, c];
-      return g;
-    };
-    const radii = [4.6, 4.2, 3.8, 3.3, 2.8, 2.2];
+    const crust = m.mat('crust', md.body, { glow: '#ff6a1a', gk: 2.4 });
+    const belly = m.mat('plate', md.belly, { acc: shade(md.belly, -0.3), glow: '#ff8a2a', gk: 1.6, ts: 1.4 });
+    const horn = m.mat('bone', '#4a2a20', { acc: '#2a1410' });
+    const mouthM = glowMat(m, '#ff6a1a', 2.4, 'lava');
+    const radii = [0.27, 0.25, 0.23, 0.2, 0.17, 0.13];
+    const offs = [[0, 1.02, 0], [0.21, -0.3, 0], [0.24, -0.3, 0], [0.3, -0.18, 0], [0.27, -0.03, 0], [0.24, 0.03, 0]];
     let parent = 'root';
     radii.forEach((r, i) => {
-      const g = seg(r);
-      if (i === 0) for (let k = 0; k < 4; k++) g.set(Math.round(g._c[0] + 1 + k * 0.5), Math.round(g._c[1] + r) + k, Math.round(g._c[2]), tone(md.accent, 0.1));
-      const offs = [[0, 17, 0], [3.5, -5, 0], [4, -5, 0], [5, -3, 0], [4.5, -0.5, 0], [4, 0.5, 0]];
-      m.part('s' + i, g, g._c, offs[i], parent);
-      parent = 's' + i;
+      const n = 's' + i;
+      m.bone(n, offs[i], parent);
+      m.ell(n, [0, 0, 0], [r, r * 0.95, r * 0.85], crust, { k: 0.06 });
+      if (i < 5) m.cap(n, [0, 0, 0], offs[i + 1], r * 0.86, radii[i + 1] * 0.86, crust, { k: 0.05 });
+      else m.cap(n, [0, 0, 0], [0.28, 0.05, 0], r * 0.86, 0.025, crust, { k: 0.04 });
+      m.ell(n, [-0.02, -r * 0.6, 0], [r * 0.9, r * 0.5, r * 0.7], belly, { op: 'paint' });
+      if (i < 5) m.cap(n, [0.02, r * 0.75, 0], [0.12, r * 1.5, 0], r * 0.22, 0.012, horn, { k: 0.02 });
+      parent = n;
     });
-    const h = grid(13, 10, 10);
-    h.ellipsoid(7, 5, 5, 5.4, 4, 4.4, shadeBody(md.body, 5, 4, 5, 4.4, { belly: md.belly, bellyY: -0.5 }));
-    h.ellipsoid(2.5, 4, 5, 3, 2.4, 3, tone(md.body, 0.04));
-    eye(h, 4, 7, 2, md.eye); eye(h, 4, 7, 8, md.eye);
-    for (const z of [2, 8]) h.line(8, 8, z, 12, 10, z + (z < 5 ? -1 : 1), 0.6, () => tone(md.accent, 0.2));
-    h.set(0, 5, 4, gl('#ffd04a')); h.set(0, 5, 6, gl('#ffd04a'));
-    m.part('head', h, [9, 4, 5], [-3, 3, 0], 's0');
-    const jaw = grid(9, 3, 8);
-    jaw.box(0, 0, 0, 9, 3, 8, tone(md.belly, -0.05));
-    for (let z = 1; z < 8; z += 2) jaw.set(0, 3, z, pk('#fff6e0'));
-    jaw.box(1, 2, 2, 7, 3, 6, gl('#ff6a1a'));
-    m.part('jaw', jaw, [8, 2, 4], [0, 1, 0], 'head');
-    const fin = grid(7, 7, 2);
-    for (let y = 0; y < 7; y++) for (let x = 0; x < 7 - y; x++) fin.set(x, y, 0, tone(x + y > 5 ? md.accent : md.body, -0.05));
-    m.part('finL', fin, [0, 0, 1], [0, 3, 3], 's1', { rot: [-0.6, 0, 0.2] });
-    m.part('finR', fin, [0, 0, 1], [0, 3, -3], 's1', { rot: [0.6, 0, 0.2] });
+    m.bone('head', [-0.18, 0.18, 0], 's0');
+    m.ell('head', [-0.06, 0.04, 0], [0.2, 0.15, 0.15], crust, { k: 0.06 });
+    m.cap('head', [-0.15, 0.02, 0], [-0.37, -0.02, 0], 0.12, 0.07, crust, { k: 0.05 });
+    for (const s of SIDES) {
+      m.cap('head', [-0.02, 0.13, s * 0.1], [-0.2, 0.11, s * 0.09], 0.04, 0.025, crust, { k: 0.03 });
+      m.tube('head', hornPath([0.05, 0.12, s * 0.1], [1, 0.5, s * 0.5], [0, 1, 0], 0.3, 1.1, 5), (t) => 0.05 * (1 - t) + 0.012, horn, { k: 0.02 });
+      beady(m, 'head', [-0.18, 0.085, s * 0.095], 0.024, md.eye, 1.8);
+      m.sph('head', [-0.37, 0.02, s * 0.03], 0.012, mouthM, { k: 0.004 });
+    }
+    m.ell('head', [-0.24, -0.06, 0], [0.16, 0.018, 0.09], mouthM, { op: 'sub', k: 0.01 });
+    m.bone('jaw', [0.05, -0.06, 0], 'head');
+    m.ell('jaw', [-0.2, -0.04, 0], [0.2, 0.04, 0.1], crust, { k: 0.02 });
+    m.ell('jaw', [-0.2, -0.05, 0], [0.24, 0.06, 0.13], null, { op: 'bind' });
+    const fin = [[0, 0], [0.32, 0.04], [0.26, 0.14], [0.3, 0.24], [0.08, 0.2]];
+    const finM = m.mat('membrane', md.body, { acc: md.belly, glow: '#ff6a1a', gk: 2.4 });
+    m.bone('finL', [0, 0.18, 0.18], 's1', { rot: [-0.6, 0, 0.2] });
+    m.plate('finL', [0, 0, 0], fin, 0.006, 0.007, finM, { k: 0.02 });
+    m.bone('finR', [0, 0.18, -0.18], 's1', { rot: [0.6, 0, 0.2] });
+    m.plate('finR', [0, 0, 0], fin, 0.006, 0.007, finM, { k: 0.02 });
     if (md.glow) m.emitter({ pos: [0.2, 0.4, 0], rate: 10, vel: [0, 0.8, 0], spread: 0.3, posSpread: [0.5, 0.3, 0.2], life: [0.4, 1], size: 1, color: ['#ffd04a', '#ff6a1a'], glow: 3 });
-    m.points({ hit: [-0.25, 0.8, 0], mouth: [-0.75, 0.85, 0], cuts: [[-0.3, 0.8, 0], [0.2, 0.6, 0], [0.6, 0.5, 0], [1.0, 0.45, 0], [0, 0.95, 0.2]] });
+    m.points({ hit: [-0.2, 0.95, 0], mouth: [-0.72, 1.12, 0], cuts: [[-0.3, 0.9, 0], [0.2, 0.6, 0], [0.6, 0.35, 0], [1.0, 0.3, 0], [0, 0.95, 0.2]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
     for (let i = 0; i < 6; i++) {
       const p = m.P('s' + i);
-      p.rotation.z += sin(t * 2.4 - i * 0.8) * 0.18 + (i === 0 ? -e.wind * 0.4 + e.strike * 0.5 : 0);
-      p.rotation.y += sin(t * 1.7 - i * 0.6) * 0.12;
+      p.rotation.z += sin(t * 2.4 - i * 0.8) * 0.12 + (i === 0 ? -e.wind * 0.4 + e.strike * 0.5 : 0);
+      p.rotation.y += sin(t * 1.7 - i * 0.6) * 0.08;
     }
     m.P('head').rotation.z += -e.wind * 0.4 + e.strike * 0.4;
     m.P('jaw').rotation.z += -(e.strike * 0.7 + e.multi * Math.abs(sin(t * 12)) * 0.7 + e.roar * 0.9 + e.wind * 0.2);
@@ -915,24 +1104,31 @@ const wraith = {
   reach: 0.45, die: 'fade',
   build(m, md) {
     m.fly = 0.35;
-    const c = grid(14, 22, 14);
-    c.cylinderY(7, 7, 0, 18, 6.2, 3.4, (x, y, z, k) => {
-      const ang = Math.atan2(z - 7, x - 7);
-      if (y < 4 && (Math.round(ang * 3 + y) % 3 === 0)) return null; // tattered hem
-      return tone(md.body, (y - 9) * 0.02 + ((x + z) % 4 === 0 ? -0.08 : 0));
-    });
-    c.ellipsoid(6, 18, 7, 4.6, 4, 4.6, (x, y, z) => tone(md.body, 0.05));
-    c.ellipsoid(4, 17.5, 7, 3, 2.8, 3, (x, y, z) => (x < 5 ? pk('#06040a') : null));
-    c.set(2, 18, 5, gl(md.eye)); c.set(2, 18, 9, gl(md.eye)); c.set(2, 18, 6, gl(md.eye)); c.set(2, 18, 8, gl(md.eye));
-    c.line(8, 13, 2, 8, 6, 1, 0.5, () => tone('#7a7a8a', 0.1)); // chain
-    m.part('cloak', c, [7, 0, 7], [0, 0, 0]);
-    const arm = grid(10, 4, 4);
-    arm.line(9, 2, 2, 2, 2, 2, 1, () => tone(md.body, -0.05));
-    for (let f = 0; f < 3; f++) arm.line(2, 2, 1 + f, 0, 1 + f, 1 + f, 0.4, () => pk(md.belly));
-    m.part('armF', arm, [9, 2, 2], [-2, 12, -5], 'cloak');
-    m.twin('armB', 'armF', [-2, 12, 5]);
+    const robe = m.mat('cloth', md.body, { acc: md.accent, glow: md.accent, gk: 1.8 });
+    const voidM = m.mat('smooth', '#05030a');
+    const bone = m.mat('bone', md.belly);
+    const chain = m.mat('metal', '#6a6a7a', { acc: '#9a9aaa' });
+    const eyeG = glowMat(m, md.eye, 3.4);
+    m.bone('cloak', [0, 0, 0]);
+    m.cap('cloak', [0, 0.12, 0], [0, 0.9, 0], 0.33, 0.17, robe, { noise: 0.018, nf: 6 });
+    m.ell('cloak', [0.02, 1.04, 0], [0.21, 0.22, 0.21], robe, { k: 0.08 });
+    m.cap('cloak', [0.12, 1.12, 0], [0.24, 1.0, 0], 0.08, 0.02, robe, { k: 0.06 });
+    m.ell('cloak', [-0.17, 1.02, 0], [0.13, 0.15, 0.14], voidM, { op: 'sub', k: 0.04 });
+    for (const s of SIDES) m.sph('cloak', [-0.12, 1.05, s * 0.05], 0.022, eyeG, { k: 0.004 });
+    m.ell('cloak', [0, -0.16, 0], [0.3, 0.3, 0.3], voidM, { op: 'sub', k: 0.03 });
+    for (let i = 0; i < 11; i++) {
+      const a = (i / 11) * PI * 2, L = 0.14 + (i % 3) * 0.07;
+      m.cap('cloak', [cos(a) * 0.3, 0.12, sin(a) * 0.3], [cos(a + 0.1) * 0.34, 0.12 - L, sin(a + 0.1) * 0.34], 0.06, 0.012, robe, { k: 0.03 });
+    }
+    for (let k = 0; k < 8; k++) m.tor('cloak', [-0.24 + k * 0.035, 0.85 - k * 0.07, -0.2 + k * 0.05], 0.035, 0.012, chain, { rot: [(PI / 2) * (k % 2), 0.4, 0.6], k: 0.004 });
+    for (const s of SIDES) {
+      const n = s < 0 ? 'armF' : 'armB';
+      m.bone(n, [-0.12, 0.72, s * 0.3], 'cloak');
+      m.cap(n, [0.24, 0, 0], [0.02, -0.01, 0], 0.05, 0.075, robe, { k: 0.04 });
+      for (let f = 0; f < 3; f++) m.tube(n, [[0.0, 0, (f - 1) * 0.03], [-0.08, -0.02, (f - 1) * 0.04], [-0.15, -0.07, (f - 1) * 0.05]], [0.014, 0.012, 0.008], bone, { k: 0.006 });
+    }
     m.emitter({ pos: [0.1, 0.1, 0], rate: 12, vel: [0.15, -0.2, 0], spread: 0.2, posSpread: [0.3, 0.05, 0.3], life: [0.6, 1.2], size: [1, 2], color: [md.accent, md.body], glow: 1.8, drag: 1 });
-    m.points({ hit: [-0.2, 0.95, 0], mouth: [-0.35, 1.05, 0], cuts: [[-0.2, 1.0, 0], [0, 0.6, 0], [0.1, 0.3, 0], [-0.35, 0.7, -0.3]] });
+    m.points({ hit: [-0.2, 0.9, 0], mouth: [-0.3, 1.05, 0], cuts: [[-0.2, 1.0, 0], [0, 0.6, 0], [0.1, 0.3, 0], [-0.35, 0.7, -0.3]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -949,33 +1145,47 @@ const wraith = {
 const hound = {
   reach: 0.45,
   build(m, md) {
-    const bone = md.body;
-    const b = grid(18, 10, 10);
-    bones(b, [[2, 7, 5], [16, 7, 5]], tone(bone, 0));
-    for (let x = 4; x < 14; x += 2) for (let a = 0; a < 7; a++) { const ang = (a / 6) * Math.PI; b.set(x, Math.round(7 - sin(ang) * 3.6), Math.round(5 + cos(ang) * 3.8), tone(bone, -0.04)); }
-    b.ellipsoid(8, 5, 5, 2.4, 1.8, 1.6, gl(md.accent));
-    b.ellipsoid(15, 6, 5, 2.2, 1.6, 3.2, tone(bone, -0.06));
-    m.part('body', b, [9, 0, 5], [0, 6, 0]);
-    const h = grid(12, 8, 8);
-    h.ellipsoid(7, 4.5, 4, 3.6, 3.2, 3.2, tone(bone, 0.05));
-    h.box(1, 2, 2, 6, 5, 6, tone(bone, 0.02));
-    h.box(3, 5, 2, 5, 6, 3, pk('#141018')); h.box(3, 5, 5, 5, 6, 6, pk('#141018'));
-    h.set(3, 5, 2, gl(md.eye)); h.set(3, 5, 5, gl(md.eye));
-    for (const z of [2, 5]) h.line(9, 7, z + 0.5, 11, 8, z + 0.5, 0.5, () => tone(bone, 0));
-    for (let x = 1; x < 6; x += 2) h.set(x, 1, 2, pk('#ffffff')), h.set(x, 1, 5, pk('#ffffff'));
-    m.part('head', h, [9, 3, 4], [-7, 8, 0], 'body');
-    const jaw = grid(7, 2, 5);
-    jaw.box(0, 0, 0, 7, 2, 5, tone(bone, -0.06));
-    for (let x = 0; x < 6; x += 2) jaw.set(x, 2, 1, pk('#ffffff')), jaw.set(x, 2, 3, pk('#ffffff'));
-    m.part('jaw', jaw, [6, 1, 2.5], [-2, 0, 0], 'head');
-    const leg = grid(4, 8, 3);
-    bones(leg, [[2, 7, 1], [1, 3, 1], [2, 0, 1]], tone(bone, -0.02));
-    leg.box(0, 0, 0, 3, 1, 3, tone(bone, -0.1));
-    m.part('lf', leg, [2, 7, 1], [-5, 1, -3], 'body'); m.twin('lb', 'lf', [5, 1, -3]); m.twin('rf', 'lf', [-5, 1, 3]); m.twin('rb', 'lf', [5, 1, 3]);
-    const tail = grid(7, 6, 3); bones(tail, [[0, 1, 1], [3, 3, 1], [6, 5, 1]], tone(bone, 0));
-    m.part('tail', tail, [0, 1, 1], [8, 7, 0], 'body');
+    m.res = 84;
+    const bone = m.mat('bone', md.body, { acc: shade(md.body, -0.2) });
+    const core = glowMat(m, md.accent, 2.8);
+    const eyeG = glowMat(m, md.eye, 3.2);
+    const voidM = m.mat('smooth', '#0a0610');
+    const sinew = m.mat('flesh', md.belly, { acc: shade(md.belly, -0.3) });
+    m.bone('body', [0, 0.52, 0]);
+    m.tube('body', [[-0.42, 0.1, 0], [-0.2, 0.15, 0], [0.1, 0.13, 0], [0.42, 0.1, 0]], 0.035, bone, { k: 0.02 });
+    for (let k = 0; k < 7; k++) m.cap('body', [-0.36 + k * 0.12, 0.15, 0], [-0.32 + k * 0.12, 0.24 - (k % 2) * 0.03, 0], 0.018, 0.008, bone, { k: 0.01 });
+    for (let k = 0; k < 5; k++) {
+      const x = -0.3 + k * 0.1;
+      for (const s of SIDES) m.tube('body', [[x, 0.13, 0], [x - 0.02, 0.0, s * 0.16], [x - 0.04, -0.14, s * 0.09], [x - 0.04, -0.17, 0]], 0.019, bone, { k: 0.01 });
+    }
+    m.sph('body', [-0.15, 0.0, 0], 0.075, core, { k: 0.01 });
+    m.ell('body', [0.38, 0.06, 0], [0.1, 0.07, 0.13], bone, { k: 0.02 });
+    for (const s of SIDES) m.cap('body', [-0.28, 0.12, s * 0.06], [0.2, 0.11, s * 0.05], 0.014, 0.012, sinew, { k: 0.01 });
+    m.bone('head', [-0.5, 0.2, 0], 'body');
+    m.ell('head', [0.0, 0.04, 0], [0.12, 0.1, 0.1], bone, { k: 0.03 });
+    m.cap('head', [-0.06, 0.02, 0], [-0.26, -0.02, 0], 0.07, 0.04, bone, { k: 0.04 });
+    for (const s of SIDES) {
+      m.sph('head', [-0.08, 0.06, s * 0.055], 0.032, voidM, { op: 'sub', k: 0.01 });
+      m.sph('head', [-0.07, 0.06, s * 0.055], 0.016, eyeG, { k: 0.003 });
+      m.tube('head', hornPath([0.06, 0.08, s * 0.06], [1, 0.6, s * 0.3], [0, 1, 0], 0.16, 1.2, 4), (t) => 0.025 * (1 - t) + 0.01, bone, { k: 0.015 });
+      m.cap('head', [-0.2, -0.03, s * 0.03], [-0.205, -0.075, s * 0.028], 0.012, 0.006, bone, { k: 0.004 });
+    }
+    m.ell('head', [-0.24, 0.015, 0], [0.02, 0.02, 0.018], voidM, { op: 'sub', k: 0.005 });
+    m.bone('jaw', [0.02, -0.04, 0], 'head');
+    m.cap('jaw', [0, -0.02, 0], [-0.22, -0.05, 0], 0.035, 0.024, bone, { k: 0.02 });
+    for (const s of SIDES) m.cap('jaw', [-0.18, -0.04, s * 0.022], [-0.185, 0.0, s * 0.022], 0.01, 0.005, bone, { k: 0.004 });
+    m.cap('jaw', [0, -0.03, 0], [-0.24, -0.06, 0], 0.05, 0.035, null, { op: 'bind' });
+    for (const [n, x, s] of [['lf', -0.3, -1], ['lb', 0.32, -1], ['rf', -0.3, 1], ['rb', 0.32, 1]]) {
+      m.bone(n, [x, 0.05, s * 0.12], 'body');
+      m.tube(n, [[0, 0, 0], [0.03, -0.19, 0], [-0.02, -0.38, 0], [-0.06, -0.5, 0]], 0.022, bone, { k: 0.02 });
+      m.sph(n, [0.03, -0.19, 0], 0.03, bone, { k: 0.01 });
+      m.ell(n, [-0.08, -0.548, 0], [0.05, 0.02, 0.035], bone, { k: 0.015 });
+      for (let f = -1; f <= 1; f++) m.cap(n, [-0.11, -0.55, f * 0.017], [-0.14, -0.56, f * 0.02], 0.009, 0.006, bone, { k: 0.004 });
+    }
+    m.bone('tail', [0.46, 0.08, 0], 'body');
+    m.tube('tail', [[0, 0, 0], [0.12, 0.08, 0], [0.24, 0.2, 0], [0.3, 0.32, 0]], (t) => 0.026 * (1 - t) + 0.01, bone, { k: 0.02 });
     m.emitter({ pos: [0, 0.7, 0], rate: 7, vel: [0, 0.5, 0], spread: 0.15, posSpread: [0.4, 0.1, 0.1], life: [0.4, 0.9], size: 1, color: [md.accent, md.eye], glow: 2.5 });
-    m.points({ hit: [-0.15, 0.7, 0], mouth: [-0.85, 0.85, 0], cuts: [[-0.6, 0.85, 0], [-0.15, 0.7, 0], [0.3, 0.7, 0], [0.5, 0.5, 0], [-0.3, 0.35, 0.2]] });
+    m.points({ hit: [-0.15, 0.55, 0], mouth: [-0.78, 0.7, 0], cuts: [[-0.6, 0.75, 0], [-0.15, 0.62, 0], [0.3, 0.62, 0], [0.5, 0.5, 0], [-0.3, 0.35, 0.2]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -991,32 +1201,35 @@ const hound = {
 const mimic = {
   reach: 0.35,
   build(m, md) {
-    const wood = (x, y, z) => ((y % 3 === 0) ? tone(md.body, -0.18) : tone(md.body, (hash3(x, y >> 1, z, 4) - 0.5) * 0.12));
-    const band = (x, y, z) => tone(md.accent, y * 0.01);
-    const base = grid(16, 9, 12);
-    base.box(0, 0, 0, 16, 9, 12, wood);
-    base.box(1, 2, 1, 15, 9, 11, pk('#3a0a14'));
-    for (const x of [1, 14]) base.box(x, 0, 0, x + 1, 9, 12, band);
-    base.box(0, 0, 0, 16, 1, 12, tone(md.body, -0.2));
-    base.box(0, 5, 5, 1, 8, 7, band); base.set(0, 6, 6, pk('#1a1014'));
-    for (let x = 2; x < 14; x += 2) { base.set(x, 9 - 1, 1, pk('#fff6e0')); base.set(x, 9 - 1, 10, pk('#fff6e0')); }
-    for (let z = 2; z < 11; z += 2) base.set(1, 8, z, pk('#fff6e0'));
-    m.part('base', base, [8, 0, 6], [0, 1, 0]);
-    const lid = grid(16, 6, 12);
-    lid.box(0, 0, 0, 16, 4, 12, wood);
-    lid.box(0, 4, 1, 16, 6, 11, (x, y, z) => tone(md.body, 0.05));
-    for (const x of [1, 14]) lid.box(x, 0, 0, x + 1, 6, 12, band);
-    lid.box(1, 0, 1, 15, 1, 11, pk('#5a1a24'));
-    for (let x = 2; x < 14; x += 2) { lid.set(x, 0, 1, pk('#fff6e0')); lid.set(x, 0, 10, pk('#fff6e0')); }
-    for (let z = 2; z < 11; z += 2) lid.set(1, 0, z, pk('#fff6e0'));
-    lid.set(6, 0, 4, gl(md.eye)); lid.set(6, 0, 7, gl(md.eye)); lid.set(7, 0, 4, pk('#1a1014')); lid.set(7, 0, 7, pk('#1a1014'));
-    m.part('lid', lid, [16, 0, 6], [8, 8, 0], 'base');
-    const tongue = grid(14, 2, 4);
-    tongue.box(0, 0, 0, 14, 2, 4, (x) => tone(md.belly, x < 3 ? 0.15 : 0)); tongue.box(0, 1, 1, 14, 2, 3, tone(md.belly, -0.12));
-    m.part('tongue', tongue, [13, 1, 2], [4, 3, 0], 'base');
-    const leg = limb(2, 2, 2, md.body, { foot: 1, footCol: '#5a3820' });
-    m.part('lf', leg, legPivot(leg), [-5, 1, -4], 'base'); m.twin('lb', 'lf', [5, 1, -4]); m.twin('rf', 'lf', [-5, 1, 4]); m.twin('rb', 'lf', [5, 1, 4]);
-    m.points({ hit: [-0.2, 0.55, 0], mouth: [-0.5, 0.55, 0], cuts: [[-0.3, 0.5, 0], [0.1, 0.75, 0], [0.3, 0.4, 0], [-0.1, 0.3, 0.3], [0.2, 0.6, -0.3]] });
+    const wood = m.mat('wood', md.body, {});
+    const metal = m.mat('metal', md.accent, { acc: '#fff0a0' });
+    const flesh = m.mat('flesh', '#6a1a2a', { acc: '#3a0a14' });
+    const tooth = m.mat('bone', '#f4ecd8', { acc: '#c8b890' });
+    const furM = m.mat('fur', '#3a2a2a', { acc: '#5a3a3a' });
+    const W = 0.47, H = 0.46, D = 0.31;
+    m.bone('base', [0, 0.02, 0]);
+    m.box('base', [0, H / 2, 0], [W, H / 2, D], 0.03, wood);
+    m.box('base', [0, H - 0.05, 0], [W - 0.06, 0.2, D - 0.06], 0.05, flesh, { op: 'sub', k: 0.02 });
+    for (const x of [-0.3, 0.3]) m.box('base', [x, H / 2, 0], [0.03, H / 2 + 0.005, D + 0.006], 0.01, metal, { k: 0.004 });
+    m.box('base', [-W - 0.005, H * 0.7, 0], [0.016, 0.06, 0.05], 0.01, metal, { k: 0.004 });
+    for (let i = 0; i < 7; i++) for (const s of SIDES) m.cap('base', [-0.38 + i * 0.125, H - 0.03, s * (D - 0.04)], [-0.38 + i * 0.125, H + 0.05, s * (D - 0.045)], 0.022, 0.009, tooth, { k: 0.006 });
+    for (let i = 0; i < 4; i++) m.cap('base', [-(W - 0.04), H - 0.03, -0.18 + i * 0.12], [-(W - 0.045), H + 0.05, -0.18 + i * 0.12], 0.022, 0.009, tooth, { k: 0.006 });
+    m.bone('lid', [W, H + 0.02, 0], 'base');
+    m.box('lid', [-W, 0.06, 0], [W, 0.06, D], 0.03, wood, { k: 0.01 });
+    m.ell('lid', [-W, 0.11, 0], [W, 0.12, D], wood, { k: 0.03 });
+    m.box('lid', [-W, -0.01, 0], [W - 0.06, 0.07, D - 0.06], 0.05, flesh, { op: 'sub', k: 0.02 });
+    for (const x of [-0.3, 0.3]) m.box('lid', [-W + x, 0.12, 0], [0.034, 0.14, D + 0.02], 0.01, metal, { op: 'paint' });
+    for (let i = 0; i < 7; i++) for (const s of SIDES) m.cap('lid', [-W - 0.38 + i * 0.125, 0.0, s * (D - 0.04)], [-W - 0.38 + i * 0.125, -0.08, s * (D - 0.045)], 0.022, 0.009, tooth, { k: 0.006 });
+    for (const s of SIDES) m.sph('lid', [-2 * W + 0.1, 0.02, s * 0.12], 0.028, m.mat('eye', '#140c10', { glow: md.eye, gk: 2.2, full: true }), { k: 0.004 });
+    m.box('lid', [-W, 0.1, 0], [W + 0.05, 0.14, D + 0.05], 0.02, null, { op: 'bind' });
+    m.bone('tongue', [0.1, H - 0.08, 0], 'base');
+    m.tube('tongue', [[0, 0, 0], [-0.2, 0.02, 0], [-0.42, 0, 0], [-0.6, 0.04, 0]], (t) => 0.06 - t * 0.02, m.mat('flesh', md.belly, { acc: shade(md.belly, -0.3) }), { k: 0.01 });
+    for (const [n, x, s] of [['lf', -0.3, -1], ['lb', 0.3, -1], ['rf', -0.3, 1], ['rb', 0.3, 1]]) {
+      m.bone(n, [x, 0.06, s * 0.22], 'base');
+      m.tube(n, [[0, 0, 0], [-0.05, -0.06, s * 0.07], [-0.08, -0.19, s * 0.09]], [0.04, 0.032, 0.024], furM, { k: 0.02 });
+      m.cap(n, [-0.08, -0.19, s * 0.09], [-0.12, -0.2, s * 0.1], 0.016, 0.008, tooth, { k: 0.005 });
+    }
+    m.points({ hit: [-0.2, 0.5, 0], mouth: [-0.5, 0.55, 0], cuts: [[-0.3, 0.5, 0], [0.1, 0.75, 0], [0.3, 0.4, 0], [-0.1, 0.3, 0.3], [0.2, 0.6, -0.3]] });
   },
   anim(m) {
     const e = m.env, t = m.t;
@@ -1024,12 +1237,12 @@ const mimic = {
     const open = (1 - d) * (0.55 + sin(t * 5) * 0.12 + e.wind * 0.5 - e.strike * 0.65 + e.multi * Math.abs(sin(t * 14)) * 0.6 + e.roar * 0.5);
     m.P('lid').rotation.z += -Math.max(0, open) * 1.1;
     const tg = m.P('tongue');
-    const flick = sin(t * 1.7) > 0.97 ? 0.3 : 0.06; // a cheeky tongue-tip tell while disguised
+    const flick = sin(t * 1.7) > 0.97 ? 0.3 : 0.06;
     tg.scale.x *= Math.max(flick * d, (1 - d) * (0.8 + sin(t * 3) * 0.15 + e.strike * 0.6));
     tg.rotation.z += -0.3 * (1 - d) + sin(t * 4) * 0.1;
     for (const n of ['lf', 'lb', 'rf', 'rb']) m.P(n).scale.y *= Math.max(0.01, 1 - d);
-    m.P('base').position.y += (1 - d) * Math.abs(sin(t * 7)) * 0.03 - d * 0.1;
-    if (d > 0.5) m.root.scale.y = m.scale * (1 + sin(t * 1.2) * 0.008); // subtle breathing tell
+    m.P('base').position.y += (1 - d) * (0.13 + Math.abs(sin(t * 7)) * 0.03) - d * 0.02;
+    if (d > 0.5) m.root.scale.y = m.scale * (1 + sin(t * 1.2) * 0.008);
     walk(m, ['lf', 'rb', 'rf', 'lb'], 12, 0.2 * (1 - d));
   },
   intro(m, k) {

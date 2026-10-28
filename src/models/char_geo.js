@@ -36,7 +36,7 @@ export function loft(rings, opts = {}) {
       const m = r.s ? r.s(a, r) : 1;
       let x = (r.x || 0) + Math.cos(a) * r.rx * m;
       let z = (r.z || 0) + Math.sin(a) * (r.rz ?? r.rx) * m;
-      let y = r.y;
+      let y = r.y + (r.dy ? r.dy(a) : 0);
       if (r.tilt) { // tilt ring around X (forward lean of the cross-section)
         const dz = z - (r.z || 0);
         y += -Math.sin(r.tilt) * dz; z = (r.z || 0) + Math.cos(r.tilt) * dz;
@@ -56,8 +56,8 @@ export function loft(rings, opts = {}) {
     const v0 = vlen[i] / vt, v1 = vlen[i + 1] / vt;
     for (let k = 0; k < n; k++) {
       const u0 = (k / n) * uS, u1 = ((k + 1) / n) * uS;
-      tri(A[k], A[k + 1], B[k + 1], [u0, v0], [u1, v0], [u1, v1]);
-      tri(A[k], B[k + 1], B[k], [u0, v0], [u1, v1], [u0, v1]);
+      tri(A[k], B[k + 1], A[k + 1], [u0, v0], [u1, v1], [u1, v0]); // CCW seen from outside
+      tri(A[k], B[k], B[k + 1], [u0, v0], [u0, v1], [u1, v1]);
     }
   }
   const cap = (ring, y, flip, v) => {
@@ -232,59 +232,91 @@ export const shade = (c, f) => (f < 0 ? mixc(c, '#1a1028', -f) : mixc(c, '#fff4d
 const toHex = (c) => '#' + c.map((v) => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0')).join('');
 export const shadeHex = (c, f) => toHex(shade(c, f));
 
+/** Quantised low-frequency value patches: the painterly base of every cloth/leather texture. */
+function patches(T, base, amp, seed, freq = 0.07) {
+  for (let y = 0; y < T.h; y++) for (let x = 0; x < T.w; x++) {
+    const n = fbm2(x * freq, y * freq, 3, seed) - 0.5;
+    T.set(x, y, shade(base, n > 0.12 ? amp : n < -0.12 ? -amp : 0));
+  }
+}
 /**
- * Fabric: base colour with woven dither, soft folds, optional bands [{y0, y1, color, pattern}], seams, stitches.
- * o: { w, h, folds=true, bands=[], seamsX=[], stitchY=[], noise=0.06, pattern }
+ * Fabric: painterly value patches, faint weave rows, a few fold strokes, optional bands,
+ * seams, stitches and sewn-on patches (worn adventurer cloth).
+ * o: { w, h, folds=true, bands=[], seamsX=[], stitchY=[], patchesN=0, weave=true }
  */
 export function fabricTex(base, o = {}) {
   const w = o.w || 64, h = o.h || 64, seed = o.seed || 3;
   const T = new Tex(w, h);
-  const hi = shade(base, 0.12), lo = shade(base, -0.14), lo2 = shade(base, -0.26);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    let c = hexToRgb(base);
-    const n = hash2(x, y, seed);
-    if ((x + y * 3) % 4 === 0 && n > 0.45) c = hi;            // weave sparkle
-    if (n < (o.noise ?? 0.06)) c = lo;
-    if (o.folds !== false) {
-      const f = Math.sin(x * 0.35 + fbm2(x * 0.05, y * 0.02, 2, seed) * 5);
-      if (f > 0.86) c = hi; else if (f < -0.9) c = lo;
-    }
-    T.set(x, y, c);
+  patches(T, base, 0.06, seed);
+  if (o.weave !== false) for (let y = 0; y < h; y += 2) for (let x = (y >> 1) % 2; x < w; x += 4) T.set(x, y, shade(base, -0.12), 0.35);
+  if (o.folds !== false) for (let f = 0; f < Math.round(w * h / 380); f++) {
+    let x = Math.floor(hash2(f, 1, seed) * w), y = Math.floor(hash2(f, 2, seed) * h);
+    const len = 5 + Math.floor(hash2(f, 3, seed) * 9), dx = hash2(f, 4, seed) > 0.5 ? 1 : 0;
+    for (let i = 0; i < len; i++) { T.wset(x, (y + i) % h, shade(base, 0.12)); T.wset(x + 1, (y + i) % h, shade(base, -0.13)); if (i % 3 === 2) x += dx; }
+  }
+  for (let p = 0; p < (o.patchesN || 0); p++) {
+    const px0 = Math.floor(hash2(p, 7, seed) * (w - 14)), py0 = Math.floor(hash2(p, 8, seed) * (h - 14)), pw = 8 + Math.floor(hash2(p, 9, seed) * 6), ph = 7 + Math.floor(hash2(p, 10, seed) * 6);
+    const pc = shade(base, hash2(p, 11, seed) > 0.5 ? 0.14 : -0.16);
+    T.rect(px0, py0, pw, ph, pc);
+    for (let i = 0; i < pw; i += 2) { T.set(px0 + i, py0, shade(base, 0.38)); T.set(px0 + i, py0 + ph - 1, shade(base, 0.38)); }
+    for (let j = 0; j < ph; j += 2) { T.set(px0, py0 + j, shade(base, 0.38)); T.set(px0 + pw - 1, py0 + j, shade(base, 0.38)); }
   }
   for (const b of o.bands || []) {
     for (let y = b.y0; y <= b.y1; y++) for (let x = 0; x < w; x++) {
       let c = b.color;
       if (b.pattern === 'zig' && ((x + (y - b.y0) * 2) % 6 < 2)) c = b.color2 || shadeHex(b.color, 0.3);
       if (b.pattern === 'dots' && (x % 6 === 2 && (y - b.y0) === Math.floor((b.y1 - b.y0) / 2))) c = b.color2 || '#ffffff';
-      if (b.pattern === 'rune' && x % 10 < 5 && hash2(Math.floor(x / 5), y, seed + 9) > 0.45 && y > b.y0 && y < b.y1) c = b.color2 || '#ffe08a';
       if (y === b.y0) c = toHex(shade(b.color, 0.25));
       if (y === b.y1) c = toHex(shade(b.color, -0.3));
       T.set(x, y, c);
     }
   }
+  const lo2 = shade(base, -0.26), hi = shade(base, 0.12);
   for (const sx of o.seamsX || []) for (let y = 0; y < h; y++) { T.wset(sx, y, lo2); if (y % 3 === 0) T.wset(sx + 1, y, hi); }
   for (const sy of o.stitchY || []) for (let x = 0; x < w; x++) if (x % 4 < 2) T.set(x, sy, o.stitch || shade(base, 0.35));
   return T;
 }
 
-/** Leather: mottled, scratched, with stitched edges. */
+/** Quilted padding (gambeson): diamond stitch lines, each cell puffed (lit top-left). */
+export function quiltTex(base, o = {}) {
+  const w = o.w || 64, h = o.h || 64, cell = o.cell || 8, seed = o.seed || 5;
+  const T = new Tex(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const u = ((x + y) % cell + cell) % cell, v = ((x - y) % cell + cell) % cell;
+    let f = 0;
+    if (u < 1 || v < 1) f = -0.16; else if (u > cell - 2 || v > cell - 2) f = -0.06; else if (u < 3 && v < 3) f = 0.06;
+    T.set(x, y, shade(base, f + (hash2(x >> 2, y >> 2, seed) - 0.5) * 0.04));
+    if ((u === 0 || v === 0) && (x + y) % 3 === 0) T.set(x, y, shade(base, 0.3));
+  }
+  return T;
+}
+
+/** Hair: long strands with a soft sheen band. */
+export function hairTex(base, o = {}) {
+  const w = o.w || 32, h = o.h || 32, seed = o.seed || 13;
+  const T = new Tex(w, h);
+  for (let x = 0; x < w; x++) {
+    const tone = hash2(x, 0, seed) > 0.72 ? -0.14 : hash2(x, 1, seed) > 0.8 ? 0.1 : 0;
+    for (let y = 0; y < h; y++) {
+      const sheen = Math.abs(y - h * 0.35 - Math.sin(x * 0.5) * 2) < 2 ? 0.12 : 0;
+      T.set(x, y, shade(base, tone + sheen));
+    }
+  }
+  return T;
+}
+
+/** Leather: soft mottled patches, scratches and stitched edges. */
 export function leatherTex(base, o = {}) {
   const w = o.w || 64, h = o.h || 64, seed = o.seed || 7;
   const T = new Tex(w, h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const n = fbm2(x * 0.12, y * 0.12, 3, seed);
-    let c = shade(base, (n - 0.5) * 0.35);
-    if (hash2(x, y, seed + 1) > 0.97) c = shade(base, 0.25);
-    T.set(x, y, c);
-  }
-  // scratches
+  patches(T, base, 0.07, seed, 0.11);
   for (let s = 0; s < (o.scratches ?? 6); s++) {
     let x = hash2(s, 1, seed) * w, y = hash2(s, 2, seed) * h;
-    for (let i = 0; i < 6; i++) { T.set(x, y, shade(base, 0.3)); x += 1; y += hash2(s, i, seed) > 0.5 ? 1 : 0; }
+    for (let i = 0; i < 6; i++) { T.set(x, y, shade(base, 0.22)); x += 1; y += hash2(s, i, seed) > 0.5 ? 1 : 0; }
   }
-  if (o.stitchEdge) for (let x = 0; x < w; x++) if (x % 4 < 2) { T.set(x, 2, '#e8c890'); T.set(x, h - 3, '#e8c890'); }
-  for (const sy of o.stitchY || []) for (let x = 0; x < w; x++) if (x % 4 < 2) T.set(x, sy, '#e8c890');
-  for (const sx of o.stitchX || []) for (let y = 0; y < h; y++) if (y % 4 < 2) T.set(sx, y, '#e8c890');
+  if (o.stitchEdge) for (let x = 0; x < w; x++) if (x % 4 < 2) { T.set(x, 2, '#d8b880'); T.set(x, h - 3, '#d8b880'); }
+  for (const sy of o.stitchY || []) for (let x = 0; x < w; x++) if (x % 4 < 2) T.set(x, sy, '#d8b880');
+  for (const sx of o.stitchX || []) for (let y = 0; y < h; y++) if (y % 4 < 2) T.set(sx, y, '#d8b880');
   return T;
 }
 
@@ -305,10 +337,10 @@ export function furTex(base, o = {}) {
 export function mailTex(base, o = {}) {
   const w = o.w || 64, h = o.h || 64;
   const T = new Tex(w, h);
-  T.fill(toHex(shade(base, -0.45)));
+  T.fill(toHex(shade(base, -0.3)));
   for (let y = 0; y < h; y += 3) for (let x = 0; x < w; x += 4) {
     const ox = (y / 3) % 2 ? 2 : 0;
-    T.wset(x + ox, y, shade(base, 0.25)); T.wset(x + ox + 1, y, shade(base, 0.05));
+    T.wset(x + ox, y, shade(base, 0.16)); T.wset(x + ox + 1, y, shade(base, 0.04));
     T.wset(x + ox - 1, y + 1, shade(base, -0.1)); T.wset(x + ox + 2, y + 1, shade(base, -0.15));
     T.wset(x + ox, y + 2, shade(base, -0.25)); T.wset(x + ox + 1, y + 2, shade(base, -0.2));
   }

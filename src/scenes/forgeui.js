@@ -1,5 +1,8 @@
-// The portable forge: an illustrated blacksmith's recipe book where you pick a blueprint and ore cards,
-// watch the Chips × Mult calculation resolve (Balatro style), then hammer the hot metal in rhythm.
+// The forge workbench. Your material cards lie on a scorched, lamp-lit bench; pick them and they go
+// into the cast-iron mould. The open recipe book on the left (ribbon bookmarks = blueprints, paper
+// index tabs = Forge / Codex / Tools) shows the weapon taking shape; the chalk slate on the right
+// tallies Chips × Mult (Balatro style). Pull the brass FORGE plaque, then hammer the hot billet
+// in rhythm on the anvil.
 //   const ctrl = openForge(scene, { mode: 'weapon'|'pickaxe', monster, emergency, anvil, rig, world, onDone })
 //   each frame: ctrl.update(dt); ctrl.draw(ui)   (while ctrl.active)
 import { Tweens, Coroutines } from '../core/tween.js';
@@ -8,16 +11,23 @@ import { MATERIALS, TOOL_RECIPES, RARITY } from '../data/materials.js';
 import { MONSTERS } from '../data/monsters.js';
 import { evaluate, finalizeWeapon, gradeFrom, GRADES, SYNERGIES } from '../systems/forge.js';
 import { matOf, itemTooltip, makeItem } from '../systems/items.js';
-import { materialCard, weaponCard, drawCard } from '../ui/cards.js';
+import { materialCard, weaponCard, drawCard, CARD_W, CARD_H } from '../ui/cards.js';
 import { weaponSprite, materialSprite } from '../art/sprites.js';
 import { COLORS, bigText } from '../ui/font.js';
-import { ring, dim, ribbonTitle, prompt } from './common.js';
+import { slate, tag, scrap, CHALK } from '../ui/frames.js';
+import { glowCanvas } from '../art/handpaint.js';
+import { benchCanvas, BENCH_H, moldCanvas, bookCanvas, BOOK, leafCanvas, ribbonCanvas, plaqueCanvas, anvilFaceCanvas } from '../art/forge_art.js';
+import { dim, ribbonTitle } from './common.js';
 import { save } from '../core/save.js';
 import { ease, clamp } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
 import * as THREE from 'three';
 
 const ELEMENT_ICON = { fire: 'fire', ice: 'ice', shock: 'shock', poison: 'poison', bleed: 'bleed', curse: 'curse', holy: 'holy' };
+const INK = '#3a2214', FAINT = '#7a5634', RED_INK = '#8a2a14';
+const CHALK_BLUE = ['#e8f4ff', '#8cc0ff'], CHALK_RED = ['#ffe6e0', '#ff8a7a'], CHALK_WHITE = ['#ffffff', '#cfc6b4'];
+const RIBBON_COLORS = ['#a8282e', '#2a5a8a', '#3a7a3a', '#8a5a1a', '#6a3a8a', '#2a7a7a', '#8a2a5a'];
+const BENCH_Y = 540 - BENCH_H;
 
 export function openForge(scene, opts) { return new ForgeController(scene, opts); }
 
@@ -37,13 +47,14 @@ class ForgeController {
     this.bps = bps;
     this.bp = this.mode === 'pickaxe' ? 'pickaxe' : this.run.lastBp && bps.includes(this.run.lastBp) ? this.run.lastBp : bps[0];
     this.sel = [];
-    this.anim = { open: 0, chips: 0, mult: 0, dmg: 0, step: -1, flash: 0, bookY: 30 };
-    this.tw.to(this.anim, { open: 1 }, 0.45, { ease: 'outBack' });
+    this.anim = { open: 0, chips: 0, mult: 0, dmg: 0, step: -1, flash: 0, hide: 0, reveal: 0 };
+    this.tw.to(this.anim, { open: 1 }, 0.55, { ease: 'outBack' });
     this.floats = [];
     this.banners = [];
     this.t = 0;
-    this.hover = null;
     this.shake = 0;
+    this.flip = null;
+    this.chalkDust = 0;
     this.game.audio && this.game.audio.play('page_turn');
     this.refresh();
   }
@@ -81,8 +92,10 @@ class ForgeController {
     if (i >= 0) { this.sel.splice(i, 1); this.game.audio.play('card_place', { pitch: 0.9 }); }
     else if (this.sel.length < this.slots()) { this.sel.push(it); this.game.audio.play('card_pick', { pitch: 1 + this.sel.length * 0.06 }); }
     else { this.game.audio.play('deny'); this.shake = 0.3; }
+    this.chalkDust = 0.3;
     this.refresh();
   }
+  turnPage(dir = 1) { this.flip = { t: 0, dir }; this.game.audio.play('page_turn'); }
 
   // -------------------------------------------------------------- flow
   forge() {
@@ -105,18 +118,20 @@ class ForgeController {
       a.step = i;
       if (s.kind === 'base') {
         a.chips = s.chips || 0; a.mult = s.mult || 0;
+        this.chalkDust = 0.4;
         au.play('chips_tick'); yield 0.32; continue;
       }
       if (this.mode === 'pickaxe') { au.play('card_flip', { pitch }); pitch += 0.08; this.floatAtSlot(s.idx ?? i - 1, s.notes.join(', ') || 'no effect', COLORS.gold); yield 0.38; continue; }
       if (s.kind === 'item') {
         const slotIdx = s.idx;
-        if (s.chips) { a.chips = (s.totalChips ?? a.chips) - (s.mult || s.xmult !== 1 ? 0 : 0); this.floatAtSlot(slotIdx, `+${s.chips}`, COLORS.chips); au.play('chips_tick', { pitch }); pitch += 0.06; yield 0.2; }
+        if (s.chips) { this.floatAtSlot(slotIdx, `+${s.chips}`, COLORS.chips); au.play('chips_tick', { pitch }); pitch += 0.06; yield 0.2; }
         if (s.mult) { this.floatAtSlot(slotIdx, `+${s.mult} Mult`, COLORS.mult); au.play('mult_tick', { pitch }); pitch += 0.06; yield 0.2; }
         if (s.xmult && s.xmult !== 1) { this.floatAtSlot(slotIdx, `×${s.xmult}`, COLORS.xmult, true); au.play('xmult', { pitch }); this.shake = 0.25; pitch += 0.08; yield 0.28; }
         for (const n of s.notes) if (/ECHO|Amber|Trophy|Grade/.test(n)) this.floatAtSlot(slotIdx, n, COLORS.gold);
         for (const e of Object.keys(ELEMENT_ICON)) if (s[e]) { this.floatAtSlot(slotIdx, `{@${ELEMENT_ICON[e]}}+${s[e]}`, COLORS[e]); }
         a.chips = s.totalChips; a.mult = s.totalMult;
         this.pulse = { slot: slotIdx, t: 0.25 };
+        this.chalkDust = 0.3;
         if (!s.chips && !s.mult && s.xmult === 1) { au.play('card_flip', { pitch }); yield 0.22; }
         continue;
       }
@@ -126,6 +141,7 @@ class ForgeController {
       this.banners.push({ text: s.text, desc: s.desc, t: 0, recipe: isRecipe });
       au.play(isRecipe ? 'recipe_discover' : 'synergy', { pitch: isRecipe ? 1 : pitch });
       this.shake = 0.5;
+      this.chalkDust = 0.5;
       this.game.renderer.doFlash(0.18, isRecipe ? [1, 0.85, 0.4] : [1, 0.6, 0.3]);
       if (s.kind === 'synergy' && save.learn('discovered.synergies', s.id)) this.game.ui.toast(`New synergy: ${s.text}`, { icon: 'sparkle', color: COLORS.gold });
       if (isRecipe && this.run.learnRecipe(s.id)) this.game.ui.toast(`Secret weapon discovered: ${RECIPES[s.id].name}!`, { icon: 'recipe', color: COLORS.legendary, life: 3.5 });
@@ -137,6 +153,7 @@ class ForgeController {
       au.play('dmg_total');
       this.tw.value(0, target, 0.6, (v) => (a.dmg = Math.round(v)), { ease: 'outCubic' });
       this.shake = 0.6;
+      this.chalkDust = 0.8;
       yield 0.9;
     }
     yield 0.25;
@@ -145,7 +162,7 @@ class ForgeController {
 
   floatAtSlot(i, text, color, big = false) {
     const p = this.slotPos(Math.max(0, i));
-    this.floats.push({ x: p.x + 11, y: p.y - 2, text, color, big, t: 0 });
+    this.floats.push({ x: p.x + p.w / 2, y: p.y - 4, text, color, big, t: 0 });
   }
 
   // -------------------------------------------------------------- hammer minigame
@@ -160,14 +177,13 @@ class ForgeController {
     // rhythm runs on the wall clock (the AudioContext may be suspended); audio is scheduled with an offset
     au.metronome(bpm, 4, au.time() + 0.35);
     const t0 = start + beat * 4;
-    let pattern = bp.rhythm.slice();
+    const pattern = bp.rhythm.slice();
     // variation: occasionally swap a beat for an off-beat so it never feels identical
     if (pattern.length > 3 && rnd.chance(0.5)) { const k = rnd.int(1, pattern.length - 2); if (!pattern.includes(pattern[k] + 1) && pattern[k] + 1 < 8) pattern[k] += 1; }
-    this.notes = pattern.map((p, i) => ({ time: t0 + p * beat / 2, i, res: null, dx: [-26, 22, -8, 30, -18, 12, 0][i % 7], dy: [-6, 4, -10, 0, 6, -4, 2][i % 7] }));
+    this.notes = pattern.map((p, i) => ({ time: t0 + p * beat / 2, i, res: null, dx: [-34, 26, -10, 38, -22, 14, 0][i % 7], dy: [-3, 2, -5, 0, 3, -2, 1][i % 7] }));
     this.hammer = { start, t0, beat, end: this.notes[this.notes.length - 1].time + 0.5, combo: 0, heat: 1, countIn: [0, 1, 2, 3].map((k) => start + k * beat) };
     this.hits = [];
-    this.anim.bookHide = 0;
-    this.tw.to(this.anim, { bookHide: 1 }, 0.4, { ease: 'inBack' });
+    this.tw.to(this.anim, { hide: 1 }, 0.45, { ease: 'inBack' });
     if (this.opts.rig && this.opts.anvil) {
       const a = this.opts.anvil;
       this.savedCam = { pos: this.opts.rig.tPos.toArray(), look: this.opts.rig.tLook.toArray(), fov: this.opts.rig.tFov };
@@ -183,7 +199,8 @@ class ForgeController {
       const p = this.opts.rig.project(new THREE.Vector3(this.opts.anvil.x, this.opts.anvil.y + 0.55, this.opts.anvil.z), ui.w, ui.h);
       return { x: p.x, y: p.y };
     }
-    return { x: ui.w / 2, y: ui.h / 2 + 10 };
+    // the painted anvil: the billet lies across its face
+    return { x: ui.w / 2 + 2, y: 268 };
   }
 
   judge(note, dt) {
@@ -212,18 +229,20 @@ class ForgeController {
     const x = p.x + n.dx, y = p.y + n.dy;
     const ui = this.game.ui;
     this.opts.onStrike && this.opts.onStrike(r, n);
+    this.strikeT = 0.12;
     if (r === 'miss') {
       h.combo = 0;
+      h.heat = Math.max(0.3, h.heat - 0.12);
       au.play('hammer_miss');
-      ui.float('MISS', x, y - 10, { color: '#8a8078', vy: -14 });
+      ui.float('miss', x, y - 10, { color: '#a89a8a', vy: -14 });
       return;
     }
     h.combo++;
     const perfect = r === 'perfect';
     au.play(perfect ? 'hammer_perfect' : 'hammer_good', { pitch: 1 + Math.min(h.combo, 8) * 0.03 });
     if (perfect) au.play('anvil_ring', { vol: 0.5, pitch: 1 + h.combo * 0.04 });
-    ui.float(perfect ? 'PERFECT!' : 'GOOD', x, y - 12, { big: perfect, scale: 1, top: perfect ? '#fff6c8' : '#e0ffe0', bottom: perfect ? '#ffb63d' : '#5fd17a', color: '#7dff8a', vy: -20 });
-    ui.burst(x, y, perfect ? 26 : 12, { colors: ['#fff6c8', '#ffd25e', '#ff8a3a', '#ffffff'], speed: perfect ? 140 : 90, gravity: 220, kind: 'spark', life: 0.7, up: 40 });
+    ui.float(perfect ? 'PERFECT!' : 'good', x, y - 14, { big: perfect, scale: 1, top: perfect ? '#fff6c8' : '#e0ffe0', bottom: perfect ? '#ffb63d' : '#5fd17a', color: '#c8ffb0', vy: -20 });
+    ui.burst(x, y, perfect ? 30 : 14, { colors: ['#fff6c8', '#ffd25e', '#ff8a3a', '#ffffff'], speed: perfect ? 150 : 95, gravity: 240, kind: 'spark', life: 0.7, up: 50 });
     this.shake = perfect ? 0.45 : 0.25;
     this.game.hitStop(perfect ? 0.06 : 0.03);
     if (this.opts.rig) this.opts.rig.shake(perfect ? 0.35 : 0.2);
@@ -273,12 +292,15 @@ class ForgeController {
     this.opts.onDone && this.opts.onDone(result);
   }
 
-  // -------------------------------------------------------------- update/draw
+  // -------------------------------------------------------------- update
   update(dt) {
     if (!this.active) return;
     this.t += dt;
     this.tw.update(dt); this.co.update(dt);
     this.shake = Math.max(0, this.shake - dt * 2);
+    this.chalkDust = Math.max(0, this.chalkDust - dt);
+    if (this.strikeT) this.strikeT = Math.max(0, this.strikeT - dt);
+    if (this.flip) { this.flip.t += dt; if (this.flip.t > 0.36) this.flip = null; }
     for (const f of this.floats) f.t += dt;
     this.floats = this.floats.filter((f) => f.t < 1.1);
     for (const b of this.banners) b.t += dt;
@@ -292,298 +314,248 @@ class ForgeController {
     }
   }
 
-  // layout helpers
-  layout() {
-    const ui = this.game.ui;
-    const W = 340, H = 168;
-    const x = Math.round(ui.w / 2 - W / 2 + 14), y = Math.round(this.anim.bookY + (1 - this.anim.open) * -220 - (this.anim.bookHide || 0) * 260);
-    return { x, y, W, H, lx: x + 8, rx: x + W / 2 + 4, pw: W / 2 - 12 };
-  }
+  // -------------------------------------------------------------- layout (960 × 540 stage)
+  open() { return ease.outCubic(clamp(this.anim.open, 0, 1)); }
+  benchY() { return Math.round(BENCH_Y + (1 - this.anim.open) * 190 + this.anim.hide * 200); }
+  bookXY() { return { x: Math.round(14 - (1 - this.anim.open) * 380 - this.anim.hide * 420), y: 58 }; }
+  slateXY() { return { x: Math.round(722 + (1 - this.anim.open) * 260), y: 52 }; }
+  moldXY() { const m = moldCanvas(this.slots()); return { x: Math.round(480 - m.width / 2), y: this.benchY() - 34, m }; }
   slotPos(i) {
-    const L = this.layout();
-    const n = this.slots();
-    const sw = 24, gap = 4;
-    const total = n * sw + (n - 1) * gap;
-    return { x: Math.round(L.rx + (L.pw - total) / 2 + i * (sw + gap)), y: L.y + 30 };
+    const { x, y, m } = this.moldXY();
+    const s = m.slots[clamp(i, 0, m.slots.length - 1)];
+    return { x: x + s.x, y: y + s.y, w: s.w, h: s.h };
   }
 
+  // -------------------------------------------------------------- draw
   draw(ui) {
     if (!this.active) return;
     const inp = this.game.input;
-    if (this.state === 'select' || this.state === 'calc') this.drawBook(ui);
-    if (this.state === 'select') this.drawHand(ui);
+    const sx = this.shake > 0 ? Math.round((Math.random() - 0.5) * this.shake * 6) : 0;
+    const ctx = ui.ctx;
+    if (this.state !== 'hammer' && this.state !== 'result') dim(ui, 0.32 * this.open());
+    ctx.save();
+    ctx.translate(sx, 0);
+    if (this.state === 'hammer' || this.state === 'result') this.drawAnvilStage(ui);
+    if (this.anim.hide < 1) {
+      this.drawBench(ui);
+      this.drawBook(ui);
+    }
+    this.drawSlate(ui);
+    if (this.state === 'select') this.drawPlaque(ui);
+    ctx.restore();
     if (this.state === 'hammer') this.drawHammer(ui);
     if (this.state === 'result') this.drawResult(ui);
-    // floats
+    this.drawBanners(ui);
+    // floats over the mould
     for (const f of this.floats) {
       const k = f.t / 1.1;
-      const y = f.y - ease.outCubic(Math.min(1, k * 1.6)) * 16;
-      ui.ctx.globalAlpha = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
+      const y = f.y - ease.outCubic(Math.min(1, k * 1.6)) * 18;
+      ctx.globalAlpha = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
       if (f.big) { const img = bigText(f.text, { scale: 2, top: '#fff0c0', bottom: '#ff7a3d' }); ui.img(img, Math.round(f.x - img.width / 2), Math.round(y - 10)); }
       else ui.text(f.text, f.x, y, { align: 'center', color: f.color, outline: '#140c10', thick: true });
-      ui.ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1;
     }
-    if (inp.actionPressed('back') && this.state === 'select' && this.tab !== 'forge') this.tab = 'forge';
+    if (inp.actionPressed('back') && this.state === 'select' && this.tab !== 'forge') { this.tab = 'forge'; this.turnPage(-1); }
   }
 
+  // ---- the bench, the mould and the hand of cards
+  drawBench(ui) {
+    const by = this.benchY();
+    ui.img(benchCanvas(), 0, by);
+    // the mould, glowing where molten metal sits
+    const { x: mx, y: my, m } = this.moldXY();
+    ui.img(m, mx, my);
+    const hot = this.state === 'calc';
+    for (let i = 0; i < this.slots(); i++) {
+      const p = this.slotPos(i);
+      const it = this.sel[i];
+      const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+      if (it || hot) {
+        ui.ctx.save();
+        ui.ctx.globalCompositeOperation = 'lighter';
+        ui.ctx.globalAlpha = hot ? 0.55 + Math.sin(this.t * 9 + i) * 0.1 : 0.22;
+        ui.ctx.drawImage(glowCanvas(26, hot ? '#ff8a3a' : '#ffd27a'), cx - 26, cy - 26);
+        ui.ctx.restore();
+      }
+      if (it) {
+        const pulse = this.pulse && this.pulse.slot === i;
+        ui.img(materialSprite(it.id, 32), cx - 16, cy - 17 - (pulse ? 3 : 0));
+        if (this.state === 'select') {
+          const h = ui.hit('slot' + i, p.x, p.y, p.w, p.h);
+          if (h.hover) ui.tooltip(itemTooltip(it));
+          if (h.clicked) this.toggle(it);
+        }
+      } else if (this.state === 'select') {
+        ui.text(String(i + 1), cx, cy - 3, { align: 'center', font: 'small', color: '#5a5664' });
+      }
+    }
+    this.drawHand(ui, by);
+  }
+
+  drawHand(ui, by) {
+    const hand = this.state === 'select' ? this.hand() : this.state === 'calc' ? this.hand() : [];
+    const n = hand.length;
+    const cw = CARD_W;
+    const x0min = 22, avail = 960 - 44;
+    const step = n > 1 ? Math.min(cw + 6, (avail - cw) / (n - 1)) : 0;
+    const total = n > 1 ? step * (n - 1) + cw : cw;
+    const x0 = Math.round(Math.max(x0min, 480 - total / 2));
+    const y0 = by + 40;
+    if (!n && this.state === 'select') {
+      const s = scrap(280, 44, { seed: 3 });
+      ui.img(s, 480 - 140, y0 + 18);
+      ui.text(this.mode === 'pickaxe' ? 'No materials to make a pickaxe.' : 'No forgeable materials! Mine more ore.', 480, y0 + 18 + s.inner.y + 6, { align: 'center', color: RED_INK });
+      return;
+    }
+    const sel = this.state === 'select';
+    // hover: the top-most card under the mouse (later cards are drawn on top)
+    let hovered = -1;
+    if (sel) for (let i = n - 1; i >= 0; i--) {
+      const cx = x0 + i * step;
+      const lift = this.sel.includes(hand[i]) ? 22 : 0;
+      if (ui.mx >= cx && ui.mx < cx + (i === n - 1 ? cw : Math.max(step, 6)) && ui.my >= y0 - lift - 8 && ui.my < y0 + CARD_H) { hovered = i; break; }
+    }
+    hand.forEach((it, i) => {
+      const selected = this.sel.includes(it);
+      const cx = Math.round(x0 + i * step);
+      const lift = (selected ? 22 : 0) + (i === hovered ? 8 : 0);
+      const wob = Math.round(Math.sin(this.t * 1.6 + i * 0.7) * 1);
+      const tilt = ((i - (n - 1) / 2) / Math.max(1, n)) * 1.2;
+      const card = materialCard({ ...it, bagBonus: undefined }, { selected, dim: !sel });
+      if (selected) {
+        ui.ctx.save(); ui.ctx.globalCompositeOperation = 'lighter'; ui.ctx.globalAlpha = 0.35;
+        ui.ctx.drawImage(glowCanvas(46, '#ffd27a'), cx + cw / 2 - 46, y0 - lift + 50 - 46);
+        ui.ctx.restore();
+      }
+      drawCard(ui, card, cx, y0 + wob, { lift, hover: i === hovered, tilt: i === hovered ? 0 : tilt });
+      if (!sel) return;
+      const hitW = i === n - 1 ? cw : Math.max(6, step);
+      const h = ui.hit('card' + it.uid, cx, y0 - lift, hitW, CARD_H, { sound: false });
+      if (i === hovered) ui.tooltip(itemTooltip(it));
+      if (h.clicked) this.toggle(it);
+    });
+    if (!sel) return;
+    // a chalk count on the bench edge
+    ui.text(`${this.sel.length}/${this.slots()}`, this.moldXY().x - 30, this.moldXY().y + 22, { align: 'center', color: CHALK, outline: '#140c10' });
+    if (!save.data.seen.tips.forge && this.mode === 'weapon') {
+      const s = scrap(268, 52, { seed: 5, nails: 1 });
+      const tx = 480 - 134, ty = y0 - 112;
+      ui.img(s, tx, ty);
+      ui.text('Lay ore & part cards in the mould. Each adds\n{chips}Chips{/} or {mult}Mult{/}. Mix them for synergies,\nthen pull the FORGE plaque!', tx + s.inner.x + 2, ty + s.inner.y, { color: INK, maxW: s.inner.w });
+      if (this.sel.length) { save.data.seen.tips.forge = true; save.write(); }
+    }
+  }
+
+  // ---- the recipe book
   drawBook(ui) {
-    const L = this.layout();
-    const sx = this.shake > 0 ? Math.round((Math.random() - 0.5) * this.shake * 6) : 0;
-    const x = L.x + sx, y = L.y;
-    // cover + pages
-    ui.panel('leather', x - 8, y - 6, L.W + 16, L.H + 14, { tone: 'red' });
-    ui.panel('parchment', x, y, L.W / 2, L.H, { seed: 3, burnt: 0 });
-    ui.panel('parchment', x + L.W / 2, y, L.W / 2, L.H, { seed: 4, burnt: 0 });
-    // spine shadow
-    for (let i = 0; i < 6; i++) ui.rect(x + L.W / 2 - 3 + i, y + 2, 1, L.H - 4, '#3a2414', 0.35 - Math.abs(i - 2.5) * 0.1);
-    // ribbon bookmark
-    ui.rect(x + L.W - 30, y + L.H - 2, 5, 16, '#a8282e'); ui.rect(x + L.W - 30, y + L.H + 12, 2, 3, '#a8282e'); ui.rect(x + L.W - 27, y + L.H + 12, 2, 3, '#a8282e');
-    // tabs on the left (blueprints) + top tabs (Forge / Codex / Tools)
+    const { x, y } = this.bookXY();
+    if (x < -BOOK.w) return;
+    const ctx = ui.ctx;
+    // blueprint ribbons hang out of the bottom of the book
     if (this.mode === 'weapon') {
       this.bps.forEach((b, i) => {
-        const tx = x - 22, ty = y + 8 + i * 22;
         const on = b === this.bp;
-        ui.panel('leather', tx + (on ? 0 : 4), ty, 22, 20, { tone: on ? 'red' : 'dark', stitch: false, rivets: false });
-        ui.icon(BLUEPRINTS[b].icon, tx + (on ? 4 : 8), ty + 5);
-        const h = ui.hit('bp-' + b, tx, ty, 22, 20);
+        const rx = x + 34 + i * 26, len = on ? 46 : 34;
+        const h = ui.hit('bp-' + b, rx, y + BOOK.h - 12, 16, len + 4);
+        const sway = Math.round(Math.sin(this.t * 1.3 + i) * (h.hover ? 0 : 1));
+        ui.img(ribbonCanvas(RIBBON_COLORS[i % RIBBON_COLORS.length], len + (h.hover ? 4 : 0)), rx + sway, y + BOOK.h - 14);
+        ui.icon(BLUEPRINTS[b].icon, rx + sway + 7, y + BOOK.h - 14 + len - 12 + (h.hover ? 4 : 0), { center: true });
         if (h.hover) ui.tooltip({ title: BLUEPRINTS[b].name, body: BLUEPRINTS[b].desc + `\n{chips}${BLUEPRINTS[b].chips} Chips{/} · {mult}${BLUEPRINTS[b].mult} Mult{/} · ${BLUEPRINTS[b].slots} slots · ${BLUEPRINTS[b].speed}s swing` });
         if (h.clicked && this.state === 'select' && b !== this.bp) {
-          this.bp = b; this.game.audio.play('page_turn');
+          const dir = i > this.bps.indexOf(this.bp) ? 1 : -1;
+          this.bp = b; this.turnPage(dir);
           while (this.sel.length > this.slots()) this.sel.pop();
           this.refresh();
         }
       });
     }
+    // paper index tabs along the top edge
     const tabs = this.mode === 'weapon' ? ['forge', 'codex'] : ['forge', 'tools', 'codex'];
     tabs.forEach((t, i) => {
-      const tx = x + 10 + i * 46, ty = y - 18;
       const on = this.tab === t;
-      ui.panel('leather', tx, ty + (on ? 0 : 3), 44, 16, { tone: on ? 'brown' : 'dark', stitch: false, rivets: false });
-      ui.text(t[0].toUpperCase() + t.slice(1), tx + 22, ty + 4 + (on ? 0 : 3), { align: 'center', font: 'body', color: on ? COLORS.gold : COLORS.dim });
-      if (ui.hit('tab-' + t, tx, ty, 44, 16).clicked && this.state === 'select') { this.tab = t; this.game.audio.play('page_turn'); }
+      const tx = x + BOOK.w - 70 - (tabs.length - 1 - i) * 58, ty = y - 14 + (on ? 0 : 4);
+      const c = tag(54, 22, { string: 0, tone: on ? 'paper' : 'manila', seed: i });
+      ui.img(c, tx, ty);
+      ui.text(t[0].toUpperCase() + t.slice(1), tx + 27, ty + 9, { align: 'center', color: on ? RED_INK : FAINT });
+      if (ui.hit('tab-' + t, tx, ty, 54, 18).clicked && this.state === 'select' && t !== this.tab) { const dir = i > tabs.indexOf(this.tab) ? 1 : -1; this.tab = t; this.turnPage(dir); }
     });
-    if (this.tab === 'codex') return this.drawCodex(ui, L, x, y);
-    if (this.tab === 'tools') return this.drawTools(ui, L, x, y);
-
-    const ink = '#3a2618', faint = '#7a5a3a';
-    const bp = BLUEPRINTS[this.bp];
-    // ---------------- left page: illustration + info
-    const lx = x + 10;
-    ui.text(this.opts.emergency ? '{bad}QUICK! RE-FORGE!{/}' : this.mode === 'pickaxe' ? 'Forge a Pickaxe' : 'Forge a Weapon', lx, y + 8, { color: ink });
-    const preview = { bp: this.bp, ids: this.sel.map((s) => s.id), el: this.res.el, grade: 2, recipe: this.res.recipe };
-    const spr = weaponSprite(preview, 48);
-    const wob = this.state === 'calc' ? Math.sin(this.t * 20) * this.shake * 2 : 0;
-    ui.img(spr, lx + 8 + wob, y + 22);
-    // name
-    const nm = this.sel.length ? this.res.name : bp.name;
-    ui.text(nm, lx + 62, y + 24, { color: this.res.recipe ? '#a05a00' : ink, maxW: L.pw - 60 });
-    if (this.mode === 'weapon') {
-      ui.text(`{dim}${bp.speed}s swing · crit ×${bp.crit}{/}`, lx + 62, y + 48, { font: 'small', color: faint });
-      // elements
-      let ex = lx + 62;
-      for (const e of Object.keys(ELEMENT_ICON)) if (this.res.el[e] > 0) { ui.icon(ELEMENT_ICON[e], ex, y + 57); ui.text(String(this.res.el[e]), ex + 10, y + 58, { font: 'small', color: ink }); ex += 22; }
-    } else {
-      ui.text('{dim}Base: 3 strikes{/}', lx + 62, y + 48, { font: 'small', color: faint });
+    ui.img(bookCanvas(), x, y);
+    const L = { x, y, lx: x + 22, rx: x + BOOK.w / 2 + 12, pw: BOOK.w / 2 - 34, top: y + 22, bottom: y + BOOK.h - 18 };
+    if (this.flip && this.flip.t < 0.18) { /* the leaf hides the text mid-turn */ } else if (this.tab === 'codex') this.drawCodex(ui, L);
+    else if (this.tab === 'tools') this.drawTools(ui, L);
+    else this.drawForgePages(ui, L);
+    if (this.flip) {
+      const k = this.flip.t / 0.36;
+      const pw = BOOK.w / 2 - 14;
+      const w = Math.abs(Math.cos(k * Math.PI)) * pw;
+      const leftSide = (k > 0.5) === (this.flip.dir > 0);
+      const leaf = leafCanvas(w, BOOK.h - 30);
+      ui.img(leaf, leftSide ? x + BOOK.w / 2 - leaf.width : x + BOOK.w / 2, y + 12);
     }
-    // monster intel
-    if (this.opts.monster) {
-      const md = MONSTERS[this.opts.monster];
-      ui.text(`vs ${md.name}`, lx, y + 82, { color: '#7a2a1a' });
-      let ix = lx;
-      if (md.weak.length) { ui.text('Weak:', ix, y + 95, { font: 'small', color: faint }); ix += 24; for (const e of md.weak) { ui.icon(ELEMENT_ICON[e] || 'question', ix, y + 93); ix += 11; } ix += 4; }
-      if (md.resist.length) { ui.text('Resists:', ix, y + 95, { font: 'small', color: faint }); ix += 32; for (const e of md.resist) { ui.icon(ELEMENT_ICON[e] || 'question', ix, y + 93); ix += 11; } }
-      if (md.armor) ui.text(`Armor ${md.armor}`, lx, y + 106, { font: 'small', color: faint });
-    }
-    // synergies list
-    let sy = y + 118;
-    for (const sid of this.res.synergies.slice(0, 3)) {
-      const s = SYNERGIES.find((q) => q.id === sid);
-      ui.text(`{@sparkle} {#a05a00}${s.name}{/}`, lx, sy, { font: 'body', color: ink });
-      sy += 11;
-    }
-    if (this.hint) ui.text(`{#6a4a9a}→ ${RECIPES[this.hint.rid].name}? needs ${this.hint.missing.map((m) => MATERIALS[m].name).join(', ')}{/}`, lx, sy + 2, { font: 'small', maxW: L.pw - 4, color: ink });
-
-    // ---------------- right page: slots + math
-    const rx = L.rx + 2;
-    ui.text('Ingredients', rx + L.pw / 2, y + 10, { align: 'center', color: ink });
-    for (let i = 0; i < this.slots(); i++) {
-      const p = this.slotPos(i);
-      const it = this.sel[i];
-      const pulse = this.pulse && this.pulse.slot === i ? 1 + this.pulse.t * 2 : 1;
-      ui.panel('slot', p.x, p.y, 24, 24, { tone: 'leather' });
-      if (it) {
-        ui.img(materialSprite(it.id, 24), p.x + (pulse > 1 ? -1 : 0), p.y - (pulse > 1 ? 2 : 0));
-        ui.rect(p.x, p.y + 22, 24, 2, RARITY[matOf(it).rarity].color);
-        const h = ui.hit('slot' + i, p.x, p.y, 24, 24);
-        if (h.hover) ui.tooltip(itemTooltip(it));
-        if (h.clicked && this.state === 'select') this.toggle(it);
-      } else ui.text(String(i + 1), p.x + 12, p.y + 9, { align: 'center', font: 'small', color: '#5a3a2a' });
-    }
-    if (this.mode === 'weapon') {
-      // chips × mult = damage
-      const by = y + 66;
-      const cw = 48;
-      const cx0 = Math.round(rx + L.pw / 2 - (cw * 2 + 14) / 2);
-      ui.rect(cx0, by, cw, 18, '#1a3a6a'); ui.rect(cx0 + 1, by + 1, cw - 2, 16, '#2f6fc0'); ui.rect(cx0 + 1, by + 1, cw - 2, 2, '#5fa8ff');
-      ui.text(String(Math.round(this.anim.chips)), cx0 + cw / 2, by + 6, { align: 'center', color: '#ffffff', outline: '#0a1a3a', outlineShadow: false });
-      ui.text('×', cx0 + cw + 7, by + 6, { align: 'center', color: ink });
-      const mx0 = cx0 + cw + 14;
-      ui.rect(mx0, by, cw, 18, '#6a1a1a'); ui.rect(mx0 + 1, by + 1, cw - 2, 16, '#c83a3a'); ui.rect(mx0 + 1, by + 1, cw - 2, 2, '#ff7a6a');
-      ui.text(String(Math.round(this.anim.mult * 10) / 10), mx0 + cw / 2, by + 6, { align: 'center', color: '#ffffff', outline: '#3a0a0a', outlineShadow: false });
-      ui.text('Chips', cx0 + cw / 2, by - 8, { align: 'center', font: 'small', color: '#2f5fa0' });
-      ui.text('Mult', mx0 + cw / 2, by - 8, { align: 'center', font: 'small', color: '#a03030' });
-      const dmgVal = this.state === 'calc' ? this.anim.dmg : this.res.dmg;
-      const showDmg = this.state === 'select' || this.anim.dmg > 0;
-      if (showDmg) {
-        const img = bigText(String(dmgVal), { scale: 2, top: '#fff6c8', bottom: dmgVal > 500 ? '#ff5a2a' : '#ffb63d' });
-        ui.img(img, Math.round(rx + L.pw / 2 - img.width / 2), by + 24);
-        ui.text('damage per hit', rx + L.pw / 2, by + 50, { align: 'center', font: 'small', color: faint });
-      }
-    } else {
-      // pickaxe effects list
-      let py = y + 62;
-      const pk = this.res.pick || {};
-      const total = 3 + (pk.strikes || 0);
-      ui.text(`{@pickaxe} Strikes: {#7a2a1a}${total}{/}`, rx + 6, py, { color: ink }); py += 13;
-      for (const k of Object.keys(pk)) if (k !== 'strikes') { ui.text(`• ${PICK_TEXT[k] || k}`, rx + 6, py, { font: 'body', color: ink, maxW: L.pw - 10 }); py += 11; if (py > y + L.H - 30) break; }
-    }
-    if (this.res.error && this.sel.length) ui.text(`{bad}${this.res.error}{/}`, rx + 4, y + L.H - 34, { font: 'small', maxW: L.pw - 6, color: ink });
-
-    // banners during calc
-    for (const b of this.banners) {
-      if (b.t > 1.6) continue;
-      const k = b.t / 1.6;
-      const a = k < 0.1 ? k / 0.1 : k > 0.8 ? 1 - (k - 0.8) / 0.2 : 1;
-      const yy = y + L.H / 2 - 10 - this.banners.indexOf(b) * 0 - (1 - ease.outBack(Math.min(1, k * 4))) * 30;
-      ribbonTitle(ui, b.text, x + L.W / 2, yy, b.recipe ? 'gold' : 'purple', a);
-      if (b.desc) { ui.ctx.globalAlpha = a; ui.text(b.desc, x + L.W / 2, yy + 18, { align: 'center', font: 'body', color: '#fff6e0', outline: '#140c10', thick: true }); ui.ctx.globalAlpha = 1; }
-    }
-
-    // buttons
+    // the "skip" choice: a tag tied to the book's corner
     if (this.state === 'select') {
-      const bx = x + L.W - 92, byy = y + L.H + 10;
-      if (ui.button('forge-go', bx, byy, 90, 22, 'FORGE!', { style: 'gold', icon: 'hammer', disabled: !this.res.valid, tip: this.res.valid ? null : this.res.error, key: 'SPACE' }) || (this.game.input.actionPressed('confirm') && this.res.valid)) this.forge();
       const label = this.mode === 'pickaxe' ? 'Old pick only' : this.opts.emergency ? 'Fists!' : 'No weapon';
-      if (ui.button('forge-skip', x, byy, 84, 22, label, { style: 'stone', tip: this.mode === 'pickaxe' ? 'Dig with your trusty old pick: 3 strikes.' : 'Fight bare-handed or try to flee.' })) this.done(null);
+      const c = tag(96, 24, { seed: 9 });
+      const kx = x + BOOK.w - 104, ky = y + BOOK.h + 6;
+      const h = ui.hit('forge-skip', kx, ky, 96, 36);
+      ui.img(c, kx, ky - (h.hover ? 2 : 0));
+      ui.text(label, kx + 48, ky + c.inner.y + 3 - (h.hover ? 2 : 0), { align: 'center', color: INK });
+      if (h.hover) ui.tooltip(this.mode === 'pickaxe' ? 'Dig with your trusty old pick: 3 strikes.' : 'Fight bare-handed or try to flee.');
+      if (h.clicked) this.done(null);
     }
+    void ctx;
   }
 
-  drawHand(ui) {
-    const hand = this.hand();
-    const n = hand.length;
-    const cw = 48;
-    const avail = Math.min(ui.w - 40, 560);
-    const step = n > 1 ? Math.min(cw + 4, (avail - cw) / (n - 1)) : 0;
-    const total = n > 1 ? step * (n - 1) + cw : cw;
-    const x0 = Math.round(ui.w / 2 - total / 2);
-    const y0 = ui.h - 72;
-    if (!n) {
-      ui.panel('dark', ui.w / 2 - 120, y0 + 10, 240, 34);
-      ui.text(this.mode === 'pickaxe' ? 'No materials to make a pickaxe.' : '{bad}No forgeable materials!{/} Mine more ore.', ui.w / 2, y0 + 22, { align: 'center' });
-      return;
-    }
-    // hover detection: top-most card under mouse (later cards drawn on top)
-    let hovered = -1;
-    for (let i = n - 1; i >= 0; i--) {
-      const cx = x0 + i * step;
-      if (ui.mx >= cx && ui.mx < cx + (i === n - 1 ? cw : Math.max(step, 6)) && ui.my >= y0 - 16 && ui.my < y0 + 64) { hovered = i; break; }
-    }
-    hand.forEach((it, i) => {
-      const selected = this.sel.includes(it);
-      const cx = Math.round(x0 + i * step);
-      const lift = (selected ? 14 : 0) + (i === hovered ? 6 : 0);
-      const wob = Math.sin(this.t * 2 + i * 0.7) * 1;
-      const card = materialCard({ ...it, bagBonus: undefined }, { selected });
-      drawCard(ui, card, cx, Math.round(y0 + wob), { lift, hover: i === hovered });
-      if (selected) ui.rect(cx + 20, y0 - lift - 5, 8, 2, '#ffd25e');
-      const hitW = i === n - 1 ? cw : Math.max(6, step);
-      const h = ui.hit('card' + it.uid, cx, y0 - lift, hitW, 64, { sound: false });
-      if (i === hovered) {
-        const tt = itemTooltip(it);
-        ui.tooltip(tt);
-      }
-      if (h.clicked) this.toggle(it);
-    });
-    ui.text(`{dim}Click cards to add them · ${this.sel.length}/${this.slots()} slots{/}`, ui.w / 2, ui.h - 8, { align: 'center', font: 'small' });
-    if (!save.data.seen.tips.forge && this.mode === 'weapon') {
-      const tw = 250, tx = Math.round(ui.w / 2 - tw / 2), ty = y0 - 58;
-      ui.panel('parchment', tx, ty, tw, 40, { seed: 5 });
-      ui.text('Pick ore & part cards. Each adds {chips}Chips{/} or {mult}Mult{/}.\nCombine them for named synergies, then hit FORGE!', ui.w / 2, ty + 8, { align: 'center', color: '#3a2618' });
-      if (this.sel.length) { save.data.seen.tips.forge = true; save.write(); }
-    }
-  }
-
-  drawHammer(ui) {
-    const now = this.now();
-    const h = this.hammer;
-    const p = this.anvilScreen();
-    // heat glow behind the anvil
-    const ctx = ui.ctx;
-    // count-in
-    const ci = h.countIn.filter((t) => now >= t).length;
-    if (now < h.t0) {
-      const label = ['3', '2', '1', 'STRIKE!'][Math.max(0, ci - 1)] || 'Ready…';
-      if (ci > 0) ui.big(label, ui.w / 2, 70, { scale: ci === 4 ? 2 : 3, top: '#fff6c8', bottom: '#ff8a3a' });
-      else ui.big('Ready…', ui.w / 2, 70, { scale: 2 });
-    }
-    // notes: approach rings converging on spots on the hot metal
-    for (const n of this.notes) {
-      const x = p.x + n.dx, y = p.y + n.dy;
-      const dt = n.time - now;
-      if (n.res) continue;
-      if (dt > h.beat * 2) continue;
-      const k = clamp(dt / (h.beat * 2), 0, 1);
-      const r = 5 + k * 26;
-      const a = 1 - k * 0.5;
-      // target spot (glowing metal)
-      ctx.globalAlpha = 0.8;
-      ctx.fillStyle = '#ffe08a'; ctx.fillRect(Math.round(x) - 2, Math.round(y) - 2, 5, 5);
-      ctx.fillStyle = '#fff6c8'; ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3);
-      ctx.globalAlpha = 1;
-      ring(ctx, x, y, 6, '#ffb63d', 1, 0.9);
-      ring(ctx, x, y, r, dt < 0.06 && dt > -0.06 ? '#ffffff' : '#ffd25e', 2, a);
-    }
-    // judgement line / hint
-    const total = this.notes.length, done = this.notes.filter((n) => n.res).length;
-    ui.panel('dark', ui.w / 2 - 90, ui.h - 40, 180, 30);
-    prompt(ui, ui.w / 2 - 80, ui.h - 30, 'SPACE', 'or click on the beat!', this.t);
-    // progress pips
-    for (let i = 0; i < total; i++) {
-      const r = this.notes[i].res;
-      ui.rect(ui.w / 2 - total * 5 + i * 10, ui.h - 50, 8, 4, r === 'perfect' ? '#ffb63d' : r === 'good' ? '#5fd17a' : r === 'miss' ? '#5a4a4a' : '#2a2030');
-    }
-    if (h.combo >= 2) ui.text(`Combo ×${h.combo}`, ui.w / 2, ui.h - 62, { align: 'center', color: COLORS.gold, outline: '#140c10', thick: true });
-    void done;
-  }
-
-  drawResult(ui) {
-    const g = GRADES[this.grade];
-    const k = this.anim.reveal || 0;
-    const cx = ui.w / 2;
-    ui.ctx.globalAlpha = Math.min(1, k * 1.5);
-    ribbonTitle(ui, g.name.toUpperCase(), cx, 24, this.grade === 4 ? 'gold' : this.grade >= 3 ? 'blue' : this.grade >= 2 ? 'green' : 'brown', Math.min(1, k * 1.5));
-    if (this.mode === 'weapon') {
-      const card = weaponCard(this.weapon);
-      const s = 0.6 + 0.4 * k;
-      const ctx = ui.ctx;
-      ctx.save();
-      ctx.translate(Math.round(cx), Math.round(ui.h / 2 - 10));
-      ctx.scale(Math.round(s * 4) / 4, Math.round(s * 4) / 4);
-      ctx.drawImage(card, -Math.round(card.width / 2), -Math.round(card.height / 2));
-      ctx.restore();
-      if (this.grade === 4) ui.burst(cx + (Math.random() - 0.5) * 80, ui.h / 2 + (Math.random() - 0.5) * 100, 1, { colors: ['#ffe08a', '#fff'], kind: 'star', speed: 10, gravity: -10, life: 0.8 });
-    } else {
-      const lines = [this.weapon.name, `{@pickaxe} ${3 + (this.weapon.pick.strikes || 0)} strikes`, ...Object.keys(this.weapon.pick).filter((q) => q !== 'strikes').map((q) => '• ' + (PICK_TEXT[q] || q))];
-      ui.panel('parchment', cx - 90, ui.h / 2 - 50, 180, 24 + lines.length * 11);
-      lines.forEach((l, i) => ui.text(l, cx, ui.h / 2 - 40 + i * 11, { align: 'center', color: '#3a2618' }));
-    }
+  drawForgePages(ui, L) {
+    const bp = BLUEPRINTS[this.bp];
+    // ---- left page: the weapon sketched as it takes shape
+    ui.text(this.opts.emergency ? 'QUICK! RE-FORGE!' : this.mode === 'pickaxe' ? 'A new pickaxe' : bp.name, L.lx + L.pw / 2, L.top, { align: 'center', color: this.opts.emergency ? RED_INK : INK });
+    const preview = { bp: this.bp, ids: this.sel.map((s) => s.id), el: this.res.el, grade: 2, recipe: this.res.recipe };
+    const spr = weaponSprite(preview, 96);
+    const wob = this.state === 'calc' ? Math.sin(this.t * 20) * this.shake * 2 : 0;
+    ui.ctx.globalAlpha = this.sel.length ? 1 : 0.35;
+    ui.img(spr, Math.round(L.lx + L.pw / 2 - 48 + wob), L.top + 12);
     ui.ctx.globalAlpha = 1;
-    if (k >= 1 && (ui.button('forge-take', cx - 50, ui.h - 50, 100, 22, this.mode === 'weapon' ? 'Fight!' : 'Dig!', { style: 'gold', key: 'SPACE' }) || this.game.input.actionPressed('confirm'))) this.done(this.weapon);
+    const nm = this.sel.length ? this.res.name : 'sketch';
+    ui.text(nm, L.lx + L.pw / 2, L.top + 112, { align: 'center', color: this.res.recipe ? '#a05a00' : INK, maxW: L.pw });
+    if (this.mode === 'weapon') {
+      ui.text(`${bp.speed}s swing · crit ×${bp.crit}`, L.lx + L.pw / 2, L.top + 136, { align: 'center', font: 'small', color: FAINT });
+      let ex = L.lx + 4;
+      for (const e of Object.keys(ELEMENT_ICON)) if (this.res.el[e] > 0) { ui.icon(ELEMENT_ICON[e], ex, L.top + 148); ui.text(String(this.res.el[e]), ex + 10, L.top + 149, { font: 'small', color: INK }); ex += 24; }
+    } else ui.text('Base: 3 swings', L.lx + L.pw / 2, L.top + 136, { align: 'center', font: 'small', color: FAINT });
+
+    // ---- right page: notes on the foe, synergies, the recipe hint
+    let ry = L.top;
+    if (this.opts.monster && MONSTERS[this.opts.monster]) {
+      const md = MONSTERS[this.opts.monster];
+      ui.text(`vs ${md.name}`, L.rx, ry, { color: RED_INK, maxW: L.pw });
+      ry += 14;
+      if (md.weak.length) { ui.text('Weak to', L.rx, ry, { font: 'small', color: FAINT }); let ix = L.rx + 36; for (const e of md.weak) { ui.icon(ELEMENT_ICON[e] || 'question', ix, ry - 2); ix += 12; } ry += 12; }
+      if (md.resist.length) { ui.text('Resists', L.rx, ry, { font: 'small', color: FAINT }); let ix = L.rx + 36; for (const e of md.resist) { ui.icon(ELEMENT_ICON[e] || 'question', ix, ry - 2); ix += 12; } ry += 12; }
+      if (md.armor) { ui.text(`Armour ${md.armor}`, L.rx, ry, { font: 'small', color: FAINT }); ry += 12; }
+      ry += 4;
+      for (let x = L.rx; x < L.rx + L.pw; x += 3) ui.rect(x, ry, 2, 1, FAINT, 0.6);
+      ry += 7;
+    }
+    if (this.mode === 'pickaxe') {
+      const pk = this.res.pick || {};
+      for (const k of Object.keys(pk)) if (k !== 'strikes') { ui.text(`• ${PICK_TEXT[k] || k}`, L.rx, ry, { color: INK, maxW: L.pw }); ry += 11; if (ry > L.bottom - 20) break; }
+      if (!Object.keys(pk).filter((k) => k !== 'strikes').length) ui.text('Add ore cards to\nfind pickaxe traits.', L.rx, ry, { color: FAINT });
+    } else {
+      if (this.res.synergies.length) ui.text('Synergies', L.rx, ry, { font: 'small', color: FAINT }), ry += 10;
+      for (const sid of this.res.synergies.slice(0, 4)) {
+        const s = SYNERGIES.find((q) => q.id === sid);
+        ui.text(`{@sparkle} {#a05a00}${s.name}{/}`, L.rx, ry, { color: INK, maxW: L.pw });
+        ry += 11;
+      }
+      if (this.hint) { ry += 2; ui.text(`{#6a3a8a}${RECIPES[this.hint.rid].name}?{/} needs ${this.hint.missing.map((m) => MATERIALS[m].name).join(', ')}`, L.rx, ry, { font: 'small', maxW: L.pw, color: INK }); ry += 22; }
+      if (!this.sel.length) ui.text('Pick cards from the\nbench below.', L.rx, Math.max(ry, L.top + 60), { color: FAINT });
+    }
+    if (this.res.error && this.sel.length) ui.text(this.res.error, L.rx, L.bottom - 16, { font: 'small', maxW: L.pw, color: RED_INK });
   }
 
-  drawCodex(ui, L, x, y) {
-    const ink = '#3a2618';
-    ui.text('Secret Weapons', x + L.W / 4, y + 8, { align: 'center', color: ink });
+  drawCodex(ui, L) {
+    ui.text('Secret Weapons', L.lx + L.pw / 2, L.top - 2, { align: 'center', color: INK });
     const ids = Object.keys(RECIPES);
     const per = 6;
     const page = this.codexPage || 0;
@@ -592,33 +564,34 @@ class ForgeController {
       const r = RECIPES[rid];
       const col = i < per ? 0 : 1;
       const row = i % per;
-      const px = x + 8 + col * (L.W / 2), py = y + 22 + row * 23;
+      const px = col ? L.rx : L.lx, py = L.top + 12 + row * 25;
       const known = this.run.recipes.includes(rid);
       ui.icon(BLUEPRINTS[r.bp].icon, px, py + 2, { alpha: known ? 1 : 0.4 });
-      ui.text(known ? r.name : '? ? ?', px + 12, py, { color: known ? '#7a3a00' : '#8a7a6a' });
-      if (known) r.ings.forEach((ing, k) => ui.img(materialSprite(ing, 12), px + 12 + k * 13, py + 9));
-      else ui.text(r.hint, px + 12, py + 10, { font: 'small', color: '#8a7a6a', maxW: L.W / 2 - 24 });
-      if (ui.hit('codex' + rid, px, py, L.W / 2 - 12, 22).hover && known) ui.tooltip({ title: r.name, body: `${BLUEPRINTS[r.bp].name}: ${r.ings.map((q) => MATERIALS[q].name).join(' + ')}\n${r.text}` });
+      ui.text(known ? r.name : '? ? ?', px + 13, py, { color: known ? '#7a3a00' : '#8a7a6a', maxW: L.pw - 14 });
+      if (known) r.ings.forEach((ing, k) => ui.img(materialSprite(ing, 12), px + 13 + k * 13, py + 10));
+      else ui.text(r.hint, px + 13, py + 10, { font: 'small', color: '#8a7a6a', maxW: L.pw - 14 });
+      if (ui.hit('codex' + rid, px, py, L.pw, 24).hover && known) ui.tooltip({ title: r.name, body: `${BLUEPRINTS[r.bp].name}: ${r.ings.map((q) => MATERIALS[q].name).join(' + ')}\n${r.text}` });
     });
+    ui.text(`${this.run.recipes.length}/${ids.length} discovered`, L.lx, L.bottom - 4, { font: 'small', color: FAINT });
     if (ids.length > per * 2) {
-      if (ui.button('codex-next', x + L.W - 40, y + L.H - 20, 32, 14, '>', { style: 'wood', font: 'small' })) this.codexPage = (page + 1) % Math.ceil(ids.length / (per * 2));
+      const h = ui.hit('codex-next', L.rx + L.pw - 34, L.bottom - 10, 36, 14);
+      ui.text(h.hover ? 'turn ›' : 'turn', L.rx + L.pw - 16, L.bottom - 6, { align: 'center', color: h.hover ? RED_INK : FAINT });
+      if (h.clicked) { this.codexPage = (page + 1) % Math.ceil(ids.length / (per * 2)); this.turnPage(1); }
     }
-    ui.text(`{dim}${this.run.recipes.length}/${ids.length} discovered{/}`, x + 8, y + L.H - 14, { font: 'small' });
   }
 
-  drawTools(ui, L, x, y) {
-    const ink = '#3a2618';
-    ui.text('Mining Tools', x + L.W / 4, y + 8, { align: 'center', color: ink });
+  drawTools(ui, L) {
+    ui.text('Mining Tools', L.lx + L.pw / 2, L.top - 2, { align: 'center', color: INK });
     const bag = this.run.bag;
     TOOL_RECIPES.forEach((tr, i) => {
-      const px = x + 8 + (i % 2) * (L.W / 2), py = y + 24 + Math.floor(i / 2) * 44;
+      const px = i % 2 ? L.rx : L.lx, py = L.top + 12 + Math.floor(i / 2) * 52;
       const m = MATERIALS[tr.out];
       ui.img(materialSprite(tr.out, 24), px, py);
-      ui.text(m.name, px + 28, py, { color: ink });
+      ui.text(m.name, px + 28, py, { color: INK, maxW: L.pw - 28 });
       const opts = [tr.needs, tr.alt].filter(Boolean);
       const usable = opts.find((need) => need.every(([id, n]) => bag.items.filter((it) => it.id === id).length >= n));
-      tr.needs.forEach(([id, n], k) => { ui.img(materialSprite(id, 12), px + 28 + k * 22, py + 12); ui.text('×' + n, px + 41 + k * 22, py + 14, { font: 'small', color: ink }); });
-      if (ui.button('craft' + tr.out, px + 28, py + 26, 60, 14, 'Craft', { style: usable ? 'wood' : 'stone', disabled: !usable, font: 'small', tip: m.desc })) {
+      tr.needs.forEach(([id, n], k) => { ui.img(materialSprite(id, 12), px + 28 + k * 24, py + 12); ui.text('×' + n, px + 41 + k * 24, py + 14, { font: 'small', color: INK }); });
+      if (ui.button('craft' + tr.out, px + 28, py + 28, 56, 16, 'Craft', { style: usable ? 'red' : 'stone', disabled: !usable, font: 'small', tip: m.desc })) {
         for (const [id, n] of usable) for (let k = 0; k < n; k++) bag.remove(bag.items.find((it) => it.id === id));
         bag.add(makeItem(tr.out, 2));
         this.game.audio.play('anvil_ring');
@@ -626,6 +599,204 @@ class ForgeController {
         this.refresh();
       }
     });
+  }
+
+  // ---- the chalk slate: Chips × Mult = damage, then a tally of hammer blows
+  drawSlate(ui) {
+    const { x, y } = this.slateXY();
+    const W = 226, H = 168;
+    const s = slate(W, H, { seed: 2 });
+    const hammer = this.state === 'hammer' || this.state === 'result';
+    const yy = hammer ? y - this.anim.hide * 0 : y;
+    ui.img(s, x, yy);
+    const I = s.inner, cx = x + I.x + I.w / 2;
+    const chalkTitle = (str, ty) => ui.text(str, cx, ty, { align: 'center', color: CHALK });
+    if (this.mode === 'weapon' && !hammer) {
+      chalkTitle(this.state === 'calc' ? 'tallying…' : 'chips  ×  mult', yy + I.y + 2);
+      const chips = bigText(String(Math.round(this.anim.chips)), { scale: 2, top: CHALK_BLUE[0], bottom: CHALK_BLUE[1] });
+      const mult = bigText(String(Math.round(this.anim.mult * 10) / 10), { scale: 2, top: CHALK_RED[0], bottom: CHALK_RED[1] });
+      const ry = yy + I.y + 18;
+      ui.img(chips, Math.round(cx - 18 - chips.width), ry);
+      ui.text('×', cx, ry + 8, { align: 'center', color: CHALK });
+      ui.img(mult, Math.round(cx + 18), ry);
+      // chalk rule
+      for (let k = 0; k < I.w - 24; k += 2) ui.rect(x + I.x + 12 + k, ry + 34 + Math.round(Math.sin(k * 0.3) * 0.6), 2, 1, CHALK, 0.75);
+      const dmgVal = this.state === 'calc' ? this.anim.dmg : this.res.dmg;
+      if (this.state === 'select' || this.anim.dmg > 0) {
+        const d = bigText(String(dmgVal), { scale: 3, top: CHALK_WHITE[0], bottom: dmgVal > 500 ? '#ffb07a' : CHALK_WHITE[1] });
+        ui.img(d, Math.round(cx - d.width / 2), ry + 42);
+        ui.text('damage per hit', cx, ry + 42 + d.height + 2, { align: 'center', font: 'small', color: CHALK });
+      }
+    } else if (!hammer) {
+      chalkTitle(this.state === 'calc' ? 'tempering…' : 'the new pick', yy + I.y + 2);
+      const pk = this.res.pick || {};
+      const sw = bigText(String(3 + (pk.strikes || 0)), { scale: 3, top: CHALK_WHITE[0], bottom: CHALK_WHITE[1] });
+      ui.img(sw, Math.round(cx - sw.width / 2), yy + I.y + 22);
+      ui.text('swings', cx, yy + I.y + 26 + sw.height, { align: 'center', color: CHALK });
+      const traits = Object.keys(pk).filter((k) => k !== 'strikes').length;
+      ui.text(traits ? `${traits} trait${traits > 1 ? 's' : ''}` : 'no traits yet', cx, yy + I.y + 44 + sw.height, { align: 'center', font: 'small', color: CHALK });
+    } else {
+      // hammer tally: one chalk mark per blow
+      chalkTitle(this.state === 'result' ? GRADES[this.grade].name : 'blows', yy + I.y + 2);
+      const n = this.notes.length, gap = Math.min(26, (I.w - 20) / Math.max(1, n));
+      for (let i = 0; i < n; i++) {
+        const r = this.notes[i].res;
+        const mx = Math.round(cx - ((n - 1) * gap) / 2 + i * gap), my = yy + I.y + 34;
+        if (!r) { ui.rect(mx - 3, my + 3, 7, 1, CHALK, 0.35); continue; }
+        if (r === 'perfect') { ui.rect(mx - 4, my, 9, 1, '#ffe6a0'); ui.rect(mx, my - 4, 1, 9, '#ffe6a0'); ui.rect(mx - 2, my - 2, 5, 5, '#ffe6a0', 0.5); }
+        else if (r === 'good') { ui.rect(mx - 3, my, 2, 1, CHALK); ui.rect(mx - 1, my + 1, 2, 1, CHALK); ui.rect(mx + 1, my - 1, 1, 2, CHALK); ui.rect(mx + 2, my - 3, 1, 2, CHALK); }
+        else { for (let k = -3; k <= 3; k++) { ui.rect(mx + k, my + k, 1, 1, '#c8a8a0'); ui.rect(mx + k, my - k, 1, 1, '#c8a8a0'); } }
+      }
+      if (this.hammer && this.hammer.combo >= 2) ui.text(`combo ×${this.hammer.combo}`, cx, yy + I.y + 56, { align: 'center', color: '#ffe6a0' });
+      if (this.mode === 'weapon') {
+        const d = bigText(String(this.res.dmg), { scale: 2, top: CHALK_WHITE[0], bottom: CHALK_WHITE[1] });
+        ui.img(d, Math.round(cx - d.width / 2), yy + I.y + 76);
+        ui.text('damage per hit', cx, yy + I.y + 80 + d.height, { align: 'center', font: 'small', color: CHALK });
+      }
+    }
+    // chalk dust puffs when numbers change
+    if (this.chalkDust > 0 && Math.random() < 0.6) ui.burst(cx + rnd.float(-50, 50), yy + I.y + 40 + rnd.float(-10, 30), 1, { colors: ['#e8e4da', '#cfc8b8'], speed: 10, gravity: -6, life: 0.8, size: 1 });
+  }
+
+  // ---- the big FORGE plaque
+  drawPlaque(ui) {
+    const W = 168, H = 60;
+    const x = Math.round(752 + (1 - this.anim.open) * 260), y = 236;
+    const ok = this.res.valid;
+    const h = ui.hit('forge-go', x, y, W + 20, H + 20, { cursor: ok ? 'hand' : 'arrow' });
+    const state = !ok ? 'off' : h.down ? 'down' : h.hover ? 'hover' : 'idle';
+    const c = plaqueCanvas(W, H, state);
+    const dy = state === 'down' ? 2 : state === 'hover' ? -1 : 0;
+    if (ok) {
+      ui.ctx.save(); ui.ctx.globalCompositeOperation = 'lighter'; ui.ctx.globalAlpha = 0.18 + Math.sin(this.t * 3) * 0.06;
+      ui.ctx.drawImage(glowCanvas(70, '#ffc060'), x + W / 2 - 60, y + H / 2 - 60);
+      ui.ctx.restore();
+    }
+    ui.img(c, x, y + dy);
+    const I = c.inner;
+    const word = this.mode === 'pickaxe' ? 'TEMPER' : 'FORGE!';
+    const hi = bigText(word, { scale: 2, top: ok ? '#fff0b8' : '#8a8478', bottom: ok ? '#e8c070' : '#6e695e' });
+    const lo = bigText(word, { scale: 2, top: ok ? '#4a2c08' : '#1e1c18', bottom: ok ? '#2a1804' : '#141210' });
+    const tx = Math.round(x + I.x + I.w / 2 - lo.width / 2), ty = Math.round(y + dy + I.y + I.h / 2 - lo.height / 2);
+    ui.img(hi, tx, ty + 1);
+    ui.img(lo, tx, ty);
+    ui.text('space', x + W / 2 + 10, y + H + 18, { align: 'center', font: 'small', color: ok ? '#e8d8b8' : '#8a8074', outline: '#140c10' });
+    if (h.hover && !ok && this.res.error) ui.tooltip(this.res.error);
+    if ((h.clicked && ok) || (this.game.input.actionPressed('confirm') && ok)) { this.game.audio.play('click'); this.forge(); }
+    else if (h.clicked) { this.game.audio.play('deny'); this.shake = 0.3; }
+  }
+
+  // ---- hammering
+  drawAnvilStage(ui) {
+    if (this.opts.rig && this.opts.anvil) return; // the 3D anvil is on screen
+    const heat = this.state === 'hammer' ? (this.hammer ? this.hammer.heat : 1) : 0.4;
+    dim(ui, 0.62);
+    const c = anvilFaceCanvas(heat);
+    const ax = Math.round(ui.w / 2 - c.width / 2), ay = 238;
+    ui.ctx.save(); ui.ctx.globalCompositeOperation = 'lighter'; ui.ctx.globalAlpha = 0.35 * heat + Math.sin(this.t * 8) * 0.04;
+    ui.ctx.drawImage(glowCanvas(110, '#ff7a2a'), ui.w / 2 - 110, ay + 30 - 110);
+    ui.ctx.restore();
+    const kick = this.strikeT ? 2 : 0;
+    ui.img(c, ax, ay + kick);
+  }
+
+  drawHammer(ui) {
+    const now = this.now();
+    const h = this.hammer;
+    const p = this.anvilScreen();
+    const ctx = ui.ctx;
+    // count-in, chalky and big
+    const ci = h.countIn.filter((t) => now >= t).length;
+    if (now < h.t0) {
+      const label = ['3', '2', '1', 'STRIKE!'][Math.max(0, ci - 1)] || 'Ready…';
+      if (ci > 0) ui.big(label, ui.w / 2, 120, { scale: ci === 4 ? 2 : 3, top: '#fff6c8', bottom: '#ff8a3a' });
+      else ui.big('Ready…', ui.w / 2, 120, { scale: 2, top: '#fff6c8', bottom: '#d8b890' });
+    }
+    // notes: heat spots on the billet with ember rings closing in
+    for (const n of this.notes) {
+      if (n.res) continue;
+      const x = p.x + n.dx, y = p.y + n.dy;
+      const dt = n.time - now;
+      if (dt > h.beat * 2) continue;
+      const k = clamp(dt / (h.beat * 2), 0, 1);
+      const r = 6 + k * 30;
+      const onBeat = Math.abs(dt) < 0.06;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5 + (1 - k) * 0.4;
+      ctx.drawImage(glowCanvas(10, onBeat ? '#ffffff' : '#ffb040'), Math.round(x - 10), Math.round(y - 10));
+      ctx.restore();
+      ui.rect(x - 1, y - 1, 3, 3, '#fff6c8');
+      // ember ring: broken dashes of hot colour, flickering
+      const steps = Math.max(16, Math.floor(r * 3));
+      for (let s = 0; s < steps; s++) {
+        if ((s + Math.floor(this.t * 20)) % 3 === 0) continue;
+        const a = (s / steps) * Math.PI * 2;
+        ui.rect(Math.round(x + Math.cos(a) * r), Math.round(y + Math.sin(a) * r * 0.7), 2, 1, onBeat ? '#ffffff' : s % 2 ? '#ffd27a' : '#ff8a3a', 1 - k * 0.5);
+      }
+    }
+    // a small paper tag with the hint
+    const t = tag(150, 22, { seed: 4 });
+    ui.img(t, ui.w / 2 - 75, ui.h - 52);
+    ui.text('SPACE or click on the beat', ui.w / 2, ui.h - 52 + t.inner.y + 3, { align: 'center', color: INK });
+  }
+
+  drawResult(ui) {
+    const g = GRADES[this.grade];
+    const k = this.anim.reveal || 0;
+    const cx = ui.w / 2;
+    ui.ctx.globalAlpha = Math.min(1, k * 1.5);
+    ribbonTitle(ui, g.name.toUpperCase(), cx, 40, this.grade === 4 ? 'gold' : this.grade >= 3 ? 'blue' : this.grade >= 2 ? 'green' : 'brown', Math.min(1, k * 1.5));
+    if (this.mode === 'weapon') {
+      const card = weaponCard(this.weapon);
+      const s = Math.max(1, Math.round((1 + k) * 2) / 2) * (k < 1 ? 0.5 + k * 0.5 : 1);
+      const ctx = ui.ctx;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.4 * k;
+      ctx.drawImage(glowCanvas(120, this.grade === 4 ? '#ffd27a' : '#ff9a50'), cx - 120, ui.h / 2 - 130);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, k * 1.5);
+      ctx.translate(Math.round(cx), Math.round(ui.h / 2 - 8));
+      ctx.scale(Math.round(s * 4) / 4, Math.round(s * 4) / 4);
+      ctx.drawImage(card, -Math.round(card.width / 2), -Math.round(card.height / 2));
+      ctx.restore();
+      if (this.grade === 4) ui.burst(cx + (Math.random() - 0.5) * 160, ui.h / 2 + (Math.random() - 0.5) * 220, 1, { colors: ['#ffe08a', '#fff'], kind: 'star', speed: 10, gravity: -10, life: 0.8 });
+    } else {
+      const lines = [this.weapon.name, `${3 + (this.weapon.pick.strikes || 0)} swings`, ...Object.keys(this.weapon.pick).filter((q) => q !== 'strikes').map((q) => '• ' + (PICK_TEXT[q] || q))];
+      const sc = scrap(240, 40 + lines.length * 12, { seed: 8 });
+      const sy = Math.round(ui.h / 2 - sc.height / 2 + 30);
+      ui.img(weaponSprite({ bp: 'pickaxe', ids: this.weapon.ids, el: {}, grade: this.grade }, 96), cx - 48, sy - 100);
+      ui.img(sc, cx - 120, sy);
+      lines.forEach((l, i) => ui.text(l, cx, sy + sc.inner.y + 2 + i * 12, { align: 'center', color: i ? INK : RED_INK }));
+    }
+    ui.ctx.globalAlpha = 1;
+    if (k >= 1) {
+      const W = 120, H = 40, x = Math.round(cx - W / 2 - 10), y = ui.h - 76;
+      const hh = ui.hit('forge-take', x, y, W + 20, H + 20);
+      const c = plaqueCanvas(W, H, hh.down ? 'down' : hh.hover ? 'hover' : 'idle');
+      ui.img(c, x, y);
+      const word = this.mode === 'weapon' ? 'Fight!' : 'Dig!';
+      const lo = bigText(word, { scale: 2, top: '#4a2c08', bottom: '#2a1804' });
+      ui.img(lo, Math.round(x + c.inner.x + c.inner.w / 2 - lo.width / 2), Math.round(y + c.inner.y + c.inner.h / 2 - lo.height / 2));
+      if (hh.clicked || this.game.input.actionPressed('confirm')) this.done(this.weapon);
+    }
+  }
+
+  drawBanners(ui) {
+    for (const b of this.banners) {
+      if (b.t > 1.6) continue;
+      const k = b.t / 1.6;
+      const a = k < 0.1 ? k / 0.1 : k > 0.8 ? 1 - (k - 0.8) / 0.2 : 1;
+      const yy = 196 - (1 - ease.outBack(Math.min(1, k * 4))) * 30;
+      ribbonTitle(ui, b.text, ui.w / 2, yy, b.recipe ? 'gold' : 'purple', a);
+      if (b.desc) {
+        ui.ctx.globalAlpha = a;
+        const sc = scrap(Math.min(320, ui.measure(b.desc) + 30), 30, { seed: 6, nails: 0 });
+        ui.img(sc, Math.round(ui.w / 2 - sc.width / 2), yy + 14);
+        ui.text(b.desc, ui.w / 2, yy + 14 + sc.inner.y + 2, { align: 'center', color: INK });
+        ui.ctx.globalAlpha = 1;
+      }
+    }
   }
 }
 

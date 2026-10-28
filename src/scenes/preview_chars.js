@@ -25,8 +25,12 @@ export class CharPreview extends Scene {
     scene.add(new THREE.HemisphereLight(0x8a8ab0, 0x2a1a14, 0.55));
     const rim = new THREE.PointLight(0x6a9aff, 4, 8, 1.6); rim.position.set(-2.5, 2.2, -1.5); scene.add(rim);
     const ids = ['bran', 'elio', 'durgan', 'clover'];
-    this.chars = ids.map((id, i) => {
+    const only = q.get('only');
+    this.chars = ids.filter((id) => !only || only.includes(id)).map((id) => {
+      const i = ids.indexOf(id);
+      const t0 = performance.now();
       const c = buildCharacter(id);
+      console.warn(`build ${id} ${(performance.now() - t0).toFixed(1)}ms`);
       c.group.position.set(-1.95 + i * 1.3, 0, 0);
       scene.add(c.group);
       if (q.get('seated')) c.setSeated(true, 0.3);
@@ -62,11 +66,14 @@ export class CharPreview extends Scene {
       });
     }
     const cam = q.get('cam') || 'wide';
-    const idx = ids.indexOf(cam);
-    if (idx >= 0) { const x = -1.95 + idx * 1.3; const h = { bran: 1.3, elio: 0.95, durgan: 0.8, clover: 1.1 }[cam]; this.rig.cut([x, h + 0.05, 1.55], [x, h, 0], 30); }
+    const [cid, cmode] = cam.split('_');
+    const idx = ids.indexOf(cid);
+    const HEAD = { bran: 1.53, elio: 1.21, durgan: 0.9, clover: 1.12 };
+    if (idx >= 0 && cmode === 'body') { const x = -1.95 + idx * 1.3; const h = HEAD[cid] * 0.55; this.rig.cut([x + 0.4, h + 0.25, 2.6], [x, h, 0], 34); }
+    else if (idx >= 0) { const x = -1.95 + idx * 1.3; const h = HEAD[cid]; this.rig.cut([x, h + 0.04, 1.05], [x, h, 0], 24); }
     else if (cam === 'faces') this.rig.cut([0, 1.0, 3.2], [0, 0.95, 0], 34);
-    else if (q.get('weapons')) this.rig.cut([0, 0.9, 4.6], [0, 0.75, 0], 40);
-    else this.rig.cut([0, 1.15, 5.4], [0, 0.75, 0], 34);
+    else if (q.get('weapons')) this.rig.cut([0, 0.75, 3.4], [0, 0.72, 0], 40);
+    else this.rig.cut([0, 1.1, 6.2], [0, 0.85, 0], 34);
     this.ff = +(q.get('t') || 0);
   }
   update(dt) {

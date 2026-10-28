@@ -743,6 +743,13 @@ export class CombatScene extends Scene {
   }
 
   *curseBrokenSeq() {
+    const hp = this.heroHead();
+    const hx = this.hero.group.position.x;
+    this.hero.play('victory', { loop: true });
+    this.hero.setExpression('happy');
+    this.rig.moveTo([hx + 0.9, hp.y * 0.75 + 0.35, this.heroHome.z + 2.2 + hp.y * 0.9], [hx + 0.1, hp.y * 0.72, 0], 34, 1.2, 'inOutCubic');
+    this.caption = 'The weapon trembles… and holds.';
+    yield 1.2;
     if (this.wmesh) {
       const wp = this.wmesh.getWorldPosition(V3());
       for (let i = 0; i < 40; i++) {
@@ -750,6 +757,7 @@ export class CombatScene extends Scene {
         yield 0.04;
       }
     }
+    this.caption = null;
     this.say('It… didn\'t break!', 2.4);
     this.game.renderer.doFlash(0.6, [1, 0.95, 0.7]);
     yield 2.6;

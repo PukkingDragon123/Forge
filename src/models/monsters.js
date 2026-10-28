@@ -1,10 +1,11 @@
-// Animated voxel monsters & bosses. buildMonster(id) → Monster (see class docs below).
+// Animated monsters & bosses: each creature is ONE continuous SDF-sculpted mesh (surface nets, flat-shaded,
+// triplanar pixel-art palette texture) driven by a real THREE.Skeleton. buildMonster(id) → Monster (see class docs).
 // Models face −X (toward the player on the left), feet at y = 0, 1 unit ≈ 1 m.
 import * as THREE from 'three';
 import { MONSTERS } from '../data/monsters.js';
-import { meshVoxels } from '../gfx/voxel.js';
 import { ParticleSystem } from '../gfx/particles.js';
 import { clamp, damp, ease } from '../core/math.js';
+import { Sculpt, sculptMaterial, makePrim, roundCone, ADD, SUB, PAINT, BIND } from './monster_kit.js';
 import { NORMAL_ARCHES } from './monster_normals.js';
 import { BOSS_ARCHES } from './monster_bosses.js';
 
@@ -13,8 +14,14 @@ const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES };
 // state → duration (seconds). States missing here hold until the next play().
 const DUR = { attack: 0.45, multi: 0.9, special: 0.9, hurt: 0.3, die: 1.2, intro: 0.9, roar: 1.4 };
 const HOLD = new Set(['idle', 'windup', 'stun', 'die', 'disguise']);
+const OPS = { add: ADD, sub: SUB, paint: PAINT, bind: BIND };
+const _Y = new THREE.Vector3(0, 1, 0), _D = new THREE.Vector3();
+/** Sculpted geometry per monster id (meshing is the expensive part; rigs/materials are rebuilt per instance). */
+const GEO_CACHE = new Map();
+export const MONSTER_STATS = { builds: 0, meshed: 0, ms: 0 };
 
 let SEED = 1;
+const _M = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _E = new THREE.Euler(), _V = new THREE.Vector3(), _S = new THREE.Vector3(1, 1, 1);
 
 /**
  * Monster
@@ -33,6 +40,7 @@ export class Monster {
   constructor(id) {
     const def = MONSTERS[id];
     if (!def) throw new Error('Unknown monster ' + id);
+    const t0 = performance.now();
     this.id = id; this.def = def;
     this.md = def.model;
     this.arch = ARCH[this.md.arch];
@@ -43,11 +51,11 @@ export class Monster {
     this.group.name = 'monster:' + id;
     this.root = new THREE.Group();
     this.group.add(this.root);
-    this.mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    this.glowBase = 2.2;
-    this.glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(2.2, 2.2, 2.2), fog: false });
+    this.sculpt = new Sculpt();
+    this.bones = []; this.boneIdx = {}; this._frames = new Map();
     this.parts = {};
-    this.S = this.arch.S || 0.06;
+    this.rootBone = new THREE.Bone(); this.rootBone.name = '_root';
+    this.root.add(this.rootBone); this.bones.push(this.rootBone); this.boneIdx.root = 0; this._rest(this.rootBone);
     this.state = 'idle'; this.st = 0; this.t = (this.seed * 1.7) % 10;
     this.env = { wind: 0, strike: 0, hurt: 0, dead: 0, stun: 0, roar: 0, special: 0, intro: 1, multi: 0, disguise: 0 };
     this.hits = 3;
@@ -59,11 +67,13 @@ export class Monster {
     this.height = 1;
     this.fly = 0; // hover height in metres (flyers)
     this.reach = this.arch.reach ?? 0.35;
+    this.res = this.boss ? 76 : 64; // sculpt grid resolution (cells along the longest axis)
     this.emitters = [];
-    this.phaseHooks = [];
+    this.layers = [];
     this.onDone = null;
     this.scale = this.boss ? 1 : this.md.scale || 1;
     this.arch.build(this, this.md);
+    this._buildMesh();
     this.root.scale.setScalar(this.scale);
     if (this.emitters.length) {
       this.fx = new ParticleSystem(260, { additive: true });
@@ -73,50 +83,89 @@ export class Monster {
     this.update(0);
     this.group.updateMatrixWorld(true);
     this._finalizePoints();
+    MONSTER_STATS.builds++; MONSTER_STATS.ms += performance.now() - t0;
   }
 
-  // ------------------------------------------------------------ building API (used by archetypes)
-  /** Mesh a grid as a part on a pivot. pivot: grid coords of the joint; at: voxel units in parent space. */
-  part(name, g, pivot, at = [0, 0, 0], parent = 'root', o = {}) {
-    const mesh = meshVoxels(g, { size: o.S || this.S, origin: pivot, material: this.mat, jitter: o.jitter ?? 0.07, seed: this.seed * 7 + Object.keys(this.parts).length });
-    if (mesh.userData.glow) mesh.userData.glow.material = this.glowMat;
-    const p = new THREE.Group();
-    p.name = name;
-    p.add(mesh);
-    const S = o.S || this.S;
-    p.position.set(at[0] * S, at[1] * S, at[2] * S);
-    if (o.order) p.rotation.order = o.order;
-    if (o.rot) p.rotation.set(...o.rot);
-    (parent === 'root' ? this.root : this.parts[parent]).add(p);
-    this._rest(p);
-    this.parts[name] = p;
-    return p;
+  // ------------------------------------------------------------ sculpting API (used by archetypes)
+  /** Palette material for sculpt regions: tile (fur|scale|chitin|stone|…), base hex, o: {acc, glow, gk, full, ts, j}. */
+  mat(tile, base, o) { return this.sculpt.mat(tile, base, o); }
+  /** Rig bone (pivot) at `at` metres in parent space. o: rot [x,y,z], order, scale. */
+  bone(name, at = [0, 0, 0], parent = 'root', o = {}) {
+    const b = new THREE.Bone();
+    b.name = name;
+    b.position.set(at[0], at[1], at[2]);
+    if (o.order) b.rotation.order = o.order;
+    if (o.rot) b.rotation.set(o.rot[0], o.rot[1], o.rot[2]);
+    if (o.scale) b.scale.setScalar(o.scale);
+    (parent === 'root' ? this.rootBone : this.parts[parent]).add(b);
+    this._rest(b);
+    this.parts[name] = b;
+    this.boneIdx[name] = this.bones.length;
+    this.bones.push(b);
+    return b;
   }
-  /** Duplicate an existing part's meshes (shared geometry) at another spot. */
-  twin(name, src, at, parent = null, o = {}) {
-    const s = this.parts[src];
-    const p = new THREE.Group();
-    p.name = name;
-    for (const c of s.children) {
-      if (!c.isGroup || this._isPart(c)) continue;
-      // rebuild the mesh container by hand: Object3D.clone() would JSON-serialise userData (which holds meshes)
-      const g = new THREE.Group();
-      for (const mesh of c.children) {
-        const nm = new THREE.Mesh(mesh.geometry, mesh.material);
-        nm.castShadow = mesh.castShadow; nm.receiveShadow = mesh.receiveShadow; nm.name = mesh.name;
-        g.add(nm);
-      }
-      p.add(g);
+  /** bone-local → root (bind pose) matrix */
+  frame(name) {
+    let f = this._frames.get(name);
+    if (f) return f;
+    f = new THREE.Matrix4();
+    let b = name === 'root' ? this.rootBone : this.parts[name];
+    while (b && b !== this.root) { b.updateMatrix(); f.premultiply(b.matrix); b = b.parent; }
+    this._frames.set(name, f);
+    return f;
+  }
+  _prim(kind, bone, c, rot, q, mat, o = {}) {
+    if (o.dir) _Q.setFromUnitVectors(_Y, _D.set(o.dir[0], o.dir[1], o.dir[2]).normalize());
+    else _Q.setFromEuler(_E.set(rot ? rot[0] : 0, rot ? rot[1] : 0, rot ? rot[2] : 0, o.order || 'XYZ'));
+    _M.compose(_V.set(c[0], c[1], c[2]), _Q, _S);
+    const f = new THREE.Matrix4().multiplyMatrices(this.frame(bone), _M);
+    return this.sculpt.push(makePrim(kind, f, q), OPS[o.op || 'add'], o.k ?? 0.02, mat, this.boneIdx[bone], o);
+  }
+  /** Ellipsoid (r number or [rx,ry,rz]) at c in bone space. o: rot, k (blend), op add|sub|paint, noise, nf */
+  ell(bone, c, r, mat, o = {}) { return this._prim('ell', bone, c, o.rot, { r: typeof r === 'number' ? [r, r, r] : r }, mat, o); }
+  /** Rounded box (half extents h, corner radius). */
+  box(bone, c, h, round, mat, o = {}) { return this._prim('box', bone, c, o.rot, { h, round }, mat, o); }
+  /** Torus (ring radius R, tube r) around local Y. */
+  tor(bone, c, R, r, mat, o = {}) { return this._prim('tor', bone, c, o.rot, { R, r }, mat, o); }
+  /** Plate: 2D polygon in local XY extruded ±h along Z, rounded. */
+  plate(bone, c, poly, h, round, mat, o = {}) { return this._prim('plate', bone, c, o.rot, { poly, h, round }, mat, o); }
+  /** Hexagonal crystal shard from c along local +Y (or o.dir), length len, radius r. */
+  cry(bone, c, len, r, mat, o = {}) { return this._prim('cry', bone, c, o.rot, { len, r, tip: o.tip }, mat, { k: 0.004, ...o }); }
+  /** Round cone between bone-space points a and b. */
+  cap(bone, a, b, ra, rb = ra, mat, o = {}) {
+    const f = this.frame(bone), s = Math.cbrt(Math.abs(f.determinant())) || 1;
+    const A = _V.set(a[0], a[1], a[2]).applyMatrix4(f).toArray(), B = _V.set(b[0], b[1], b[2]).applyMatrix4(f).toArray();
+    return this.sculpt.push(roundCone(A, B, ra * s, rb * s), OPS[o.op || 'add'], o.k ?? 0.02, mat, this.boneIdx[bone], o);
+  }
+  /** Tapered tube through points (radii: number | array | fn(t)). First segment blends with o.k, joints with o.kj. */
+  tube(bone, pts, radii, mat, o = {}) {
+    const R = (i) => (typeof radii === 'function' ? radii(i / (pts.length - 1)) : Array.isArray(radii) ? radii[i] : radii);
+    for (let i = 0; i < pts.length - 1; i++) this.cap(bone, pts[i], pts[i + 1], R(i), R(i + 1), mat, { ...o, k: i === 0 ? o.k ?? 0.02 : o.kj ?? Math.min(R(i), R(i + 1)) * 0.3 });
+  }
+  /** Sphere shorthand */
+  sph(bone, c, r, mat, o = {}) { return this.ell(bone, c, r, mat, o); }
+  /** Non-sculpted attachment (silk thread etc.) riding a bone. */
+  attach(bone, obj) { (bone === 'root' ? this.rootBone : this.parts[bone]).add(obj); return obj; }
+  _buildMesh() {
+    let g = GEO_CACHE.get(this.id);
+    if (!g) {
+      g = this.sculpt.mesh({ res: this.res, bones: this.bones.length, fall: this.fall });
+      GEO_CACHE.set(this.id, g);
+      MONSTER_STATS.meshed++;
     }
-    const S = o.S || this.S;
-    p.position.set(at[0] * S, at[1] * S, at[2] * S);
-    if (o.rot) p.rotation.set(...o.rot); else p.rotation.copy(s.rotation);
-    (parent ? (parent === 'root' ? this.root : this.parts[parent]) : s.parent).add(p);
-    this._rest(p);
-    this.parts[name] = p;
-    return p;
+    this.geo = g;
+    this.mat = sculptMaterial();
+    this.mats = [this.mat];
+    const bb = g.boundingBox, size = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z);
+    this.mat.userData.u.uTexScale.value = (this.texels || 200) / (64 * size);
+    const mesh = new THREE.SkinnedMesh(g, this.mat);
+    mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+    this.root.add(mesh);
+    this.group.updateMatrixWorld(true);
+    mesh.bind(new THREE.Skeleton(this.bones));
+    this.mesh = mesh;
+    this.layers = [...new Set(this.sculpt.prims.filter((p) => p.layer).map((p) => p.layer))];
   }
-  _isPart(o) { return Object.values(this.parts).includes(o); }
   _rest(p) { p.userData.rp = p.position.clone(); p.userData.rr = p.rotation.clone(); p.userData.rs = p.scale.clone(); }
   P(name) { return this.parts[name]; }
   /** Points in root space (metres, before monster scale). */
@@ -131,7 +180,8 @@ export class Monster {
   _finalizePoints() {
     const s = this.scale;
     const v = (a) => new THREE.Vector3(a[0] * s, a[1] * s + this.fly, -a[2] * s);
-    const box = new THREE.Box3().setFromObject(this.root);
+    // bind-pose bounds (skinning every vertex on the CPU for an exact box is needlessly slow)
+    const box = this.geo.boundingBox.clone().applyMatrix4(this.mesh.matrixWorld);
     this.height = this._height ? this._height * this.scale + this.fly : Math.max(0.3, box.max.y);
     this.bounds = box;
     if (this._hit) this.hitPoint = v(this._hit); else this.hitPoint.set((box.min.x + box.max.x) / 2, box.max.y * 0.6, 0);
@@ -159,8 +209,7 @@ export class Monster {
   }
   setPhase(n) {
     this.phase = n;
-    const k = this.glowBase + (n - 1) * 1.3;
-    this.glowMat.color.setRGB(k, k, k);
+    this.mat.userData.u.uGlowMul.value = 1 + (n - 1) * 0.55;
     for (const e of this.emitters) e.boost = 1 + (n - 1) * 0.8;
     if (this.arch.phase) this.arch.phase(this, n);
   }
@@ -210,6 +259,10 @@ export class Monster {
 
     if (this.arch.anim) this.arch.anim(this, dt);
 
+    // hidden parts collapse into their pivot (bones can't be "invisible"); phase layers toggle glow masks
+    for (const b of this.bones) if (!b.visible) b.scale.setScalar(1e-4);
+    if (this.layers.length) this.mat.userData.u.uLayer.value = this.layers.some((n) => this.parts[n] && this.parts[n].visible) ? 1 : 0;
+
     // death
     if (e.dead > 0) {
       const d = ease.outBounce(e.dead);
@@ -233,11 +286,13 @@ export class Monster {
     r.scale.z = -Math.abs(r.scale.z);
 
     // flash
-    if (this.flashT > 0) {
+    if (this.flashT > 0 || this._flashing) {
       this.flashT -= dt;
       const k = Math.max(0, this.flashT / this.flashDur);
-      this.mat.emissive.copy(this.flashColor).multiplyScalar(k * 1.2);
-    } else this.mat.emissive.setRGB(0, 0, 0);
+      const c = this.flashColor;
+      for (const m of this.mats) m.color.setRGB(1 + c.r * k * 2.2, 1 + c.g * k * 2.2, 1 + c.b * k * 2.2);
+      this._flashing = k > 0;
+    }
 
     // particles
     if (this.fx) {
@@ -265,12 +320,16 @@ export class Monster {
   }
 
   dispose() {
-    this.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
-    this.mat.dispose(); this.glowMat.dispose();
+    // sculpted geometry is cached per id and shared; only per-instance resources are released
+    this.root.traverse((o) => { if (o.geometry && o.geometry !== this.geo) o.geometry.dispose(); if (o.material && o.material !== this.mat) o.material.dispose(); });
+    this.mat.dispose();
+    this.mesh.skeleton.dispose();
     if (this.fx) { this.fx.geo.dispose(); this.fx.mat.dispose(); }
     this.group.removeFromParent();
   }
 }
 
 export function buildMonster(id) { return new Monster(id); }
+/** Drop cached sculpt meshes (dev/benchmarks). */
+export function clearMonsterCache() { GEO_CACHE.clear(); }
 export const MONSTER_ARCHETYPES = Object.keys(ARCH);
