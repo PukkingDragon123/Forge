@@ -104,7 +104,7 @@ function cavernBase(region, pal) {
 }
 
 // ------------------------------------------------------------------ mouths
-function paintMouth(p, m, choice, pal, seed) {
+export function paintMouth(p, m, choice, pal, seed) {
   const tun = choice.tunnel, type = choice.type;
   const crawl = tun === 'crawl';
   const timber = ['tunnel', 'minecart', 'elevator', 'stairs', 'crawl'].includes(tun);
