@@ -24,19 +24,25 @@ export function mole(o, B) {
     for (const y of [8, 10, 12]) { const x = -Math.round(2 + (y - 6) * 0.35); w.set(x, y, 7, GOLD[3]); }
     for (let k = 0; k < 5; k++) w.set(3 + (k >> 1), 9 + (k === 2 ? -1 : 0), 7, GOLD[k & 1 ? 2 : 3]);
     box(w, -2, 15, 4, 3, 16, 6, (px) => tone(CLOTH.cream, 0.75));
-    // head, pink snout, nose, ears
+    // head, a soft pink snout with a button nose, whiskers, ears, rosy cheeks
     ell(w, 0, 19, 2, 5, 4.6, 5, furC);
-    seg(w, 0, 18.4, 5.6, 0, 17.6, 10, 1.6, (px, py, pz, t) => tone(PINK, 0.55 + t * 0.15 + (px < 0 ? 0.1 : 0)));
-    ell(w, 0.5, 17.8, 10.8, 1.2, 1.1, 1.1, glowC('#ff6a8a'));
-    for (const sx of [-1, 1]) ell(w, sx * 3.8 + 0.5, 22, 1.8, 1.1, 0.9, 0.6, tone(PINK, 0.6));
-    // tiny spectacles over bead eyes
+    seg(w, 0.5, 18.2, 5.8, 0.5, 17.2, 9.2, 1.7, (px, py, pz, t) => tone(PINK, 0.55 + t * 0.12 + (px < 0 ? 0.1 : 0)));
+    ell(w, 0.5, 17.4, 9.8, 1.25, 1.15, 1.1, C('#ff7a9a'));
+    w.set(0, 18, 10, C('#ffd0dc'));
     for (const sx of [-1, 1]) {
-      w.set(sx * 2, 20, 6, C('#140c10'));
-      torus(w, sx * 2 + 0.5, 20.5, 7, 1.15, 0.45, 'z', GOLD[3]);
-      w.set(sx * 2, 20, 7, (NOAO | C('#d8f4ff')) >>> 0);
-      w.set(sx * 4, 21, 6, GOLD[2]); w.set(sx * 4, 21, 5, GOLD[2]);
+      for (let k = 0; k < 3; k++) w.set(sx > 0 ? 2 + k : -2 - k, 16 + (k === 2 ? 1 : 0) - (k === 0 ? 0 : 0), 8, C('#f4ecd8'));
+      ell(w, sx * 3.8 + 0.5, 22.2, 1.6, 1.1, 0.9, 0.6, tone(PINK, 0.6));
+      w.set(sx > 0 ? 3 : -4, 17, 6, C('#ff9aa8'));
     }
-    w.set(0, 20, 7, GOLD[3]);
+    // tiny round spectacles: gold rims around bright bead eyes, a bridge and arms back to the ears
+    for (const sx of [-1, 1]) {
+      const ex = sx > 0 ? 2 : -3;
+      for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) w.set(ex + dx, 20 + dy, 7, GOLD[(dx + dy) & 1 ? 3 : 2]);
+      w.set(ex, 20, 7, C('#140c10'));
+      w.set(ex, 21, 7, (NOAO | C('#e8fbff')) >>> 0);
+      for (let z = 3; z < 7; z++) w.set(sx > 0 ? 4 : -5, 20, z, GOLD[2]);
+    }
+    w.set(-1, 20, 7, GOLD[3]); w.set(0, 20, 7, GOLD[3]);
     // arms with pink, clawed digging hands; pink feet
     for (const sx of [-1, 1]) {
       seg(w, sx * 5.6, 14, 1.3, sx * 8, 10.5, 3, 1.9, furC);
@@ -47,9 +53,10 @@ export function mole(o, B) {
       for (let k = -1; k <= 1; k++) w.set(Math.round(sx * 3.6) + k, 0, 7, C('#f4ecd8'));
     }
     // floppy felt hat with a red band and a cream feather
-    cyl(w, 0.5, 2.5, 23, 24, 7.6, 7.6, (px, py, pz, d) => tone(HAT, 0.45 + (d > 0.8 ? -0.12 : 0) + (px < 0 ? 0.1 : 0)));
-    cyl(w, 0.5, 2, 24, 30, 4.2, 3.2, (px, py) => (py === 24 || py === 25 ? tone(palOf('#c83a3a'), 0.5) : tone(HAT, 0.55 + (px < 0 ? 0.1 : 0) + (py === 29 ? 0.1 : 0))));
-    seg(w, 3.8, 25, 1.5, 6, 31, -1.5, 0.6, (px, py, pz, t) => tone(CLOTH.cream, 0.6 + t * 0.2));
+    cyl(w, 0.5, 1, 23, 24, 6.2, 6.2, (px, py, pz, d) => (pz > 5 ? undefined : tone(HAT, 0.45 + (d > 0.8 ? -0.12 : 0) + (px < 0 ? 0.1 : 0))));
+    for (let x = -5; x <= 5; x++) if (Math.abs(x) < 5) w.set(x, 24, 6, tone(HAT, 0.5));
+    cyl(w, 0.5, 0.5, 24, 28, 3.6, 2.8, (px, py) => (py === 24 ? tone(palOf('#c83a3a'), 0.5) : tone(HAT, 0.55 + (px < 0 ? 0.1 : 0) + (py === 27 ? 0.1 : 0))));
+    seg(w, 3.2, 25, 0, 5.5, 30, -2, 0.6, (px, py, pz, t) => tone(CLOTH.cream, 0.6 + t * 0.2));
     // the enormous pack: belted, a bedroll on top, kettle and pan hanging, potions in side loops
     box(w, -7, 7, -13, 8, 28, -5, (px, py, pz) => {
       if ([10, 17, 24].includes(py)) return tone(STRAP, 0.45 + (px === 0 ? 0.3 : 0));
