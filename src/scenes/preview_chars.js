@@ -59,6 +59,25 @@ export class CharPreview extends Scene {
       const bps = ['sword', 'staff', 'axe', 'dagger'];
       this.chars.forEach((c, i) => { c.hold(buildWeaponMesh({ bp: bps[i], ids: ['iron', 'coal', 'ruby'], el: { fire: 2 }, grade: 3 })); c.showBackItem(false); });
     }
+    if (q.get('poses')) { // pose sheet: one explorer, frozen at moments of animations (list=anim:seconds,...)
+      this.chars.forEach((c) => c.setVisible(false));
+      const id = q.get('poses'), list = (q.get('list') || 'idle:0').split(','), n = list.length, sp = +(q.get('sp') || 0.95);
+      const BP = { bran: 'hammer', elio: 'staff', durgan: 'axe', clover: 'dagger' };
+      this.posed = list.map((e, i) => {
+        const [anim, t] = e.split(':');
+        const c = buildCharacter(id);
+        c.group.position.set((i - (n - 1) / 2) * sp, 0, 0);
+        c.group.rotation.y = +(q.get('prot') ?? 0.6);
+        scene.add(c.group);
+        if (q.get('hold')) { c.hold(buildWeaponMesh({ bp: q.get('bp') || BP[id], ids: ['iron', 'coal', 'ruby'], el: { fire: 3 }, grade: 4 })); c.showBackItem(false); }
+        c.play(anim === 'block' || anim === 'idleCombat' ? anim : 'idleCombat');
+        for (let k = 0; k < 40; k++) c.update(1 / 60);
+        c.play(anim, { then: anim });
+        for (let k = 0, m = Math.round(+t * 60); k < m; k++) c.update(1 / 60);
+        return c;
+      });
+      this.chars = [];
+    }
     if (q.get('weapons')) {
       this.chars.forEach((c) => c.setVisible(false));
       const list = [
@@ -89,6 +108,7 @@ export class CharPreview extends Scene {
     else if (cam === 'faces') this.rig.cut([0, 1.0, 3.2], [0, 0.95, 0], 34);
     else if (q.get('weapons') && q.get('wcam')) { const x = -2.6 + +q.get('wcam') * 0.65; this.rig.cut([x, 0.75, 1.5], [x, 0.72, 0], 34); }
     else if (q.get('weapons')) this.rig.cut([0, 0.75, 3.4], [0, 0.72, 0], 40);
+    else if (q.get('poses')) { const n = this.posed.length, sp = +(q.get('sp') || 0.95); this.rig.cut([0, 0.95, 1.2 + n * sp * 1.05], [0, 0.8, 0], 34); }
     else if (cam === 'wide') this.rig.cut([0, 1.1, 6.2], [0, 0.85, 0], 34);
     this.ff = +(q.get('t') || 0);
   }

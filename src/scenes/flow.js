@@ -8,7 +8,8 @@ import { checkUnlocks } from '../systems/unlocks.js';
 
 export function startRun(game, charId, seed) {
   game.run = new Run(charId, seed);
-  game.go('map', { intro: true }, { transition: 'iris' });
+  // the dive: the chosen explorer leaves the camp of statues and rides the old lift down
+  game.go('cutscene', { id: 'dive', char: charId, onDone: () => game.go('map', { intro: true }, { transition: 'fade' }) }, { transition: 'iris' });
 }
 
 /** Player picked a tunnel on the map. */

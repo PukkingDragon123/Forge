@@ -15,7 +15,7 @@ mon('rustrat', {
   name: 'Rust Gremlin', region: 0, hp: 42, dmg: 4, interval: 2.4,
   attacks: [{ name: 'Nail Shiv', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Scrap Frenzy', dmg: 0.5, windup: 0.7, kind: 'multi', hits: 3, weight: 0.4 }],
   drops: [{ id: 'rat_tooth', chance: 1 }, { id: 'rat_tail', chance: 0.7 }, { id: 'junk', chance: 0.3 }],
-  model: { arch: 'gremlin', body: '#7c9c5e', belly: '#cace94', accent: '#6c8c52', eye: '#ffd24a', scale: 1 },
+  model: { arch: 'gremlin', body: '#7c9c5e', belly: '#cace94', accent: '#6c8c52', eye: '#ffd24a', scale: 1.15 },
   desc: 'Picks the rails clean of scrap. Its lantern eyes find your coin purse first.',
 });
 mon('cave_bat', {
@@ -29,14 +29,14 @@ mon('ooze', {
   name: 'Tar Ooze', region: 0, hp: 68, dmg: 5, interval: 3.0, resist: ['bleed'], weak: ['fire'],
   attacks: [{ name: 'Tar Slam', dmg: 1, windup: 1.0, kind: 'normal' }, { name: 'Engulf', dmg: 1.4, windup: 1.3, kind: 'heavy', weight: 0.4 }],
   drops: [{ id: 'slime_gel', chance: 1 }, { id: 'slime_gel', chance: 0.5 }, { id: 'copper', chance: 0.3 }],
-  model: { arch: 'slime', body: '#342c3e', belly: '#8a78a8', accent: '#1c1624', eye: '#ffc24a', scale: 1.05, inside: 'nails' },
+  model: { arch: 'slime', body: '#342c3e', belly: '#8a78a8', accent: '#1c1624', eye: '#ffc24a', scale: 1.15, inside: 'nails' },
   desc: 'Pit tar that swallowed nails, ore and at least one pickaxe.',
 });
 mon('kobold', {
   name: 'Kobold Digger', region: 0, hp: 55, dmg: 5, interval: 2.6,
   attacks: [{ name: 'Pick Jab', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Grab Coins', dmg: 0.4, windup: 0.8, kind: 'special', effect: 'steal', weight: 0.35 }],
   drops: [{ id: 'kobold_rag', chance: 0.9 }, { id: 'iron', chance: 0.5 }, { id: 'coal', chance: 0.5 }],
-  model: { arch: 'kobold', body: '#c86a3a', belly: '#e8b88a', accent: '#6a4a2a', eye: '#ffe04a', scale: 1.05 },
+  model: { arch: 'kobold', body: '#c86a3a', belly: '#e8b88a', accent: '#6a4a2a', eye: '#ffe04a', scale: 1.15 },
   coins: [8, 14],
   desc: 'Small, sneaky, smells of lamp oil. Steals coins.',
 });
@@ -44,7 +44,7 @@ mon('rock_beetle', {
   name: 'Pebble Golem', region: 0, hp: 80, dmg: 5, interval: 3.0, armor: 2, weak: ['shock'],
   attacks: [{ name: 'Boulder Bash', dmg: 1, windup: 0.9, kind: 'normal' }, { name: 'Rockslide Roll', dmg: 0.5, windup: 1.0, kind: 'multi', hits: 3, weight: 0.4 }],
   drops: [{ id: 'beetle_shell', chance: 0.9 }, { id: 'mandible', chance: 0.6 }],
-  model: { arch: 'pebblegolem', body: '#8e8278', belly: '#6c6058', accent: '#7ae8ff', eye: '#ffb84a', scale: 1 },
+  model: { arch: 'pebblegolem', body: '#8e8278', belly: '#6c6058', accent: '#7ae8ff', eye: '#ffb84a', scale: 1.15 },
   desc: 'A rolling knot of ore and gravel. Armor 2: every hit is reduced by 2.',
 });
 mon('mole_brute', {
@@ -83,7 +83,7 @@ mon('crystal_crab', {
   name: 'Prism Knight', region: 1, hp: 70, dmg: 5, interval: 2.8, armor: 3, weak: ['shock'],
   attacks: [{ name: 'Prism Slash', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Refract', dmg: 1.4, windup: 1.2, kind: 'heavy', weight: 0.4 }],
   drops: [{ id: 'crab_shell', chance: 0.9 }, { id: 'crystal_claw', chance: 0.7 }, { id: 'amethyst', chance: 0.2 }],
-  model: { arch: 'prismknight', body: '#8c98dc', belly: '#cad2ff', accent: '#ff9af0', eye: '#e4f6ff', scale: 1, crystals: '#9ae8ff' },
+  model: { arch: 'prismknight', body: '#8c98dc', belly: '#cad2ff', accent: '#ff9af0', eye: '#e4f6ff', scale: 1.1, crystals: '#9ae8ff' },
   desc: 'Empty crystal armour that still keeps its oath. Armor 3.',
 });
 mon('gem_slime', {
@@ -129,14 +129,14 @@ mon('shroomling', {
   name: 'Shroomling', region: 2, hp: 58, dmg: 4, interval: 2.4, weak: ['fire'], resist: ['poison'],
   attacks: [{ name: 'Headbutt', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Spore Puff', dmg: 0.6, windup: 1.0, kind: 'special', effect: 'poison', weight: 0.4 }],
   drops: [{ id: 'mushroom_cap', chance: 1 }, { id: 'spore_sac', chance: 0.6 }, { id: 'glowcap', chance: 0.4 }],
-  model: { arch: 'mushroom', body: '#e0d0b0', belly: '#f0e8d0', accent: '#d04a3a', eye: '#1a1a1a', scale: 1.0, cap: '#d04a3a' },
+  model: { arch: 'mushroom', body: '#e0d0b0', belly: '#f0e8d0', accent: '#d04a3a', eye: '#1a1a1a', scale: 1.1, cap: '#d04a3a' },
   desc: 'Angry little hat with legs.',
 });
 mon('moss_snail', {
   name: 'Moss Golem', region: 2, hp: 95, dmg: 5, interval: 3.4, armor: 4, weak: ['ice'],
   attacks: [{ name: 'Moss Slap', dmg: 1, windup: 1.0, kind: 'normal' }, { name: 'Boulder Slam', dmg: 1.6, windup: 1.5, kind: 'heavy', weight: 0.4 }],
   drops: [{ id: 'snail_shell', chance: 1 }, { id: 'slime_gel', chance: 0.6 }, { id: 'fossil', chance: 0.2 }],
-  model: { arch: 'mossgolem', body: '#7e8074', belly: '#b8e070', accent: '#5a9a3e', eye: '#9affd0', scale: 1 },
+  model: { arch: 'mossgolem', body: '#7e8074', belly: '#b8e070', accent: '#5a9a3e', eye: '#9affd0', scale: 1.15 },
   desc: 'A walking hillside with a sapling on its back. Slow. Very slow. Armor 4.',
 });
 mon('lantern_moth', {
@@ -150,14 +150,14 @@ mon('bloat_toad', {
   name: 'Bloatcap', region: 2, hp: 85, dmg: 6, interval: 3.0, weak: ['shock'],
   attacks: [{ name: 'Tongue Lash', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Spore Flop', dmg: 1.7, windup: 1.4, kind: 'heavy', weight: 0.45 }],
   drops: [{ id: 'toad_tongue', chance: 1 }, { id: 'venomite', chance: 0.3 }, { id: 'emerald', chance: 0.1 }],
-  model: { arch: 'bloatcap', body: '#6c8c5a', belly: '#e6d69c', accent: '#b4c86a', tongue: '#e0607a', eye: '#ffd24a', cap: '#c8462e', spore: '#5af0c8', scale: 1.1 },
+  model: { arch: 'bloatcap', body: '#6c8c5a', belly: '#e6d69c', accent: '#b4c86a', tongue: '#e0607a', eye: '#ffd24a', cap: '#c8462e', spore: '#5af0c8', scale: 1.2 },
   desc: 'Half toad, half toadstool. Mostly mouth.',
 });
 mon('silk_spider', {
   name: 'Spore Goblin', region: 2, hp: 60, dmg: 5, interval: 2.3, weak: ['fire'],
   attacks: [{ name: 'Staff Bonk', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Spore Snare', dmg: 0.5, windup: 0.9, kind: 'special', effect: 'web', weight: 0.4 }],
   drops: [{ id: 'spider_silk', chance: 1 }, { id: 'venom_sac', chance: 0.6 }],
-  model: { arch: 'sporegoblin', body: '#8aa860', belly: '#c8d890', accent: '#c0ff4a', cap: '#8a4ab0', eye: '#ff6a3a', scale: 1 },
+  model: { arch: 'sporegoblin', body: '#8aa860', belly: '#c8d890', accent: '#c0ff4a', cap: '#8a4ab0', eye: '#ff6a3a', scale: 1.15 },
   desc: 'A goblin shaman with a mushroom for a hat. Its spore snares slow your swings. Fire burns them away.',
 });
 mon('myconid_brute', {
@@ -250,7 +250,7 @@ mon('salamander', {
   name: 'Magma Imp', region: 4, hp: 90, dmg: 7, interval: 2.3, weak: ['ice'], resist: ['fire'],
   attacks: [{ name: 'Ember Claw', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Fire Spit', dmg: 0.5, windup: 1.0, kind: 'multi', hits: 3, effect: 'burn', weight: 0.4 }],
   drops: [{ id: 'salamander_scale', chance: 1 }, { id: 'fire_gland', chance: 0.4 }],
-  model: { arch: 'magmaimp', body: '#6a3a2e', belly: '#ffb04a', accent: '#ff7a1a', eye: '#ffe04a', scale: 1 },
+  model: { arch: 'magmaimp', body: '#6a3a2e', belly: '#ffb04a', accent: '#ff7a1a', eye: '#ffe04a', scale: 1.15 },
   desc: 'Born in the lava pools. Thinks you look chilly.',
 });
 mon('cinder_bat', {
@@ -310,7 +310,7 @@ mon('bone_hound', {
   name: 'Grave Ghoul', region: 5, hp: 120, dmg: 8, interval: 2.0, weak: ['holy'], resist: ['poison'],
   attacks: [{ name: 'Grave Rend', dmg: 1, windup: 0.5, kind: 'normal' }, { name: 'Feeding Frenzy', dmg: 0.45, windup: 0.8, kind: 'multi', hits: 4, weight: 0.4 }],
   drops: [{ id: 'hound_fang', chance: 1 }, { id: 'bone', chance: 1 }, { id: 'skull', chance: 0.3 }],
-  model: { arch: 'ghoul', body: '#9aa894', belly: '#5a3a7a', accent: '#c86bff', eye: '#c86bff', scale: 1 },
+  model: { arch: 'ghoul', body: '#9aa894', belly: '#5a3a7a', accent: '#c86bff', eye: '#c86bff', scale: 1.15 },
   desc: 'Crawled out of the tomb hungry and never stopped.',
 });
 mon('grave_colossus', {

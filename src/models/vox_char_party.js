@@ -85,15 +85,22 @@ function buckle(P, x0, y0, w, h, z, frame, inner) {
   }
   for (let y = y0 + 1; y < y0 + h - 1; y++) P.set(x0 + (w >> 1), y, z + 1, frame); // the tongue
 }
-/** A glyph from a seed: a w×h bit pattern with a spine, so it reads as a rune. */
-function glyph(seed, w = 5, h = 7) {
-  const out = [];
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const spine = x === (w >> 1) && y > 0 && y < h - 1;
-    const arm = (y === 1 || y === h - 2 || y === (h >> 1)) && hash(x, y, seed) > 0.45;
-    const tick = (x === 0 || x === w - 1) && hash(x, y, seed + 3) > 0.7;
-    if (spine || arm || tick) out.push([x - (w >> 1), y - (h >> 1)]);
-  }
+/**
+ * Invented fantasy marks (no real-world runes or symbols): ring-and-dot, crescent, sparkle, drop,
+ * eye, waves, ladder, peak; and small 3×3 ones. glyph(i, set) → [[x, y], ...] centred, y up.
+ */
+const GLYPHS5 = [
+  ['.###.', '#...#', '#.#.#', '#...#', '.###.'], ['.###.', '#....', '#....', '#....', '.###.'],
+  ['..#..', '..#..', '##.##', '..#..', '..#..'], ['..#..', '.###.', '#####', '#####', '.###.'],
+  ['.....', '.###.', '#.#.#', '.###.', '.....'], ['#.#.#', '.#.#.', '.....', '#.#.#', '.#.#.'],
+  ['#...#', '#####', '#...#', '#####', '#...#'], ['.....', '..#..', '.#.#.', '#...#', '#####'],
+];
+const GLYPHS3 = [['###', '#.#', '###'], ['.#.', '###', '.#.'], ['#.#', '.#.', '#.#'], ['.#.', '#.#', '.#.'], ['##.', '#.#', '.##']];
+const ANVIL = ['##########', '.#########', '.....####.', '.....###..', '....#####.', '...#######'];
+function glyph(i, set = GLYPHS5) {
+  const rows = Array.isArray(set[0]) ? set[((i % set.length) + set.length) % set.length] : set;
+  const out = [], h = rows.length, w = rows[0].length;
+  rows.forEach((r, row) => { for (let x = 0; x < w; x++) if (r[x] === '#') out.push([x - (w >> 1), h - 1 - row - (h >> 1)]); });
   return out;
 }
 
@@ -310,7 +317,7 @@ export const BUILD = {
         const ax = Math.abs(x + 0.5);
         P.set(x, y, z, ex ? C.iron[3] : ax > 7 && ax < 9 ? (y % 3 ? C.brass[2] : C.brass[3]) : metal(C.iron, 18)(x, y, z));
       }
-      for (const z of [-hz, hz - 1]) for (const [gx, gy] of glyph(41, 7, 9)) P.set(gx, 33 + gy, z, G(C.coal[gy > 1 ? 1 : 2]));
+      for (const z of [-hz, hz - 1]) for (const [gx, gy] of glyph(0, ANVIL)) P.set(gx, 33 + gy, z, G(C.coal[gy > 0 ? 2 : 1]));
       for (const x of [-8, 7]) for (const y of [y0 + 1, y1 - 2]) { P.set(x, y, hz, C.brass[3]); P.set(x, y, -hz - 1, C.brass[3]); }
     }, { glowMat: c.coalMat });
     c.backItem = hj;
@@ -335,7 +342,7 @@ export const BUILD = {
       P.loft(-4, 3, () => [9, 7.4], inner);
       P.loft(-2, 2, () => [9.9, 8.3], cloth(C.sash, 6));
       P.ell(0, 0, 8.6, 2.6, 2.6, 1.5, C.stone[2]);
-      for (const [gx, gy] of glyph(5, 3, 3)) P.set(gx, gy, 10, G(C.rune));
+      for (const [gx, gy] of glyph(0, GLYPHS3)) P.set(gx, gy, 10, G(C.rune));
     }, { glowMat: c.runeMat });
     c.chain(R.hips, c.v(6, -1, 6), 3, 6, (P, i) => P.box(-1.5, -6, -1, 1.5, 0, 1, (x, y) => (i === 2 && y < -4 ? C.trim[2] : C.sash[x === -2 ? 1 : 2])), { rot: [0.1, 0, 0.2], gain: 0.5, k: 55 });
     // the robes: an inner robe to the floor and an open outer robe, both tattered, gold at the edges
@@ -360,7 +367,7 @@ export const BUILD = {
     c.addSpring(sk, 'z', { base: 0, src: 'vx', gain: -0.25, k: 40, d: 5, wobble: 0.02, rate: 1.7, min: -0.4, max: 0.4 });
 
     // torso: inner robe, a stole of glowing runes, a tattered mantle, a high gold collar
-    const GL = new Map(), stoleGlyph = (k) => { if (!GL.has(k)) GL.set(k, glyph(k, 3, 3)); return GL.get(k); };
+    const stoleGlyph = (k) => glyph(k, GLYPHS3);
     c.part(R.spine, (P) => {
       const tr = (y) => { const t = y / 23; return [8.7 + sm(t / 0.7) * 2.6 - Math.max(0, t - 0.82) * 22, Math.max(3, 6.6 + Math.sin(Math.PI * clamp(t, 0, 1)) * 1.1 - Math.max(0, t - 0.85) * 9)]; };
       P.loft(-1, 24, (y) => { const [rx, rz] = tr(y); return rx < 3 ? null : [rx, rz]; }, inner);
@@ -434,7 +441,7 @@ export const BUILD = {
       c.runes.push(c.part(orbit, (P) => {
         P.ell(0, 0, 0, 3.4, 4, 2.4, (x, y, z) => C.stone[hash(x >> 1, y >> 1, z, i) > 0.7 ? 1 : (y > 1 ? 3 : 2)]);
         P.carve((x, y, z) => hash(x, y, z, 50 + i) > 0.9 && !P.has(x, y + 1, z));
-        for (const zz of [3, -4]) for (const [gx, gy] of glyph(60 + i * 3, 3, 5)) { P.set(gx, gy, zz, G(C.rune)); P.set(gx, gy, zz > 0 ? zz - 1 : zz + 1, G(C.rune)); }
+        for (const zz of [3, -4]) for (const [gx, gy] of glyph(i * 2 + (zz < 0 ? 1 : 0))) { P.set(gx, gy, zz, G(C.rune)); P.set(gx, gy, zz > 0 ? zz - 1 : zz + 1, G(C.rune)); }
       }, { glowMat: c.runeMat }));
     }
     // the crystal staff, slung across the back
@@ -743,16 +750,16 @@ export const BUILD = {
     });
     c.headTop = 15 * 0.02;
     // the long ears, through slits in the hood; the right one flops at the tip
-    const earC = (x, y, z) => (z >= 0 && Math.abs(x + 0.5) < 1.4 && y > 1 && y < 11 ? C.inner[y > 7 ? 2 : 1] : fur(C.fur, 8)(x, y, z));
+    const earC = (x, y, z) => (z >= 0 && Math.abs(x + 0.5) < 1.9 && y > 1 && y < 12 ? C.inner[y > 7 ? 2 : 1] : fur(C.fur, 8)(x, y, z));
     c.ears = [];
     for (const sx of [-1, 1]) {
       const ej = c.joint(R.head, ...c.v(sx * 3.6, 12.5, -1.5));
       const flop = sx < 0;
       ej.rotation.z = -sx * 0.12;
-      c.part(ej, (P) => { P.ell(0, 6, 0, 2.7, 6.6, 1.6, earC); P.ell(0, 0.5, 0, 2.4, 1.6, 2, hoodC); });
+      c.part(ej, (P) => { P.ell(0, 6.2, 0, 3.4, 6.8, 1.8, earC); P.ell(0, 0.5, 0, 2.8, 1.8, 2.2, hoodC); });
       const tj = c.joint(ej, ...c.v(0, 11.5, 0));
       tj.rotation.x = flop ? -1.1 : 0;
-      c.part(tj, (P) => P.ell(0, 4.2, 0, 2.4, 5, 1.4, (x, y, z) => earC(x, y + 5, z)));
+      c.part(tj, (P) => P.ell(0, 4, 0, 3.1, 5.2, 1.6, (x, y, z) => earC(x, y + 5, z)));
       c.addSpring(ej, 'x', { base: -0.15, src: 'vy', gain: 0.3, k: 55, d: 5, wobble: 0.03, phase: sx, extra: (h) => -h.pose.ears * 0.3, min: -1, max: 0.8 });
       c.addSpring(ej, 'z', { base: ej.rotation.z, src: 'vx', gain: -0.2, k: 55, d: 5, extra: (h) => -sx * h.pose.ears * 0.12 });
       c.addSpring(tj, 'x', { base: tj.rotation.x, src: 'vy', gain: 0.6, k: 30, d: 3, wobble: 0.06, phase: 2 + sx, extra: (h) => (flop ? -h.pose.ears * 0.5 : -h.pose.ears * 0.2), min: -1.4, max: 1.2 });

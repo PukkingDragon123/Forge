@@ -1,7 +1,7 @@
 // Cinematic side-scrolling travel through a tunnel: auto-walk, inspectables, tunnel QTEs, reactions.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
-import { buildStage as buildSet } from '../models/stage2d.js';
+import { buildStage as buildSet } from '../models/stage_vox.js';
 import { buildCharacter } from '../models/characters.js';
 import * as Props from '../models/props.js';
 import { buildMonster } from '../models/monsters.js';
@@ -15,7 +15,9 @@ import { rollMaterial, rollQuality } from '../systems/run.js';
 import { TimingQTE, MashQTE } from './travel_qte.js';
 import { materialSprite, nodeBadge } from '../art/sprites.js';
 import { COLORS } from '../ui/font.js';
-import { clamp, ease } from '../core/math.js';
+import { clamp, ease, fbm3, hash3, lerp, mixHex } from '../core/math.js';
+import { VoxelGrid, meshVoxels } from '../gfx/voxel.js';
+import { FX2D } from './cutscene.js';
 
 const LORE = [
   ['"Shift 41: rails bent again. Nobody touched them. — F."', '"Do NOT open the door at the bottom. — Management"', 'A child\'s drawing of four friends around a fire.'],
@@ -27,6 +29,42 @@ const LORE = [
 ];
 
 const BRIDGES = ['bridge', 'crystalbridge', 'rootbridge', 'lavabridge', 'chainbridge'];
+
+// Screen-space weather per layer (FX2D kinds): dust, glints, spores, drips, embers and ash, curse motes.
+const WEATHER = [
+  [{ kind: 'dust', rate: 7 }, { kind: 'drip', rate: 0.8, area: [0, 0, 960, 8] }],
+  [{ kind: 'sparkle', rate: 4 }, { kind: 'dust', rate: 4, col: '#d8f0ff' }],
+  [{ kind: 'spore', rate: 9 }, { kind: 'dust', rate: 3, col: '#d8ffc8' }],
+  [{ kind: 'drip', rate: 2.2, area: [0, 0, 960, 8] }, { kind: 'dust', rate: 4, col: '#c8f0e8' }],
+  [{ kind: 'ember', rate: 7, area: [0, 380, 960, 160], up: true }, { kind: 'ash', rate: 5 }],
+  [{ kind: 'curse', rate: 5, area: [0, 300, 960, 240], up: true }, { kind: 'dust', rate: 3, col: '#e0c8ff' }],
+];
+// Foreground silhouettes per layer, passing between the camera and the walker for depth.
+const FORE = [['drip', 'post', 'rock'], ['crystal', 'drip', 'rock'], ['roots', 'rock', 'drip'], ['post', 'drip', 'rock'], ['drip', 'rock', 'rock'], ['roots', 'drip', 'post']];
+
+/** A dark voxel silhouette (stalactite, timber post, boulder, roots, crystals); origin on its anchor. */
+function silhouette(kind, seed, col) {
+  const VS = 0.07;
+  let g, origin;
+  if (kind === 'drip') {
+    g = new VoxelGrid(14, 44, 14); origin = [7, 44, 7];
+    for (let y = 0; y < 44; y++) { const r = 6.2 * Math.pow(y / 44, 0.9) + (fbm3(0, y * 0.2, seed, 2, 3) - 0.5) * 2; for (let z = 0; z < 14; z++) for (let x = 0; x < 14; x++) if (Math.hypot(x - 6.5, z - 6.5) < r) g.set(x, y, z, col); }
+  } else if (kind === 'post') {
+    g = new VoxelGrid(30, 62, 6); origin = [6, 0, 3];
+    g.box(3, 0, 1, 9, 62, 6, col);
+    for (let i = 0; i < 22; i++) g.box(8 + i, 30 + i, 1, 10 + i, 34 + i, 5, col); // a brace
+  } else if (kind === 'roots') {
+    g = new VoxelGrid(26, 46, 8); origin = [13, 46, 4];
+    for (let k = 0; k < 5; k++) { let x = 3 + k * 5, len = 20 + hash3(k, seed, 1, 2) * 26; for (let y = 45; y > 45 - len; y--) { x += Math.round((hash3(k, y, seed, 4) - 0.5) * 1.6); for (let w = 0; w < 2; w++) g.set(Math.max(0, Math.min(25, x + w)), y, 3, col); } }
+  } else if (kind === 'crystal') {
+    g = new VoxelGrid(30, 40, 12); origin = [15, 0, 6];
+    for (let k = 0; k < 3; k++) { const bx = 8 + k * 7, lean = (k - 1) * 0.35, h = 22 + k * 7 - (k === 2 ? 10 : 0); for (let y = 0; y < h; y++) { const r = 3.2 * (1 - y / h) + 0.6; const cx = bx + lean * y; for (let z = 0; z < 12; z++) for (let x = 0; x < 30; x++) if (Math.abs(x - cx) + Math.abs(z - 6) * 0.8 < r) g.set(x, y, z, col); } }
+  } else {
+    g = new VoxelGrid(30, 18, 20); origin = [15, 0, 10];
+    for (let y = 0; y < 18; y++) for (let z = 0; z < 20; z++) for (let x = 0; x < 30; x++) { const d = Math.hypot((x - 15) / 14, y / 15, (z - 10) / 9.5) + (fbm3(x * 0.2, y * 0.2, z * 0.2 + seed, 2, 7) - 0.5) * 0.5; if (d < 1) g.set(x, y, z, col); }
+  }
+  return meshVoxels(g, { size: VS, origin, castShadow: false, receiveShadow: false, shade: false, jitter: 0 });
+}
 
 function qteTypeFor(tunnel) {
   if (BRIDGES.includes(tunnel)) return 'collapse';
@@ -51,6 +89,7 @@ export class TravelScene extends Scene {
     this.L = 34;
     this.set = buildSet('corridor', this.region, { tunnel: this.tunnel, length: this.L });
     this.world = makeWorld(this.set, { fogDensity: 0.032 });
+    this.set.setCamera && this.set.setCamera(this.world.camera);
     this.rig = this.world.rig;
     this.extra = new THREE.Group();
     this.world.scene.add(this.extra);
@@ -82,6 +121,11 @@ export class TravelScene extends Scene {
     this.cart = null;
 
     this.planEncounters();
+    this.buildForeground(R);
+    this.fx2d = new FX2D();
+    this.fx2d.ambient(WEATHER[this.region] || WEATHER[0]);
+    this.post = this.world.post = { exposure: 1, bloom: 0.8, vignette: 0.42, saturation: 1.12 };
+    this.glowGain = new THREE.Color(R.pal.glow);
     const cam = this.camTarget();
     this.rig.cut(cam.pos, cam.look, cam.fov);
 
@@ -181,7 +225,34 @@ export class TravelScene extends Scene {
     }
   }
 
-  say(text, life = 2.4) { this.bubble = { text, t: 0, life }; }
+  /** The explorers are people of few words: key lines always, a remark now and then otherwise. */
+  say(text, life = 2.4, key = false) {
+    if (!text) return;
+    if (!key && (this.time - (this.lastSay ?? -99) < 14 || Math.random() < 0.55)) return;
+    this.lastSay = this.time;
+    this.bubble = { text, t: 0, life };
+  }
+
+  buildForeground(R) {
+    const r = this.rng ? () => this.rng.next() : Math.random;
+    const kinds = FORE[this.region] || FORE[0];
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(mixHex(R.pal.fog, '#000000', 0.45)), fog: false });
+    this.fore = [];
+    const cache = {};
+    for (let x = this.x0 - 3; x < this.x1 + 9; x += 4.2 + r() * 4.6) {
+      const kind = kinds[Math.floor(r() * kinds.length)];
+      const key = kind + (this.fore.length % 2);
+      const base = cache[key] || (cache[key] = silhouette(kind, this.fore.length % 2 + this.region * 3, '#101010'));
+      const m = base.clone();
+      m.traverse((o) => { if (o.isMesh) { o.material = mat; o.castShadow = false; o.receiveShadow = false; } });
+      const y = this.pathY(x), top = kind === 'drip' || kind === 'roots';
+      m.position.set(x, top ? y + 3.15 + r() * 0.5 : kind === 'post' ? y - 0.1 : y - 0.55, 2.3 + r() * 0.8);
+      m.scale.setScalar(kind === 'rock' ? 1.6 + r() * 0.9 : 1.1 + r() * 0.5);
+      m.rotation.y = kind === 'post' ? 0 : r() * 6.28;
+      this.world.scene.add(m);
+      this.fore.push(m);
+    }
+  }
 
   *introRoutine() {
     yield 1.2;
@@ -229,6 +300,17 @@ export class TravelScene extends Scene {
     this.rig.aim(ct.pos, ct.look, ct.fov, this.qte ? 5 : 1.8);
     this.rig.update(this.qte ? rdt : dt); // the camera cuts in at full speed while the world crawls
     ambientDust(this.world, [this.x + 2, this.pathY(this.x) + 1.5, -0.5], [5, 1.4, 1.5], REGIONS[this.region].pal.glow2, 0.35);
+    this.fx2d.update(rdt, game.ui.w, game.ui.h);
+    const cp = this.rig.camera.position;
+    for (const m of this.fore) m.visible = Math.abs(m.position.x - cp.x) > 0.9 || cp.z - m.position.z > 2.2;
+    // light along the tunnel: pockets of dark between lamps, and the glow of the way out near the end
+    const dark = 0.5 + 0.5 * Math.sin(prog * Math.PI * 5 + 0.8), out = clamp((prog - 0.78) / 0.22);
+    const P = this.post;
+    P.exposure = lerp(P.exposure, 0.9 + dark * 0.12 + out * 0.18, 1 - Math.exp(-3 * rdt));
+    P.vignette = 0.36 + (1 - dark) * 0.12 - out * 0.08;
+    const gk = out * 0.12, gc = this.glowGain;
+    P.gain = [1.04 + gc.r * gk, 0.99 + gc.g * gk, 0.9 + gc.b * gk];
+    P.bloom = 0.8 + out * 0.35;
 
     // QTE (real time)
     if (this.qte) {
@@ -325,7 +407,7 @@ export class TravelScene extends Scene {
         a && a.play('page_turn');
         ch.setExpression('neutral');
         this.pauseT = 3.2;
-        this.say(pick(LORE[run.region] || LORE[0]), 3.4);
+        this.say(pick(LORE[run.region] || LORE[0]), 3.4, true);
         break;
       }
       case 'mushroom': {
@@ -406,7 +488,14 @@ export class TravelScene extends Scene {
   }
 
   // ------------------------------------------------------------------ QTE moments
-  startQTE(q, done) { this.qte = { q, done, resolved: false }; }
+  startQTE(q, done) {
+    this.qte = { q, done, resolved: false };
+    // the moment the danger hits: a flash of light, the picture jumps in exposure
+    this.post.exposure = 1.35;
+    this.game.renderer.doFlash(0.18, [1, 0.92, 0.8]);
+    const s = this.headScreen();
+    this.fx2d.ring(s.x, s.y, '#fff0c0', { r1: 160, w: 3, life: 0.45 });
+  }
 
   fire(m) {
     const game = this.game, run = game.run, rng = this.rng;
@@ -657,6 +746,8 @@ export class TravelScene extends Scene {
       }
       if (h.clicked) this.interact(it);
     }
+
+    this.fx2d.draw(ui);
 
     // speech bubble
     if (this.bubble) {

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
 import { save } from '../core/save.js';
-import { clamp, damp, ease } from '../core/math.js';
+import { clamp, damp, ease, lerp } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
 import { MONSTERS } from '../data/monsters.js';
 import { MATERIALS, QUALITY } from '../data/materials.js';
@@ -10,7 +10,7 @@ import { CombatSim, FISTS, monsterStats } from '../systems/combat.js';
 import { GRADES } from '../systems/forge.js';
 import { monsterDrops, rollQuality } from '../systems/run.js';
 import { makeItem, itemTooltip } from '../systems/items.js';
-import { buildStage as buildSet } from '../models/stage2d.js';
+import { buildStage as buildSet } from '../models/stage_vox.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildMonster } from '../models/monsters.js';
 import { buildWeaponMesh, crackWeapon, shatterPieces } from '../models/weapons3d.js';
@@ -21,6 +21,7 @@ import { COLORS } from '../ui/font.js';
 import { bar } from '../ui/frames.js';
 import { Debris } from '../gfx/particles.js';
 import { openForge } from './forgeui.js';
+import { FX2D } from './cutscene.js';
 import { makeWorld, hud, speech, ribbonTitle, prompt, ring, dim, bark } from './common.js';
 import { finish, openBag, gameOver } from './flow.js';
 
@@ -52,11 +53,13 @@ export class CombatScene extends Scene {
     // ---- world
     this.set = buildSet(this.lord ? 'tomb' : 'arena', run.region, {});
     const W = makeWorld(this.set, { fogDensity: 0.035 });
+    this.set.setCamera && this.set.setCamera(W.camera); // flame sprites face our camera
     // EnvSet carries real Fog/Color objects (makeWorld expects hex): use them directly
     if (this.set.fog && this.set.fog.isFogExp2) W.scene.fog = this.set.fog;
     if (this.set.background && this.set.background.isColor) W.scene.background = this.set.background;
     this.W = W; this.rig = W.rig;
-    this.world = { scene: W.scene, camera: W.camera, post: { bloom: 0.75, vignette: 0.4, exposure: 1 } };
+    this.world = { scene: W.scene, camera: W.camera, post: { bloom: 0.75, vignette: 0.4, exposure: 1, saturation: 1.1 } };
+    this.fx2d = new FX2D(); // screen-space stings over the 3D: rays, rings, shards, washes
     this.debris = new Debris(260, 0.035);
     W.scene.add(this.debris.object);
     const A = this.set.anchors || {};
@@ -168,7 +171,6 @@ export class CombatScene extends Scene {
       mon.play('intro');
       this.sfx('mimic_reveal'); rig.shake(0.6); this.game.renderer.doFlash(0.25, [1, 0.8, 0.8]);
       hero.setExpression('surprised');
-      this.say("It's a MIMIC!", 1.6);
       yield 0.9;
       this.showTitle(this.def.name, null, 1.6);
       rig.moveTo(shot.pos, shot.look, shot.fov, 1.0);
@@ -181,7 +183,6 @@ export class CombatScene extends Scene {
       if (flyer) mg.position.y = this.monHome.y + 1.4;
       rig.cut([this.heroHome.x + 0.7, 1.15, this.heroHome.z + 3.1], [this.heroHome.x + 1.3, 0.75, 0], 40);
       hero.setExpression('surprised');
-      this.say('!', 0.9);
       mon.play('intro');
       this.sfx('monster_growl');
       this.tw.to(mg.position, { x: this.monHome.x, y: this.monHome.y }, 0.9, { ease: 'outCubic' });
@@ -197,29 +198,19 @@ export class CombatScene extends Scene {
 
   *bossIntro(shot) {
     const rig = this.rig, mon = this.mon, hero = this.hero, post = this.world.post;
-    this.letterTarget = 1;
-    post.exposure = 0.55;
-    this.tw.to(post, { exposure: 1 }, 3.2, { ease: 'inOutSine' });
-    rig.cut([this.heroHome.x + 0.8, 0.85, this.heroHome.z + 2.3], [this.heroHome.x + 0.3, 1.0, 0], 36);
-    hero.setExpression('surprised');
-    this.sfx('rumble'); rig.shake(0.5);
-    this.caption = this.def.intro || '';
-    yield 1.7;
+    let shown = !this.game.scenes.cutscene;
+    if (!shown) this.game.pushOverlay('cutscene', { id: 'boss_' + this.mid, char: this.run.char, onDone: () => (shown = true) });
+    yield () => shown;
+    // out of the reveal: one more roar as the camera swings into the fight
     const mh = this.mon.height || 3;
-    mon.play('intro');
-    this.sfx('boss_intro');
-    const dur = mon.introDur || 2.6;
-    rig.moveTo([this.monHome.x - 1.5, Math.max(0.6, mh * 0.3), this.monHome.z + mh * 1.5 + 2.2], [this.monHome.x, mh * 0.6, 0], 42, dur, 'inOutSine');
-    yield dur;
+    rig.cut([this.monHome.x - 2.3, Math.max(0.7, mh * 0.32), this.monHome.z + mh * 1.3 + 2.6], [this.monHome.x, mh * 0.62, 0], 42);
+    post.exposure = 1.3;
+    this.tw.to(post, { exposure: 1 }, 0.8, { ease: 'outCubic' });
     mon.play('roar');
-    this.sfx('boss_roar'); rig.shake(0.9); rig.fovPunch(6);
-    this.game.renderer.doFlash(0.3, [1, 0.8, 0.6]);
-    this.showTitle(this.def.name, this.def.title, 2.8, true);
-    yield 1.8;
-    this.caption = null;
-    rig.moveTo(shot.pos, shot.look, shot.fov, 1.4);
-    yield 1.4;
-    this.letterTarget = 0;
+    this.sfx('boss_roar', { vol: 0.6 }); rig.shake(0.5);
+    hero.setExpression('determined');
+    rig.moveTo(shot.pos, shot.look, shot.fov, 1.3, 'inOutCubic');
+    yield 1.3;
     mon.play('idle');
   }
 
@@ -329,6 +320,7 @@ export class CombatScene extends Scene {
     this.W.sparks.update(dt); this.W.dust.update(dt);
     this.debris.update(dt);
     this.updateShards(dt);
+    this.fx2d.update(rdt, this.game.ui.w, this.game.ui.h);
     this.rig.update(dt);
     for (const b of this.bubbles) b.t += rdt;
     this.bubbles = this.bubbles.filter((b) => b.t < b.dur);
@@ -717,10 +709,24 @@ export class CombatScene extends Scene {
     this.mon.play('die');
     this.sfx('monster_die');
     this.W.sparks.emit({ pos: [hw.x, hw.y, hw.z], radial: [2, 6], count: 120, life: [0.4, 1.2], size: [1, 2], color: ['#ffffff', '#ffd25e', '#ff8a3a'], glow: 3, gravity: 4, drag: 1.5 });
+    const post = this.world.post, sp = this.screen(hw);
+    post.exposure = 1.45; post.bloom = 1.7;
+    this.tw.to(post, { exposure: 1, bloom: 0.75 }, 1.5, { ease: 'outCubic' });
+    this.fx2d.rays(sp.x, sp.y, '#fff0c0', { n: 18, len: 560, a: 0.32, life: 1.2 });
+    this.fx2d.ring(sp.x, sp.y, '#ffffff', { r1: 240, w: 5, life: 0.6 });
+    this.fx2d.burst('spark', sp.x, sp.y, 40);
+    this.fx2d.burst('shard', sp.x, sp.y, 16, { col: this.def.model.accent || '#ffd25e' });
     yield 0.25;
     yield 1.0;
     this.hero.setExpression('happy');
     this.heroAct('victory');
+    {
+      const hx = this.hero.group.position.x, hh = this.heroHead().y;
+      rig.moveTo([hx + 1.5, hh * 0.45, this.heroHome.z + 2.5], [hx + 0.3, hh * 0.72, 0], 32, 1.8, 'inOutSine');
+      const hp = this.screen(this.heroHead());
+      this.fx2d.burst('sparkle', hp.x, hp.y, 14);
+      if (this.boss) { this.fx2d.burst('confetti', hp.x, hp.y + 20, 60); this.fx2d.ring(hp.x, hp.y, '#ffd25e', { r1: 300, w: 4, life: 0.9 }); this.fx2d.wash('#ffd25e', 0.18, 0.8); }
+    }
     this.big(this.boss ? (this.lord ? 'THE CURSE IS BROKEN' : 'BOSS DEFEATED') : 'VICTORY', 2.0, { scale: this.lord ? 3 : 4, top: '#fff6c8', bottom: '#ffb63d' });
     this.sfx('victory_sting');
     this.game.audio && this.game.audio.music('victory');
@@ -832,6 +838,8 @@ export class CombatScene extends Scene {
     this.W.sparks.emit({ pos: [c.wp.x, c.wp.y, c.wp.z], radial: [1, 3], count: 30, life: [0.2, 0.6], size: 1, color: ['#ffffff', this.def.model.accent || '#ffd25e'], glow: 2, gravity: 6, drag: 2 });
     this.debris.spawn({ pos: [c.wp.x, c.wp.y, c.wp.z], count: 5, colors: [this.def.model.body, this.def.model.belly || this.def.model.body], speed: 1.5, up: 2, floor: 0.02, life: 1 });
     this.sfx('harvest_slice');
+    this.fx2d.burst('spark', p.x, p.y, timing > 0 ? 28 : 12, { col: this.def.model.accent || '#ffd25e' });
+    if (timing > 0) { this.fx2d.ring(p.x, p.y, '#ffe08a', { r1: 80, w: 3, life: 0.4 }); this.fx2d.rays(p.x, p.y, '#fff0c0', { n: 10, len: 170, a: 0.28, life: 0.5 }); }
     this.co.start(function* (s) { yield 0.18; s.sfx('card_flip'); }, this);
     this.game.hitStop(0.05);
     this.rig.shake(0.15);
@@ -888,9 +896,11 @@ export class CombatScene extends Scene {
     const t0 = this.time;
     const ticks = [0, 0.4, 0.75];
     let k = 0, ti = 0;
+    const post = this.world.post;
     while (k < 1) {
       k = clamp((this.time - t0) / dur, 0, 1);
       crackWeapon(mesh, k);
+      post.saturation = lerp(1.1, 0.55, k); post.vignette = 0.4 + k * 0.28; post.lift = [0.035 * k, 0.0, 0.07 * k];
       if (ti < ticks.length && k >= ticks[ti]) { this.sfx('crack', { pitch: 1 + ti * 0.15 }); this.rig.shake(0.1 + ti * 0.1); ti++; }
       const wp = mesh.getWorldPosition(V3());
       if (rnd.chance(0.6)) this.W.sparks.emit({ pos: [wp.x, wp.y + 0.2, wp.z], posSpread: 0.25, vel: [0, 0.5, 0], spread: 0.3, count: 2, life: [0.3, 0.7], size: 1, color: ['#c86bff', '#ff5af0', '#ffffff'], glow: 3, drag: 1 });
@@ -920,7 +930,15 @@ export class CombatScene extends Scene {
     this.game.renderer.doFlash(0.4, [0.85, 0.5, 1]);
     this.game.hitStop(0.08);
     this.rig.shake(0.7);
+    this.slowmo(0.25, 0.55);
     const p = this.screen(wp);
+    this.fx2d.burst('shard', p.x, p.y, 34, { col: '#e0c8ff' });
+    this.fx2d.burst('curse', p.x, p.y, 24);
+    this.fx2d.ring(p.x, p.y, '#c86bff', { r1: 260, w: 5, life: 0.7 });
+    this.fx2d.rays(p.x, p.y, '#c86bff', { n: 14, len: 480, a: 0.3, life: 0.9 });
+    this.fx2d.wash('#7a3ac0', 0.22, 0.7);
+    this.tw.to(post, { saturation: 1.1, vignette: 0.4 }, 1.4, { ease: 'inOutSine', delay: 0.5 });
+    this.co.start(function* (s) { yield 1.9; s.world.post.lift = undefined; }, this);
     this.game.ui.float('SHATTERED', p.x, p.y - 20, { big: true, scale: 2, top: '#f0d0ff', bottom: '#9a3ae0', life: 1.4 });
     run.stats.shattered++;
     save.data.stats.weaponsShattered++;
@@ -1001,7 +1019,12 @@ export class CombatScene extends Scene {
     this.rig.moveTo([h.x + 0.3, 0.9, h.z + 2.2], [h.x, 0.5, 0], 34, 1.4, 'inOutCubic');
     this.sfx('defeat_sting');
     this.game.audio && this.game.audio.stopMusic(1.5);
-    yield 3.0;
+    this.tw.to(this.world.post, { saturation: 0.45, exposure: 0.78, vignette: 0.72 }, 2.6, { ease: 'inOutSine' });
+    for (let i = 0; i < 30; i++) {
+      this.W.dust.emit({ pos: [h.x, 0.1, h.z], posSpread: [0.5, 0.05, 0.4], vel: [0, 0.45, 0], spread: 0.12, life: [1.5, 2.6], size: [2, 3], sizeEnd: 5, color: ['#2a1438', '#3a1a4a'], alpha: 0.5, swirl: 0.6 });
+      this.W.sparks.emit({ pos: [h.x, 0.2, h.z], posSpread: [0.5, 0.2, 0.4], vel: [0, 0.8, 0], spread: 0.2, count: 2, life: [0.6, 1.4], size: 1, color: ['#c86bff', '#ff5af0'], glow: 3, swirl: 1 });
+      yield 0.1;
+    }
     gameOver(this.game, this.def.name);
   }
 
@@ -1012,6 +1035,7 @@ export class CombatScene extends Scene {
     // world-anchored UI
     if (this.phase === 'fight' && sim && !this.specialQ) { this.drawCritRing(ui); this.drawTelegraph(ui); }
     for (const s of this.slashes) this.drawSlash(ui, s);
+    this.fx2d.draw(ui);
     for (const b of this.bubbles) {
       const pos = b.who === 'hero' ? this.screen(this.heroHead().add(V3(0, 0.25, 0))) : this.screen(this.monTop());
       speech(ui, pos.x, Math.max(pos.y, 64), b.text, { alpha: b.t < 0.12 ? b.t / 0.12 : b.t > b.dur - 0.25 ? Math.max(0, (b.dur - b.t) / 0.25) : 1 });

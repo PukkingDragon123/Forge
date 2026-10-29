@@ -10,7 +10,6 @@
 import * as THREE from 'three';
 import { Scene, disposeTree } from '../core/game.js';
 import { buildStage } from '../models/stage_vox.js';
-import { buildStage as buildStage2d } from '../models/stage2d.js';
 import { envMaterial, envGlowMaterial } from '../models/stage_vox_kit.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildMonster } from '../models/monsters.js';
@@ -94,10 +93,9 @@ export class Cine {
   }
 
   // -------------------------------------------------------------- sets
-  /** A voxel stage from stage_vox (falls back to the painted stage2d). */
+  /** A voxel stage from stage_vox (geometry is cached, so a stage the game just built comes back fast). */
   stageSet(name, kind, region = 0, opts = {}) {
-    let st;
-    try { st = buildStage(kind, region, opts); } catch (e) { console.warn('cutscene: voxel stage failed, using painted stage', e); st = buildStage2d(kind, region, opts); }
+    const st = buildStage(kind, region, opts);
     const group = st.group;
     this.scene.add(group);
     st.setCamera && st.setCamera(this.camera);
@@ -309,7 +307,17 @@ export class Cine {
     this.fadeTo = 1; this.fadeRate = 1 / this.finishing;
     if (fast && this.game.audio) this.game.audio.play('transition', { vol: 0.5 });
   }
-  skip() { if (!this.finishing) this.finish(true); }
+  skip() {
+    if (this.finishing) return;
+    if (!this.hold) { this.finish(true); return; }
+    // held cinematics jump to their last shot and stay there
+    while (this.si < this.shots.length - 1) this.next();
+    this.st = Math.max(this.st, this.shot.dur);
+    this.fireCues();
+    this.caps = []; this.card = null;
+    this.fade = 0; this.fadeTo = 0;
+    this.end();
+  }
   caption(text, at = 0, dur = null) { this.caps.push({ text, t: -at, dur: dur ?? Math.max(3.2, text.length * 0.065 + 1.8) }); }
   titleCard(title, sub, o = {}) { this.card = { title, sub, t: -(o.at || 0), dur: o.dur ?? 3.4, top: o.top || '#fff6e0', bottom: o.bottom || '#e8a060', line: o.line || '#e8a060' }; }
 
@@ -653,7 +661,7 @@ SCRIPTS.dive = (c) => {
   const hero = c.char(who, 'camp', start, faceTo(start, fire), 'idle');
   const mouth = (A.mineEntrance || V(-2.6, 1, -3.4)).clone().setY(0);
   // the shaft through every layer
-  const S = c.shaftSet('shaft', layerBands(0, 5, 5), { lamp: '#ffc070', fog: '#0c0812' });
+  const S = c.shaftSet('shaft', layerBands(0, 5, 5), { lamp: '#ffc070', fog: '#0c0812', radius: 3.8 });
   const rider = c.char(who, S.lift, V(0.05, 0.12, 0.05), 0.5, 'idle');
   const R0 = REGIONS[0];
   return {
@@ -667,7 +675,7 @@ SCRIPTS.dive = (c) => {
         cam: { pos: [[-2.55, 1.05, -5.2], [-2.6, 1.0, -4.85]], look: [[-2.1, 0.95, -0.8], [-2.4, 1.05, -1.8]], fov: [44, 40] },
         enter: (c) => { hero.group.position.copy(mouth.clone().add(V(0.4, 0, 2.2))); c.walk(hero, mouth.clone().add(V(0.05, 0, -0.25)), 3.0); c.sfx('footstep', { vol: 0.4 }); } },
       { set: 'shaft', dur: 4.2,
-        cam: { pos: [[2.3, 1.75, 1.3], [1.4, 1.95, 2.0], [-0.4, 1.55, 2.3]], look: [[0, 1.0, 0], [0, 0.95, 0]], fov: [40, 36], rel: () => S.lift.position.clone().setX(0).setZ(0) },
+        cam: { pos: [[2.5, 2.5, 1.25], [1.45, 2.75, 2.4], [-0.45, 2.45, 2.85]], look: [[0, 0.9, 0], [0, 0.95, 0]], fov: [44, 40], rel: () => S.lift.position.clone().setX(0).setZ(0) },
         enter: (c) => {
           c.sfx('elevator'); c.loop('cave', 0.5);
           c.tween(7.6, (k) => (S.lift.position.y = -0.6 - k * k * 9.5 - k * 2), 'linear');
@@ -677,7 +685,7 @@ SCRIPTS.dive = (c) => {
           c.later(1.6, () => rider.lookAt(V(0, -20, 0)));
         } },
       { dur: 3.6,
-        cam: { pos: [[0.35, 3.6, 0.45], [0.25, 3.0, 0.3]], look: [[0, -8, 0], [0, -10, 0]], fov: [52, 46], roll: [0, 0.45], rel: () => S.lift.position.clone().setX(0).setZ(0) },
+        cam: { pos: [[1.5, 3.4, 1.2], [1.2, 2.9, 0.9]], look: [[-0.2, -8, -0.2], [-0.2, -10, -0.2]], fov: [54, 48], roll: [0, 0.4], rel: () => S.lift.position.clone().setX(0).setZ(0) },
         enter: (c) => { c.titleCard(R0.name, R0.sub, { at: 0.7, dur: 2.8 }); c.later(2.6, () => { c.fadeTo = 1; c.fadeRate = 1; }); } },
     ],
   };
@@ -686,7 +694,7 @@ SCRIPTS.dive = (c) => {
 // ------------------------------------------------------------------ descend_N
 SCRIPTS.descend = (c, p) => {
   const N = clamp(p.arg | 0, 1, REGIONS.length - 1), from = REGIONS[N - 1], to = REGIONS[N];
-  const S = c.shaftSet('shaft', [{ pal: from.pal, glow: from.pal.glow, lamp: from.pal.glow2, h: 7 }, { pal: to.pal, glow: to.pal.glow, lamp: to.pal.glow2, h: 9 }], { lamp: from.pal.glow2, fog: from.pal.fog, y0: -2.2 });
+  const S = c.shaftSet('shaft', [{ pal: from.pal, glow: from.pal.glow, lamp: from.pal.glow2, h: 7 }, { pal: to.pal, glow: to.pal.glow, lamp: to.pal.glow2, h: 9 }], { lamp: from.pal.glow2, fog: from.pal.fog, y0: -2.2, radius: 3.6 });
   const rider = c.char(c.who, S.lift, V(0.05, 0.12, 0.05), 0.6, 'idle');
   const L = c.stageSet('land', N === REGIONS.length - 1 ? 'tomb' : 'arena', N);
   const A = L.A;
@@ -696,7 +704,7 @@ SCRIPTS.descend = (c, p) => {
     music: to.music,
     shots: [
       { set: 'shaft', dur: 4.8, dip: 0.8,
-        cam: { pos: [[-2.0, 1.2, 1.6], [0.2, 1.7, 2.3], [1.9, 2.1, 1.3]], look: [[0, 0.9, 0], [0, 1.1, 0]], fov: [38, 42], rel: () => S.lift.position.clone().setX(0).setZ(0) },
+        cam: { pos: [[-2.3, 2.1, 1.35], [0.2, 2.6, 2.65], [2.25, 2.9, 1.45]], look: [[0, 0.9, 0], [0, 1.0, 0]], fov: [42, 46], rel: () => S.lift.position.clone().setX(0).setZ(0) },
         enter: (c) => {
           c.sfx('elevator'); c.loop('cave', 0.45);
           c.tween(4.8, (k) => (S.lift.position.y = -2.2 - k * 7.6), 'inOutSine');
@@ -757,7 +765,7 @@ SCRIPTS.boss = (c, p) => {
         },
         at: [[1.6, (c) => { c.sfx('monster_growl', { pitch: 0.6, vol: 0.7 }); c.shake(0.2); }]] },
       { dur: 3.2,
-        cam: { pos: [[mid - 0.6, 1.5, 6.2], [mid - 0.8, 1.9, 7.4]], look: [[mid + 0.5, mh * 0.45, 0], [mid + 0.4, mh * 0.45, 0]], fov: [40, 42] },
+        cam: { pos: [[mid - 0.6, 1.5, Math.max(6.2, mh * 1.6 + 0.6)], [mid - 0.8, 1.9, Math.max(7.4, mh * 1.9 + 0.8)]], look: [[mid + 0.5, mh * 0.5, 0], [mid + 0.4, mh * 0.52, 0]], fov: [40, 42] },
         enter: (c) => {
           [[0.25, 0.4], [0.95, 0.72], [1.6, 1]].forEach(([t, k]) => c.later(t, () => {
             c.envTo(k, k, k, k, 0.12, 'outQuad'); c.to(set, { lightK: k, flameK: k }, 0.12, 'outQuad');
@@ -768,7 +776,7 @@ SCRIPTS.boss = (c, p) => {
           hero.setExpression('determined');
         } },
       { dur: 2.6,
-        cam: { pos: [[mouth.x - 2.6, Math.max(0.5, mouth.y - 1.2), mouth.z + 2.3], [mouth.x - 2.1, Math.max(0.5, mouth.y - 1.0), mouth.z + 1.9]], look: [[mouth.x, mouth.y, mouth.z], [mouth.x, mouth.y + 0.1, mouth.z]], fov: [40, 34], roll: [0.06, -0.04] },
+        cam: { pos: [[mouth.x - 3.0, Math.max(0.5, mouth.y - 1.3), mouth.z + 2.7], [mouth.x - 2.5, Math.max(0.5, mouth.y - 1.1), mouth.z + 2.3]], look: [[mouth.x + 0.2, mouth.y + 0.2, mouth.z], [mouth.x + 0.2, mouth.y + 0.3, mouth.z]], fov: [42, 36], roll: [0.06, -0.04] },
         at: [[0.25, (c) => {
           mon.play('roar'); c.sfx('boss_roar'); c.punch = 6; c.haptic(70);
           c.burst(mouth, glow, { size: 0.9, r: 6, flash: 0.32, shake: 1.0, n: 70 });
@@ -776,7 +784,7 @@ SCRIPTS.boss = (c, p) => {
           c.postTo({ bloom: 1.4 }, 0.15); c.later(0.5, () => c.postTo({ bloom: 0.95 }, 1));
         }]] },
       { dur: 3.4,
-        cam: { pos: [[mid - 0.3, 1.25, 7.0], [mid + 0.3, 1.4, 6.6]], look: [[mid + 0.2, Math.max(1.2, mh * 0.42), 0], [mid + 0.2, Math.max(1.2, mh * 0.42), 0]], fov: 40 },
+        cam: { pos: [[mid - 0.3, 1.3, Math.max(7.0, mh * 2.0 + 0.8)], [mid + 0.3, 1.45, Math.max(6.6, mh * 1.9 + 0.6)]], look: [[mid + 0.2, Math.max(1.2, mh * 0.5), 0], [mid + 0.2, Math.max(1.2, mh * 0.5), 0]], fov: 40 },
         enter: (c) => { mon.play('idle'); hero.play('idleCombat', { loop: true }); c.titleCard(def.name, def.title, { at: 0.15, dur: 3.0, bottom: glow, line: glow }); },
         at: [[2.7, (c) => { c.fadeTo = 1; c.fadeRate = 1.4; }]] },
     ],
@@ -811,7 +819,8 @@ SCRIPTS.victory = (c) => {
     friends.push(ch);
   });
   const fire = CA.fire || V();
-  const stand = V(0.2, 0, 1.9);
+  const ws = seats[Math.max(0, CHARACTER_ORDER.indexOf(who))] || { pos: V(1.55, 0.3, 0.95) };
+  const stand = V(ws.pos.x * 1.3, 0, ws.pos.z * 1.3 + 0.45);
   const back = c.char(who, 'camp', stand, faceTo(stand, fire), 'idle');
   const dawn = c.light('camp', 'dir', '#ffcf9a', 0, V(-4, 6, 3), { target: V(0, 0, 0) });
   const shaftB = c.add(beam(9, 0.5, 2.4, '#ffe0b0', 0, 1.2), 'camp');
@@ -824,10 +833,18 @@ SCRIPTS.victory = (c) => {
         cam: { pos: [[-3.5, 0.72, 2.7], [-3.0, 0.82, 2.25]], look: [[2.4, 2.6, 0], [2.4, 3.0, 0]], fov: [38, 43] },
         enter: (c) => { lord.play('stun'); hero.play('victory', { loop: true }); c.envTo(0.7, 0.6, 0.85, 1, 0); c.curseSmoke(V(2.6, 0.1, 0), 1.0, 16); },
         at: [
-          [1.2, (c) => { c.sfx('crack'); lord.flash('#ffe08a', 0.25); c.shake(0.2); }],
-          [1.9, (c) => { c.sfx('crack', { pitch: 1.2 }); lord.flash('#ffe08a', 0.3); c.shake(0.25); }],
-          [2.6, (c) => {
-            lord.play('die'); c.sfx('shatter'); c.sfx('victory_sting');
+          [0.9, (c) => {
+            c.sfx('crack'); lord.flash('#ffe08a', 0.25); c.shake(0.2);
+            c.stone(lord, '#ffd27a', -0.2); c.stoneTo(lord, 5.4, 1.8, 'inQuad');
+            c.every(40, () => { const lp = lord.group.position, y = lord._stone.uStone.value; c.P.add.emit({ pos: [lp.x + rnd(-1.1, 1.1), y, lp.z + rnd(-1.1, 1.1)], vel: [0, 0.6, 0], spread: 0.4, life: [0.3, 0.9], size: [1, 2], color: ['#ffe08a', '#fff4c8'], glow: 3, flicker: 0.5 }); });
+          }],
+          [1.9, (c) => { c.sfx('crack', { pitch: 1.2 }); c.shake(0.25); c.freeze(lord); }],
+          [2.75, (c) => {
+            const lp = lord.group.position;
+            lord.group.visible = false;
+            for (let i = 0; i < 12; i++) c.debris.spawn({ pos: [lp.x + rnd(-1, 1), rnd(0.4, 4.6), lp.z + rnd(-0.8, 0.8)], count: 22, colors: ['#8a8696', '#6a6676', '#a8a4b4', '#4a4656'], speed: 3, up: 3, spread: 0.4, gravity: 9, floor: 0.03, life: 2.8, scale: [0.8, 2.0] });
+            for (let i = 0; i < 70; i++) c.P.alpha.emit({ pos: [lp.x + rnd(-1.5, 1.5), rnd(0.1, 1.5), lp.z + rnd(-1, 1)], vel: [rnd(-1.5, 1.5), rnd(0, 0.8), rnd(-1.5, 1.5)], spread: 0.3, life: [1.5, 3], size: [2, 4], sizeEnd: 6, color: ['#8a8090', '#a8a0b0'], alpha: 0.5, drag: 1.4 });
+            c.sfx('shatter'); c.sfx('rock_break'); c.sfx('victory_sting');
             c.burst(chest, '#ffe08a', { size: 1.5, r: 9, flash: 0.85, shake: 0.9, n: 180, col2: '#fff4c8' });
             for (let i = 0; i < 90; i++) c.P.alpha.emit({ pos: [chest.x + rnd(-1, 1), chest.y + rnd(-1.5, 1), chest.z + rnd(-1, 1)], vel: [rnd(-0.5, 0.5), rnd(1.5, 4), rnd(-0.5, 0.5)], spread: 0.3, life: [1.5, 3], size: [2, 4], sizeEnd: 6, color: ['#3a1a4a', '#5a2a6a'], alpha: 0.55, swirl: 1.2 });
             c.envTo(1.25, 1.1, 0.9, 1.4, 0.3, 'outQuad'); c.later(0.5, () => c.envTo(1, 0.95, 0.9, 1.1, 2));
@@ -844,7 +861,7 @@ SCRIPTS.victory = (c) => {
         },
         cap: 'Far above, the light found its way home.', capAt: 0.4 },
       { set: 'camp', dur: 7.6, dip: 0.6,
-        cam: { pos: [[0.4, 1.55, 4.9], [0.1, 1.25, 3.6]], look: [[0, 0.75, -0.3], [0, 0.8, -0.4]], fov: [38, 36] },
+        cam: { pos: [[-1.0, 1.5, 4.6], [-0.6, 1.25, 3.5]], look: [[0.1, 0.72, -0.2], [0.1, 0.78, -0.3]], fov: [36, 34] },
         enter: (c) => {
           c.postTo({ saturation: 0.55, exposure: 0.88, gain: [1.0, 0.98, 0.96] }, 0);
           c.postTo({ saturation: 1.22, exposure: 1.12, gain: [1.12, 1.02, 0.86], bloom: 1.15 }, 6.5);

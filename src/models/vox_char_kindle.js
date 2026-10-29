@@ -17,18 +17,18 @@ function kindleGeo(el) {
   if (CACHE.has(el)) return CACHE.get(el);
   const [deep, mid, light, hot] = KINDLE_COLORS[el];
   const P = new VPart();
-  // a teardrop: round belly, drawn up into a leaning point
+  // a teardrop: round belly, drawn up into one leaning point
   P.loft(0, 17, (y) => {
-    const t = y / 17, r = t < 0.42 ? 5.2 * Math.sin(Math.PI * (0.18 + t / 0.42 * 0.32)) : 5.2 * Math.pow(1 - (t - 0.42) / 0.58, 1.25);
-    return r < 0.45 ? null : [r, r * 0.92, -Math.pow(Math.max(0, t - 0.45), 2) * 6, -Math.pow(Math.max(0, t - 0.5), 2) * 4];
+    const t = y / 17, r = t < 0.38 ? 4.6 * Math.sin(Math.PI * (0.2 + (t / 0.38) * 0.3)) : 4.6 * Math.pow(1 - (t - 0.38) / 0.62, 1.4);
+    return r < 0.45 ? null : [r, r * 0.92, -Math.pow(Math.max(0, t - 0.45), 2) * 5, -Math.pow(Math.max(0, t - 0.5), 2) * 6];
   }, (x, y, z, { u }) => {
     // facets: bands of direction around the body and up it, each one flat tone
     const band = Math.floor(((u / (Math.PI * 2)) + 1.0625) * 8) % 8, tier = y < 4 ? 0 : y < 9 ? 1 : 2;
     const lit = [3, 2, 1, 0, 0, 1, 2, 3][band] + (tier === 2 ? 1 : 0) - (tier === 0 ? 1 : 0);
     return { glow: true, c: [deep, mid, light, hot, hot][Math.max(0, Math.min(4, lit))] };
   });
-  // two little licks of flame on its shoulders
-  for (const sx of [-1, 1]) P.cap([sx * 4, 8, 0], [sx * 6.5, 12.5, -1], 1.6, 0.5, () => ({ glow: true, c: mid }));
+  // a little curl of flame at the tip
+  P.cap([0, 14, -3.5], [1.4, 18.5, -4.5], 1, 0.3, () => ({ glow: true, c: light }));
   // eyes: ember-dark, set into the front facet
   const E = new VPart();
   for (const ex of [-3, 1]) for (let y = 7; y <= 9; y++) for (let x = ex; x <= ex + 1; x++) {
@@ -36,7 +36,7 @@ function kindleGeo(el) {
     while (z > 0 && !P.has(x, y, z)) z--;
     P.set(x, y, z, null); E.set(x, y, z, y === 9 && x === ex ? '#6a2a1a' : '#1e0a0c');
   }
-  const out = { glow: P.geometry(VOX_PARTY, [0, 6, 0], { glowIntensity: 2.0 }).glow, eyes: E.geometry(VOX_PARTY, [0, 6, 0]).solid };
+  const out = { glow: P.geometry(VOX_PARTY, [0, 6, 0], { glowIntensity: 1.7 }).glow, eyes: E.geometry(VOX_PARTY, [0, 6, 0]).solid };
   CACHE.set(el, out);
   return out;
 }

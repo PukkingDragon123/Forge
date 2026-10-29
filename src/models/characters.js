@@ -533,7 +533,7 @@ export class Character {
     if (a.expr && opts.expr !== false && this.exprLock <= 0) this.setExpression(a.expr, { auto: true });
     if (!a.expr && opts.expr === undefined && this._autoExpr) this.setExpression('neutral', { auto: true });
     for (const k in this.props) this.props[k].visible = a.prop === k;
-    if (name === 'hurt') this.flash('#ff7a5a', 0.24);
+    if (name === 'hurt') this.flash('#ff9a82', 0.22);
   }
   /** Seconds from start of a one-shot anim until its impact frame. */
   impactTime(name) { const a = ANIMS[name]; return a ? (a.dur || a.period || 0.5) * (a.impact ?? 0.5) / (this.animOpts.speed || 1) : 0; }
@@ -646,7 +646,7 @@ export class Character {
     if (this.flashT > 0) {
       this.flashT -= dt;
       const k = Math.max(0, this.flashT / this.flashDur);
-      this.mat.emissive.copy(this.flashColor).multiplyScalar(k * 1.2);
+      this.mat.emissive.copy(this.flashColor).multiplyScalar(k * k * 0.55);
       if (this.flashT <= 0) this.mat.emissive.setRGB(0, 0, 0);
     }
   }
