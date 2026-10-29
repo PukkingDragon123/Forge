@@ -386,7 +386,8 @@ export class Sculpt {
   constructor() { this.prims = []; this.mats = []; }
   /** palette material: tile name, base hex, o: { acc, glow, gk (glow intensity), full (fully emissive), ts (texture scale), j (shade bias) } */
   mat(tile, base, o = {}) {
-    this.mats.push({ tile: typeof tile === 'number' ? tile : TILE[tile], base: lin(base), acc: lin(o.acc || base), glow: o.glow ? lin(o.glow).map((v) => v * (o.gk ?? 2.2)) : [0, 0, 0], full: !!o.full, ts: o.ts || 1, j: o.j ?? 0 });
+    this.mats.push({ tile: typeof tile === 'number' ? tile : TILE[tile], base: lin(base), acc: lin(o.acc || base), glow: o.glow ? lin(o.glow).map((v) => v * (o.gk ?? 2.2)) : [0, 0, 0], full: !!o.full, ts: o.ts || 1, j: o.j ?? 0,
+      hex: base, accHex: o.acc || base, glowHex: o.glow || null, gk: o.gk ?? 2.2 }); // sRGB hexes feed the voxel painter
     return this.mats.length - 1;
   }
   push(prim, op, k, mat, bone, o = {}) {

@@ -9,8 +9,10 @@ import { MerchantScene, TreasureScene, CampScene } from './rooms.js';
 import { DescendScene, GameOverScene, VictoryScene } from './endings.js';
 import { BagOverlay } from './bag.js';
 import { PauseOverlay } from './pause.js';
+import { RevealOverlay } from './reveal.js';
 import { TestScene } from './test.js';
 import { ForgeTestScene } from './forgetest.js';
+import { CutsceneScene } from './cutscene.js';
 
 export function registerScenes(game) {
   game.register('title', TitleScene);
@@ -27,6 +29,8 @@ export function registerScenes(game) {
   game.register('victory', VictoryScene);
   game.register('bag', BagOverlay);
   game.register('pause', PauseOverlay);
+  game.register('reveal', RevealOverlay);
   game.register('test', TestScene);
+  game.register('cutscene', CutsceneScene);
   game.register('forgetest', ForgeTestScene);
 }

@@ -1,11 +1,15 @@
-// Animated monsters & bosses: each creature is ONE continuous SDF-sculpted mesh (surface nets, flat-shaded,
-// triplanar pixel-art palette texture) driven by a real THREE.Skeleton. buildMonster(id) → Monster (see class docs).
+// Animated monsters & bosses as DETAILED VOXEL models. Each archetype authors a sculpt (SDF primitives on a bone
+// rig); vox_mon.js voxelizes it at ~1/40 of the creature's height, paints every voxel (hue-shifted palettes, pixel
+// patterns, emissive eyes/runes/crystals) and meshes one rigid voxel part per bone, so the rig animates it like a
+// voxel puppet. Hits knock voxel chunks loose; deaths burst into them. buildMonster(id) → Monster (see class docs).
 // Models face −X (toward the player on the left), feet at y = 0, 1 unit ≈ 1 m.
 import * as THREE from 'three';
 import { MONSTERS } from '../data/monsters.js';
 import { ParticleSystem } from '../gfx/particles.js';
 import { clamp, damp, ease } from '../core/math.js';
-import { Sculpt, sculptMaterial, makePrim, roundCone, ADD, SUB, PAINT, BIND } from './monster_kit.js';
+import { Sculpt, makePrim, roundCone, ADD, SUB, PAINT, BIND } from './monster_kit.js';
+import { voxelizeMonster } from './vox_mon.js';
+import { VoxelBurst } from './vox_mon_fx.js';
 import { NORMAL_ARCHES } from './monster_normals.js';
 import { BOSS_ARCHES } from './monster_bosses.js';
 
@@ -16,8 +20,9 @@ const DUR = { attack: 0.45, multi: 0.9, special: 0.9, hurt: 0.3, die: 1.2, intro
 const HOLD = new Set(['idle', 'windup', 'stun', 'die', 'disguise']);
 const OPS = { add: ADD, sub: SUB, paint: PAINT, bind: BIND };
 const _Y = new THREE.Vector3(0, 1, 0), _D = new THREE.Vector3();
-/** Sculpted geometry per monster id (meshing is the expensive part; rigs/materials are rebuilt per instance). */
+/** Voxel parts per monster id (voxelizing is the expensive part; rigs/materials are rebuilt per instance). */
 const GEO_CACHE = new Map();
+const GLOW_I = 1.9;
 export const MONSTER_STATS = { builds: 0, meshed: 0, ms: 0 };
 
 let SEED = 1;
@@ -120,7 +125,10 @@ export class Monster {
     else _Q.setFromEuler(_E.set(rot ? rot[0] : 0, rot ? rot[1] : 0, rot ? rot[2] : 0, o.order || 'XYZ'));
     _M.compose(_V.set(c[0], c[1], c[2]), _Q, _S);
     const f = new THREE.Matrix4().multiplyMatrices(this.frame(bone), _M);
-    return this.sculpt.push(makePrim(kind, f, q), OPS[o.op || 'add'], o.k ?? 0.02, mat, this.boneIdx[bone], o);
+    const prim = makePrim(kind, f, q);
+    const ds = Math.cbrt(Math.abs(f.determinant())) || 1;
+    prim.tmin = ds * (kind === 'ell' ? Math.min(...q.r) : kind === 'box' ? Math.min(...q.h) : kind === 'tor' ? q.r : kind === 'plate' ? q.h + q.round : kind === 'cry' ? q.r : 1);
+    return this.sculpt.push(prim, OPS[o.op || 'add'], o.k ?? 0.02, mat, this.boneIdx[bone], o);
   }
   /** Ellipsoid (r number or [rx,ry,rz]) at c in bone space. o: rot, k (blend), op add|sub|paint, noise, nf */
   ell(bone, c, r, mat, o = {}) { return this._prim('ell', bone, c, o.rot, { r: typeof r === 'number' ? [r, r, r] : r }, mat, o); }
@@ -136,7 +144,9 @@ export class Monster {
   cap(bone, a, b, ra, rb = ra, mat, o = {}) {
     const f = this.frame(bone), s = Math.cbrt(Math.abs(f.determinant())) || 1;
     const A = _V.set(a[0], a[1], a[2]).applyMatrix4(f).toArray(), B = _V.set(b[0], b[1], b[2]).applyMatrix4(f).toArray();
-    return this.sculpt.push(roundCone(A, B, ra * s, rb * s), OPS[o.op || 'add'], o.k ?? 0.02, mat, this.boneIdx[bone], o);
+    const prim = roundCone(A, B, ra * s, rb * s);
+    prim.tmin = Math.min(ra, rb) * s;
+    return this.sculpt.push(prim, OPS[o.op || 'add'], o.k ?? 0.02, mat, this.boneIdx[bone], o);
   }
   /** Tapered tube through points (radii: number | array | fn(t)). First segment blends with o.k, joints with o.kj. */
   tube(bone, pts, radii, mat, o = {}) {
@@ -150,22 +160,56 @@ export class Monster {
   _buildMesh() {
     let g = GEO_CACHE.get(this.id);
     if (!g) {
-      g = this.sculpt.mesh({ res: this.res, bones: this.bones.length, fall: this.fall, solo: this.solo });
+      const div = this.boss ? 48 : this.res >= 80 ? 46 : 40;
+      g = voxelizeMonster(this, div);
       GEO_CACHE.set(this.id, g);
       MONSTER_STATS.meshed++;
     }
     this.geo = g;
-    this.mat = sculptMaterial();
-    this.mats = [this.mat];
-    const bb = g.boundingBox, size = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z);
-    this.mat.userData.u.uTexScale.value = (this.texels || 200) / (64 * size);
-    const mesh = new THREE.SkinnedMesh(g, this.mat);
-    mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
-    this.root.add(mesh);
+    // per-instance materials so hit flashes and phase glows stay on this creature
+    this.mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(GLOW_I, GLOW_I, GLOW_I), fog: false });
+    this.layerMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(GLOW_I * 1.2, GLOW_I * 1.2, GLOW_I * 1.2), fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    this.mats = [this.mat, this.glowMat];
+    this.layerMeshes = [];
+    for (const part of g.parts) {
+      const bone = this.bones[part.bone] || this.rootBone;
+      if (part.solid) { const ms = new THREE.Mesh(part.solid, this.mat); ms.castShadow = true; ms.receiveShadow = true; ms.frustumCulled = false; bone.add(ms); }
+      if (part.glow) { const mg = new THREE.Mesh(part.glow, this.glowMat); mg.frustumCulled = false; bone.add(mg); }
+      for (const L of part.layers) {
+        if (!L.geo) continue;
+        const ml = new THREE.Mesh(L.geo, this.layerMat);
+        ml.frustumCulled = false; ml.visible = false; ml.userData.layer = L.name;
+        bone.add(ml); this.layerMeshes.push(ml);
+      }
+    }
+    this.mesh = this.root;
+    this.layers = this.layerMeshes.map((ml) => ml.userData.layer).filter(Boolean);
+    // chunks that pop off: sample voxels kept in bone space so they spawn where the part is right now
+    this.burst = new VoxelBurst(this.boss ? 260 : 140, g.cell * 0.95);
+    this.group.add(this.burst.mesh);
     this.group.updateMatrixWorld(true);
-    mesh.bind(new THREE.Skeleton(this.bones));
-    this.mesh = mesh;
-    this.layers = [...new Set(this.sculpt.prims.filter((p) => p.layer).map((p) => p.layer))];
+    const rootInv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    this.chunkSrc = g.samples.map((sm) => {
+      const b = this.bones[sm.bone] || this.rootBone;
+      const toBone = new THREE.Matrix4().multiplyMatrices(rootInv, b.matrixWorld).invert();
+      return { bone: b, lp: new THREE.Vector3(...sm.p).applyMatrix4(toBone), c: sm.c, glow: sm.glow };
+    });
+    this.jolt = 0; this.joltV = 0; this.burstDone = false; this._prevStrike = 0;
+  }
+  /** Knock n voxel chunks loose (power scales the throw). */
+  chunks(n, power = 1, near = null) {
+    if (!this.chunkSrc.length) return;
+    const w = new THREE.Vector3(), c = this.group.worldToLocal(this.root.localToWorld(new THREE.Vector3(0, this.height * 0.4 / (this.scale || 1), 0)));
+    for (let i = 0; i < n; i++) {
+      let src = this.chunkSrc[(Math.random() * this.chunkSrc.length) | 0];
+      if (near) { for (let tries = 0; tries < 5; tries++) { const s2 = this.chunkSrc[(Math.random() * this.chunkSrc.length) | 0]; s2.bone.localToWorld(w.copy(s2.lp)); this.group.worldToLocal(w); if (w.distanceTo(near) < this.height * 0.35) { src = s2; break; } } }
+      src.bone.localToWorld(w.copy(src.lp));
+      this.group.worldToLocal(w);
+      const dx = w.x - c.x, dz = w.z - c.z;
+      const sp = (0.8 + Math.random() * 1.6) * power;
+      this.burst.emit(w, src.c, [dx * 2.2 * power + (Math.random() - 0.3) * sp, (1.2 + Math.random() * 2.4) * power, dz * 2.2 * power + (Math.random() - 0.5) * sp], 0.9 + Math.random() * 0.9, src.glow);
+    }
   }
   _rest(p) { p.userData.rp = p.position.clone(); p.userData.rr = p.rotation.clone(); p.userData.rs = p.scale.clone(); }
   P(name) { return this.parts[name]; }
@@ -182,7 +226,7 @@ export class Monster {
     const s = this.scale;
     const v = (a) => new THREE.Vector3(a[0] * s, a[1] * s + this.fly, -a[2] * s);
     // bind-pose bounds (skinning every vertex on the CPU for an exact box is needlessly slow)
-    const box = this.geo.boundingBox.clone().applyMatrix4(this.mesh.matrixWorld);
+    const box = this.geo.bbox.clone().applyMatrix4(this.root.matrixWorld);
     this.height = this._height ? this._height * this.scale + this.fly : Math.max(0.3, box.max.y);
     this.bounds = box;
     if (this._hit) this.hitPoint = v(this._hit); else this.hitPoint.set((box.min.x + box.max.x) / 2, box.max.y * 0.6, 0);
@@ -203,6 +247,9 @@ export class Monster {
     if (state === 'intro') { this.env.intro = 0; this.env.dead = 0; }
     if (state === 'disguise') this.env.disguise = 1;
     if (state === 'die' && this.arch.onDie) this.arch.onDie(this);
+    if (state === 'hurt') { this.joltV += 7; this.chunks(this.boss ? 9 : 6, 0.8, this.hitPoint); }
+    if (state === 'die') { this.joltV += 9; this.burstDone = false; }
+    if (state === 'intro' || state === 'roar') this.joltV -= 4;
   }
   flash(color = '#ffffff', t = 0.1) {
     this.flashColor.set(color);
@@ -210,7 +257,7 @@ export class Monster {
   }
   setPhase(n) {
     this.phase = n;
-    this.mat.userData.u.uGlowMul.value = 1 + (n - 1) * 0.55;
+    this.glowMat.color.setScalar(GLOW_I * (1 + (n - 1) * 0.55));
     for (const e of this.emitters) e.boost = 1 + (n - 1) * 0.8;
     if (this.arch.phase) this.arch.phase(this, n);
   }
@@ -248,10 +295,20 @@ export class Monster {
     }
     const r = this.root;
     r.position.set(0, this.fly, 0); r.rotation.set(0, 0, 0); r.scale.setScalar(this.scale);
-    const breathe = Math.sin(this.t * 2.2) * 0.02 * (1 - e.dead);
-    // generic body language
-    r.position.x += -e.strike * this.reach + e.wind * 0.05 + e.hurt * 0.12;
-    r.rotation.z += -e.wind * 0.1 + e.strike * 0.14 - e.hurt * 0.12;
+    const breathe = Math.sin(this.t * 2.2) * 0.022 * (1 - e.dead);
+    // impact spring: squash on hits/landings, stretch on lunges (polished, cartoony follow-through)
+    this.joltV += (-70 * this.jolt - 9 * this.joltV) * dt;
+    this.jolt += this.joltV * dt;
+    if (e.strike > 0.85 && this._prevStrike <= 0.85) this.joltV -= 5;
+    this._prevStrike = e.strike;
+    const jl = clamp(this.jolt, -0.6, 0.6);
+    // generic body language: anticipation crouch on windup, lunge with stretch on attack, recoil on hurt
+    r.position.x += -e.strike * this.reach + e.wind * 0.07 + e.hurt * 0.14;
+    r.position.y -= e.wind * 0.035 * this.height / (this.scale || 1);
+    r.rotation.z += -e.wind * 0.12 + e.strike * 0.16 - e.hurt * 0.14 + Math.sin(this.t * 1.3) * 0.012 * (1 - e.dead);
+    r.scale.x *= 1 + e.strike * 0.07 + e.wind * 0.05 - jl * 0.12;
+    r.scale.y *= 1 - e.strike * 0.04 - e.wind * 0.07 + jl * 0.16;
+    if (e.hurt > 0.01) r.position.x += Math.sin(this.t * 70) * 0.012 * e.hurt;
     if (e.wind > 0.05) r.position.x += Math.sin(this.t * 60) * 0.006 * e.wind; // trembling telegraph
     if (e.stun > 0.01) { r.rotation.z += Math.sin(this.t * 7) * 0.08 * e.stun; r.rotation.x += Math.cos(this.t * 5) * 0.05 * e.stun; }
     r.scale.y *= 1 + breathe;
@@ -262,8 +319,18 @@ export class Monster {
 
     // hidden parts collapse into their pivot (bones can't be "invisible"); phase layers toggle glow masks
     for (const b of this.bones) if (!b.visible) b.scale.setScalar(1e-4);
-    if (this.layers.length) this.mat.userData.u.uLayer.value = this.layers.some((n) => this.parts[n] && this.parts[n].visible) ? 1 : 0;
+    for (const ml of this.layerMeshes) ml.visible = !!(ml.userData.layer && this.parts[ml.userData.layer] && this.parts[ml.userData.layer].visible);
+    // secondary motion: heads/tails/ears lag the body's squash a little
+    for (const nm of ['head', 'tail', 'tail1', 'tail2', 'earL', 'earR', 'jaw']) { const b = this.parts[nm]; if (b) b.rotation.z += -jl * 0.25 + e.hurt * 0.08 * Math.sin(this.t * 40); }
 
+    // death: the body breaks into voxel chunks as it goes down
+    if (s === 'die' && !this.burstDone && st > 0.22) {
+      this.burstDone = true;
+      const mode = this.arch.die || 'tip';
+      this.chunks(mode === 'fade' ? (this.boss ? 160 : 90) : this.boss ? 110 : 55, mode === 'fade' ? 1.1 : 0.9);
+    }
+    if (s === 'die' && st > 0.75 && st - dt <= 0.75) { this.joltV += 6; this.chunks(this.boss ? 40 : 16, 0.5); }
+    if (this.burst.active) this.burst.update(dt, 0);
     // death
     if (e.dead > 0) {
       const d = ease.outBounce(e.dead);
@@ -291,7 +358,7 @@ export class Monster {
       this.flashT -= dt;
       const k = Math.max(0, this.flashT / this.flashDur);
       const c = this.flashColor;
-      for (const m of this.mats) m.color.setRGB(1 + c.r * k * 2.2, 1 + c.g * k * 2.2, 1 + c.b * k * 2.2);
+      this.mat.color.setRGB(1 + c.r * k * 2.2, 1 + c.g * k * 2.2, 1 + c.b * k * 2.2);
       this._flashing = k > 0;
     }
 
@@ -322,9 +389,9 @@ export class Monster {
 
   dispose() {
     // sculpted geometry is cached per id and shared; only per-instance resources are released
-    this.root.traverse((o) => { if (o.geometry && o.geometry !== this.geo) o.geometry.dispose(); if (o.material && o.material !== this.mat) o.material.dispose(); });
-    this.mat.dispose();
-    this.mesh.skeleton.dispose();
+    // voxel geometry is cached per id and shared; only per-instance resources are released
+    this.mat.dispose(); this.glowMat.dispose(); this.layerMat.dispose();
+    this.burst.dispose();
     if (this.fx) { this.fx.geo.dispose(); this.fx.mat.dispose(); }
     this.group.removeFromParent();
   }
