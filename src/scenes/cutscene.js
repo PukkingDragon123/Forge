@@ -153,6 +153,7 @@ export class Cine {
     const s = this.sets[name];
     if (!s || s === this.set) return;
     for (const k in this.sets) this.sets[k].group.visible = this.sets[k] === s;
+    if (this.set) { this.P.add.clear(); this.P.alpha.clear(); this.debris.items.length = 0; }
     this.set = s;
     this.scene.fog = s.fog || null;
     this.scene.background = s.background || new THREE.Color('#05040a');
@@ -185,9 +186,11 @@ export class Cine {
   settle(o, n = 40) { for (let i = 0; i < n; i++) o.update(1 / 30); }
   walk(c, to, dur, o = {}) {
     const from = c.group.position.clone(), dest = v3(to);
+    if (c._walk) c._walk.dead = true;
     if (o.face !== false) c.group.rotation.y = faceTo(from, dest);
     c.play(o.anim || 'walk', { loop: true, speed: o.speed });
-    return this.tween(dur, (k) => c.group.position.lerpVectors(from, dest, k), o.ease || 'linear', () => { if (o.then !== false) c.play(o.then || 'idle', { loop: true }); });
+    c._walk = this.tween(dur, (k) => c.group.position.lerpVectors(from, dest, k), o.ease || 'linear', () => { c._walk = null; if (o.then !== false) c.play(o.then || 'idle', { loop: true }); });
+    return c._walk;
   }
   turn(c, ang, dur = 0.5) { const a0 = c.group.rotation.y; return this.tween(dur, (k) => (c.group.rotation.y = angleLerp(a0, ang, k)), 'inOutSine'); }
   /** Stone over an actor: returns its uniforms; `y` is where the stone line starts. */
@@ -324,14 +327,15 @@ export class Cine {
     const sdt = dt * this.speed;
     this.t += sdt;
     const S = this.shot;
-    if (S && !this.finishing) {
+    if (S) {
       this.st += sdt;
-      this.fireCues();
+      if (!this.finishing) this.fireCues();
       S.tick && S.tick(this, clamp(this.st / S.dur), this.st, sdt);
-      if (this.st >= S.dur && !this.held) this.next();
-    } else if (S && S.tick) { this.st += sdt; S.tick(this, clamp(this.st / S.dur), this.st, sdt); }
+      if (this.st >= S.dur && !this.held && !this.finishing) this.next();
+    }
     for (let i = this.tweens.length - 1; i >= 0; i--) {
       const tw = this.tweens[i];
+      if (tw.dead) { this.tweens.splice(i, 1); continue; }
       tw.t += sdt;
       const k = Math.min(1, tw.t / tw.dur);
       tw.fn(tw.e(k), tw.a);
@@ -545,11 +549,11 @@ SCRIPTS.prologue = (c) => {
           c.postTo({ bloom: 1.25, vignette: 0.5 }, 3);
           c.dustFall(-1.2, 1.2, -1.0, -0.6, 3.9, 40, '#a898b8');
           c.tick((dt) => { c.trauma = Math.max(c.trauma, 0.22); });
-          c.later(1.2, () => { c.walk(F.elio, V(0.85, 0, 2.3), 0.8, { face: false }); F.clover.play('dodge'); });
+          c.later(1.2, () => { F.elio.play('block', { loop: true }); F.clover.play('dodge'); });
         } },
       { dur: 5.4,
         cam: { pos: [[0, 1.25, -0.9], [0, 0.95, -1.7]], look: [[0, 3.4, -3.6], [0, 3.9, -3.6]], fov: [40, 48] },
-        enter: (c) => { c.later(0.15, () => { c.freeze(lord, false); lord.play('intro'); c.sfx('boss_intro'); }); c.lightTo(throneL, 7, 2.2); c.to(eyes.material, { opacity: 1 }, 1.6); eyes.material.opacity = 0; c.tween(2.2, (k) => eyes.material.color.setRGB(3 * k, 1.2 * k, 3 * k)); c.curseSmoke(V(0, 0.05, -3.2), 1.2, 26); },
+        enter: (c) => { c.later(0.15, () => { c.freeze(lord, false); lord.play('intro'); c.sfx('boss_intro'); }); c.lightTo(throneL, 7, 2.2); c.tween(2.2, (k) => eyes.material.color.setRGB(3 * k, 1.2 * k, 3 * k)); c.curseSmoke(V(0, 0.05, -3.2), 1.2, 26); },
         at: [[2.75, (c) => {
           lord.play('roar'); c.sfx('boss_roar'); c.punch = 7; c.haptic(60);
           c.burst(V(0, 3.0, -3.0), '#c86bff', { size: 1.4, r: 8, flash: 0.75, shake: 1.1, n: 160 });
@@ -610,7 +614,6 @@ SCRIPTS.prologue = (c) => {
         enter: (c) => {
           c.envTo(0.22, 0.2, 0.32, 0.8, 2.5);
           c.lightTo(doorL, 1.2, 2.5); c.lightTo(throneL, 2.2, 2.5);
-          for (const k in T.stage.lights || []) void k;
           c.later(1.3, () => {
             c.sfx('rumble', { vol: 0.5, pitch: 1.6 }); c.flash(0.1, [1, 0.85, 0.55]);
             const u = stones[who]; u.uSeamCol.value.set('#ffd27a'); u.uSeam.value = 1.6;
@@ -659,8 +662,8 @@ SCRIPTS.dive = (c) => {
         enter: (c) => { c.postTo({ saturation: 0.95 }, 0); c.later(2.3, () => c.walk(hero, mouth.clone().add(V(0.15, 0, 1.0)), 3.4)); },
         cap: 'Three friends turned to stone. One left to break the curse.', capAt: 0.5 },
       { dur: 3.0,
-        cam: { pos: [[-2.55, 1.05, -4.7], [-2.6, 1.0, -4.3]], look: [[-2.1, 0.95, -0.8], [-2.4, 1.0, -1.8]], fov: [44, 40] },
-        enter: (c) => { hero.group.position.copy(mouth.clone().add(V(0.4, 0, 2.2))); c.walk(hero, mouth.clone().add(V(0.05, 0, -0.9)), 3.0); c.sfx('footstep', { vol: 0.4 }); } },
+        cam: { pos: [[-2.55, 1.05, -5.2], [-2.6, 1.0, -4.85]], look: [[-2.1, 0.95, -0.8], [-2.4, 1.05, -1.8]], fov: [44, 40] },
+        enter: (c) => { hero.group.position.copy(mouth.clone().add(V(0.4, 0, 2.2))); c.walk(hero, mouth.clone().add(V(0.05, 0, -0.25)), 3.0); c.sfx('footstep', { vol: 0.4 }); } },
       { set: 'shaft', dur: 4.2,
         cam: { pos: [[2.3, 1.75, 1.3], [1.4, 1.95, 2.0], [-0.4, 1.55, 2.3]], look: [[0, 1.0, 0], [0, 0.95, 0]], fov: [40, 36], rel: () => S.lift.position.clone().setX(0).setZ(0) },
         enter: (c) => {
@@ -735,7 +738,6 @@ SCRIPTS.boss = (c, p) => {
   const mh = (mon.height || 3) + (mon.fly || 0);
   mon.group.updateMatrixWorld(true);
   const mouth = mon.group.localToWorld((mon.mouthPoint || V(-0.3, mh * 0.7, 0)).clone());
-  const chest = mon.group.localToWorld((mon.hitPoint || V(0, mh * 0.5, 0)).clone());
   const rim = c.light('arena', 'point', glow, 9, V(mp.x + 1.4, mh * 0.9, mp.z - 2.2), { dist: 9, decay: 1.2, fl: 0.08 });
   const lamp = c.light('arena', 'point', '#ffc070', 2.2, V(hp.x - 0.2, 1.4, hp.z + 0.6), { dist: 4.5, decay: 1.5, fl: 0.2 });
   const mid = (hp.x + mp.x) / 2;
@@ -786,10 +788,12 @@ SCRIPTS.victory = (c) => {
   const A = T.A;
   const lord = c.monster('cursed_lord', 'tomb', (A.monster || V(2, 0, 0)).clone().setX(2.6), 0.3);
   const hero = c.char(who, 'tomb', (A.player || V(-1.8, 0, 0.6)).clone(), Math.PI / 2 - 0.4, 'idleCombat');
+  lord.group.updateWorldMatrix(true, false);
   const chest = lord.group.localToWorld((lord.hitPoint || V(0, 3, 0)).clone());
   const S = c.shaftSet('shaft', layerBands(0, 5, 5), { lamp: '#ffd890', fog: '#0c0812', y0: -6 });
   S.lift.visible = false;
   const rush = c.add(glowSprite('#ffe08a', 5, 2.4, 1.3), S.group);
+  const rushL = c.light(S.group, 'point', '#ffd27a', 9, V(0, -32, 0), { dist: 11, decay: 1.2 });
   const rushBeam = c.add(beam(14, 0.3, 1.6, '#ffd27a', 0.7, 0.8), S.group);
   const camp = c.stageSet('camp', 'campfire', 0);
   const CA = camp.A, seats = CA.seats || [];
@@ -832,7 +836,7 @@ SCRIPTS.victory = (c) => {
       { set: 'shaft', dur: 3.8,
         cam: { pos: [[0.5, -29.5, 0.7], [0.3, -27.5, 0.5]], look: [[0, 0, 0], [0, 0, 0]], fov: [56, 50], roll: [0, -0.5] },
         enter: (c) => {
-          c.tween(3.0, (k) => { const y = -32 + k * 34; rush.position.set(0, y, 0); aimBeam(rushBeam, V(0, y + 0.5, 0), V(0, y - 14, 0)); }, 'inQuad');
+          c.tween(3.0, (k) => { const y = -32 + k * 34; rush.position.set(0, y, 0); rushL.position.set(0, y, 0); aimBeam(rushBeam, V(0, y + 0.5, 0), V(0, y - 14, 0)); }, 'inQuad');
           c.every(60, () => { const y = rush.position.y; c.P.add.emit({ pos: [rnd(-0.8, 0.8), y - rnd(0, 2), rnd(-0.8, 0.8)], vel: [rnd(-0.4, 0.4), rnd(4, 9), rnd(-0.4, 0.4)], spread: 0.2, life: [0.4, 1.0], size: [1, 2], color: ['#ffe08a', '#fff4c8', '#ffffff'], glow: 3 }); });
           c.sfx('wind_whoosh', { pitch: 1.3 });
         },
@@ -851,7 +855,7 @@ SCRIPTS.victory = (c) => {
               c.stoneTo(f, -0.25, 1.5, 'inQuad');
               c.sfx('rock_break', { vol: 0.7, pitch: 1 + i * 0.1 });
               const h = c.every(40, () => c.chips(f, undefined, true));
-              c.later(1.5, () => { c.ticks.splice(c.ticks.indexOf(h), 1); });
+              c.later(1.5, () => { h.fn = () => false; });
               c.later(0.9, () => { c.freeze(f, false); f.setSeated(false); f.play(cheers[i % 3], { loop: true }); f.setExpression('happy'); });
             });
           });

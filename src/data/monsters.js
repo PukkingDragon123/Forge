@@ -90,7 +90,7 @@ mon('gem_slime', {
   name: 'Gem Slime', region: 1, hp: 62, dmg: 4, interval: 2.6, resist: ['poison'], weak: ['fire'],
   attacks: [{ name: 'Bounce', dmg: 1, windup: 0.9, kind: 'normal' }, { name: 'Sparkle Burst', dmg: 0.5, windup: 1.1, kind: 'multi', hits: 3, weight: 0.4 }],
   drops: [{ id: 'slime_gel', chance: 1 }, { id: 'amethyst', chance: 0.35 }, { id: 'topaz', chance: 0.15 }],
-  model: { arch: 'slime', body: '#c08aff', belly: '#f0d8ff', accent: '#7a4ab0', eye: '#2a1a3a', scale: 0.9, inside: 'gem' },
+  model: { arch: 'slime', body: '#c08aff', belly: '#f0d8ff', accent: '#7a4ab0', eye: '#2a1a3a', scale: 1.05, inside: 'gem' },
   desc: 'Ate a jewelry box. Still hungry.',
 });
 mon('prism_wisp', {
@@ -111,17 +111,17 @@ mon('crystal_golem', {
 mon('geodessa', {
   name: 'Queen Geodessa', title: 'Matriarch of the Prism Web', region: 1, tier: 'boss', hp: 600, dmg: 8, interval: 2.9, armor: 2, weak: ['fire'],
   attacks: [
-    { name: 'Fang Lunge', dmg: 1, windup: 0.8, kind: 'normal' },
+    { name: 'Talon Lunge', dmg: 1, windup: 0.8, kind: 'normal' },
     { name: 'Web Spit', dmg: 0.6, windup: 1.0, kind: 'special', effect: 'web', weight: 0.4 },
     { name: 'Crystal Legs', dmg: 0.4, windup: 1.0, kind: 'multi', hits: 5, weight: 0.4 },
     { name: 'Shatter Storm', dmg: 1.8, windup: 1.8, kind: 'unblockable', weight: 0.3, phase: 2 },
   ],
   phases: [{ at: 0.5, text: 'Geodessa\'s crystal armor shatters into a frenzy!', speed: 1.3, armor: 0 }],
   drops: [{ id: 'queen_heart', chance: 1 }, { id: 'spider_silk', chance: 1 }, { id: 'amethyst', chance: 0.8 }, { id: 'prism', chance: 0.2 }],
-  model: { arch: 'geodessa', body: '#4a3a6a', belly: '#2a1a3a', accent: '#c08aff', eye: '#ff5af0', scale: 2.3, crystals: '#c08aff' },
+  model: { arch: 'geodessa', body: '#5a4a8a', belly: '#4a4060', accent: '#c08aff', eye: '#ff5af0', scale: 2.3, crystals: '#c08aff' },
   coins: [45, 60],
   intro: 'The crystals above you blink. They are eyes.',
-  desc: 'Web threads cut like glass. Fire melts her silk.',
+  desc: 'Half queen, half spider, all crystal. Web threads cut like glass. Fire melts her silk.',
 });
 
 // ============================================================ 2 · SPOREWOOD
@@ -133,32 +133,32 @@ mon('shroomling', {
   desc: 'Angry little hat with legs.',
 });
 mon('moss_snail', {
-  name: 'Moss Snail', region: 2, hp: 95, dmg: 5, interval: 3.4, armor: 4, weak: ['ice'],
-  attacks: [{ name: 'Slime Trail', dmg: 1, windup: 1.0, kind: 'normal' }, { name: 'Shell Slam', dmg: 1.6, windup: 1.5, kind: 'heavy', weight: 0.4 }],
+  name: 'Moss Golem', region: 2, hp: 95, dmg: 5, interval: 3.4, armor: 4, weak: ['ice'],
+  attacks: [{ name: 'Moss Slap', dmg: 1, windup: 1.0, kind: 'normal' }, { name: 'Boulder Slam', dmg: 1.6, windup: 1.5, kind: 'heavy', weight: 0.4 }],
   drops: [{ id: 'snail_shell', chance: 1 }, { id: 'slime_gel', chance: 0.6 }, { id: 'fossil', chance: 0.2 }],
-  model: { arch: 'snail', body: '#8ac05a', belly: '#c0e08a', accent: '#c88a5a', eye: '#1a1a1a', scale: 1.0 },
-  desc: 'Slow. Very slow. Armor 4.',
+  model: { arch: 'mossgolem', body: '#7e8074', belly: '#b8e070', accent: '#5a9a3e', eye: '#9affd0', scale: 1 },
+  desc: 'A walking hillside with a sapling on its back. Slow. Very slow. Armor 4.',
 });
 mon('lantern_moth', {
-  name: 'Lantern Moth', region: 2, hp: 50, dmg: 5, interval: 2.2, dodge: 0.15, weak: ['fire'],
-  attacks: [{ name: 'Wing Buffet', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Dazzle Dust', dmg: 0.5, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.35 }],
+  name: 'Glowcap Wisp', region: 2, hp: 50, dmg: 5, interval: 2.2, dodge: 0.15, weak: ['fire'],
+  attacks: [{ name: 'Spore Puff', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Spore Glare', dmg: 0.5, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.35 }],
   drops: [{ id: 'moth_dust', chance: 1 }, { id: 'feather', chance: 0.25 }],
-  model: { arch: 'moth', body: '#c8b080', belly: '#f0e0b0', accent: '#5af0c8', eye: '#ff4a8a', scale: 0.8 },
-  desc: 'Drawn to your lantern. And your face.',
+  model: { arch: 'glowwisp', body: '#bff8ec', belly: '#ffffff', accent: '#5af0c8', cap: '#4a58c8', eye: '#141a2e', scale: 1 },
+  desc: 'A lost spirit wearing a glowing mushroom. Drawn to your lantern. And your face.',
 });
 mon('bloat_toad', {
-  name: 'Bloat Toad', region: 2, hp: 85, dmg: 6, interval: 3.0, weak: ['shock'],
-  attacks: [{ name: 'Tongue Lash', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Belly Flop', dmg: 1.7, windup: 1.4, kind: 'heavy', weight: 0.45 }],
+  name: 'Bloatcap', region: 2, hp: 85, dmg: 6, interval: 3.0, weak: ['shock'],
+  attacks: [{ name: 'Tongue Lash', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Spore Flop', dmg: 1.7, windup: 1.4, kind: 'heavy', weight: 0.45 }],
   drops: [{ id: 'toad_tongue', chance: 1 }, { id: 'venomite', chance: 0.3 }, { id: 'emerald', chance: 0.1 }],
-  model: { arch: 'toad', body: '#5a8a3a', belly: '#e0d08a', accent: '#c04a8a', eye: '#ffd24a', scale: 1.0 },
-  desc: 'Mostly mouth.',
+  model: { arch: 'bloatcap', body: '#6c8c5a', belly: '#e6d69c', accent: '#c04a8a', eye: '#ffd24a', cap: '#c8462e', spore: '#5af0c8', scale: 1.1 },
+  desc: 'Half toad, half toadstool. Mostly mouth.',
 });
 mon('silk_spider', {
-  name: 'Silk Spider', region: 2, hp: 60, dmg: 5, interval: 2.3, weak: ['fire'],
-  attacks: [{ name: 'Bite', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Web Shot', dmg: 0.5, windup: 0.9, kind: 'special', effect: 'web', weight: 0.4 }],
+  name: 'Spore Goblin', region: 2, hp: 60, dmg: 5, interval: 2.3, weak: ['fire'],
+  attacks: [{ name: 'Staff Bonk', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Spore Snare', dmg: 0.5, windup: 0.9, kind: 'special', effect: 'web', weight: 0.4 }],
   drops: [{ id: 'spider_silk', chance: 1 }, { id: 'venom_sac', chance: 0.6 }],
-  model: { arch: 'spider', body: '#3a2a3a', belly: '#6a4a6a', accent: '#c0ff4a', eye: '#ff3a3a', scale: 0.85 },
-  desc: 'Webs slow your swings. Fire burns them away.',
+  model: { arch: 'sporegoblin', body: '#8aa860', belly: '#c8d890', accent: '#c0ff4a', cap: '#8a4ab0', eye: '#ff6a3a', scale: 1 },
+  desc: 'A goblin shaman with a mushroom for a hat. Its spore snares slow your swings. Fire burns them away.',
 });
 mon('myconid_brute', {
   name: 'Myconid Brute', region: 2, tier: 'elite', hp: 260, dmg: 8, interval: 3.2, weak: ['fire'], resist: ['poison'],
@@ -189,7 +189,7 @@ mon('bonepicker', {
   name: 'Bonepicker', region: 3, hp: 75, dmg: 6, interval: 2.4, weak: ['holy'], resist: ['poison', 'bleed'],
   attacks: [{ name: 'Pick Swing', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Rattle Rush', dmg: 0.5, windup: 0.9, kind: 'multi', hits: 3, weight: 0.4 }],
   drops: [{ id: 'bone', chance: 1 }, { id: 'skull', chance: 0.4 }, { id: 'gold', chance: 0.2 }],
-  model: { arch: 'skeleton', body: '#efe6d0', belly: '#b8a888', accent: '#8a5a3a', eye: '#4affe0', scale: 0.95 },
+  model: { arch: 'skeleton', body: '#efe6d0', belly: '#b8a888', accent: '#8a5a3a', eye: '#4affe0', scale: 1.1 },
   desc: 'A miner who never clocked out. Holy hurts.',
 });
 mon('stone_sentinel', {
@@ -200,11 +200,11 @@ mon('stone_sentinel', {
   desc: 'Armor 5. A floating head that never blinks.',
 });
 mon('ruin_owl', {
-  name: 'Ruin Owl', region: 3, hp: 70, dmg: 6, interval: 2.2, dodge: 0.15,
-  attacks: [{ name: 'Talon Rake', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Silent Dive', dmg: 1.4, windup: 1.0, kind: 'unblockable', weight: 0.3 }],
+  name: 'Gargoyle', region: 3, hp: 70, dmg: 6, interval: 2.2, dodge: 0.15,
+  attacks: [{ name: 'Stone Talons', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Silent Dive', dmg: 1.4, windup: 1.0, kind: 'unblockable', weight: 0.3 }],
   drops: [{ id: 'feather', chance: 1 }, { id: 'gold', chance: 0.25 }],
-  model: { arch: 'owl', body: '#8a7a6a', belly: '#e0d0b0', accent: '#ffd24a', eye: '#ffb84a', scale: 0.9 },
-  desc: 'Guards a library nobody can read anymore.',
+  model: { arch: 'gargoyle', body: '#8a8478', belly: '#6e685e', accent: '#ffd24a', eye: '#4affe0', scale: 1 },
+  desc: 'Guarded a library until the library forgot it. Now it guards nothing, fiercely.',
 });
 mon('gilded_guard', {
   name: 'Gilded Guard', region: 3, hp: 120, dmg: 7, interval: 2.8, armor: 3, weak: ['shock'],
@@ -247,18 +247,18 @@ mon('magma_slime', {
   desc: 'Fire-proof. Ice makes it crumble.',
 });
 mon('salamander', {
-  name: 'Salamander', region: 4, hp: 90, dmg: 7, interval: 2.3, weak: ['ice'], resist: ['fire'],
-  attacks: [{ name: 'Bite', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Flame Breath', dmg: 0.5, windup: 1.0, kind: 'multi', hits: 3, effect: 'burn', weight: 0.4 }],
+  name: 'Magma Imp', region: 4, hp: 90, dmg: 7, interval: 2.3, weak: ['ice'], resist: ['fire'],
+  attacks: [{ name: 'Ember Claw', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Fire Spit', dmg: 0.5, windup: 1.0, kind: 'multi', hits: 3, effect: 'burn', weight: 0.4 }],
   drops: [{ id: 'salamander_scale', chance: 1 }, { id: 'fire_gland', chance: 0.4 }],
-  model: { arch: 'salamander', body: '#e04a2a', belly: '#ffd04a', accent: '#3a1a1a', eye: '#ffe04a', scale: 0.95 },
-  desc: 'Lives in lava. Thinks you look chilly.',
+  model: { arch: 'magmaimp', body: '#42302c', belly: '#ffb04a', accent: '#ff7a1a', eye: '#ffe04a', scale: 1 },
+  desc: 'Born in the lava pools. Thinks you look chilly.',
 });
 mon('cinder_bat', {
-  name: 'Cinder Bat', region: 4, hp: 70, dmg: 6, interval: 2.0, dodge: 0.15, weak: ['ice'],
-  attacks: [{ name: 'Ember Swoop', dmg: 1, windup: 0.6, kind: 'normal', effect: 'burn' }, { name: 'Ash Cloud', dmg: 0.4, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.3 }],
+  name: 'Flame Skull', region: 4, hp: 70, dmg: 6, interval: 2.0, dodge: 0.15, weak: ['ice'],
+  attacks: [{ name: 'Burning Bite', dmg: 1, windup: 0.6, kind: 'normal', effect: 'burn' }, { name: 'Ash Cloud', dmg: 0.4, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.3 }],
   drops: [{ id: 'bat_fang', chance: 1 }, { id: 'ember', chance: 0.6 }],
-  model: { arch: 'bat', body: '#3a2a2a', belly: '#ff7a2a', accent: '#ffd04a', eye: '#ffe04a', scale: 0.8, glow: true },
-  desc: 'A bat that caught fire and decided it liked it.',
+  model: { arch: 'flameskull', body: '#ecdfc2', belly: '#ff7a2a', accent: '#ffd04a', eye: '#ffe04a', scale: 1 },
+  desc: 'A miner who swore he would never leave the forge. He kept his word.',
 });
 mon('cinder_golem', {
   name: 'Cinder Golem', region: 4, hp: 140, dmg: 8, interval: 3.2, armor: 5, weak: ['ice'], resist: ['fire'],
@@ -268,10 +268,10 @@ mon('cinder_golem', {
   desc: 'Armor 5. Cracks glow when it\'s angry. It\'s always angry.',
 });
 mon('lava_wyrmling', {
-  name: 'Lava Wyrmling', region: 4, tier: 'elite', hp: 380, dmg: 10, interval: 2.8, armor: 3, weak: ['ice'], resist: ['fire'],
+  name: 'Lava Drake', region: 4, tier: 'elite', hp: 380, dmg: 10, interval: 2.8, armor: 3, weak: ['ice'], resist: ['fire'],
   attacks: [{ name: 'Tail Whip', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Fire Breath', dmg: 0.6, windup: 1.2, kind: 'multi', hits: 4, effect: 'burn', weight: 0.4 }, { name: 'Molten Dive', dmg: 2.0, windup: 1.6, kind: 'unblockable', weight: 0.3 }],
   drops: [{ id: 'wyrm_scale', chance: 1 }, { id: 'fire_gland', chance: 0.8 }, { id: 'ruby', chance: 0.4 }],
-  model: { arch: 'wyrm', body: '#c83a1a', belly: '#ffb04a', accent: '#3a1a14', eye: '#ffe04a', scale: 1.3, glow: true },
+  model: { arch: 'lavadrake', body: '#c83a1a', belly: '#ffb04a', accent: '#3a1a14', eye: '#ffe04a', scale: 1 },
   coins: [26, 36],
   desc: 'Pyrrhax\'s youngest. Already grumpy.',
 });
@@ -307,11 +307,11 @@ mon('wraith', {
   desc: 'Mostly hate, partly sheet.',
 });
 mon('bone_hound', {
-  name: 'Bone Hound', region: 5, hp: 120, dmg: 8, interval: 2.0, weak: ['holy'], resist: ['poison'],
-  attacks: [{ name: 'Maul', dmg: 1, windup: 0.5, kind: 'normal' }, { name: 'Pack Frenzy', dmg: 0.45, windup: 0.8, kind: 'multi', hits: 4, weight: 0.4 }],
+  name: 'Grave Ghoul', region: 5, hp: 120, dmg: 8, interval: 2.0, weak: ['holy'], resist: ['poison'],
+  attacks: [{ name: 'Grave Rend', dmg: 1, windup: 0.5, kind: 'normal' }, { name: 'Feeding Frenzy', dmg: 0.45, windup: 0.8, kind: 'multi', hits: 4, weight: 0.4 }],
   drops: [{ id: 'hound_fang', chance: 1 }, { id: 'bone', chance: 1 }, { id: 'skull', chance: 0.3 }],
-  model: { arch: 'hound', body: '#d8d0c0', belly: '#7a3ab0', accent: '#c86bff', eye: '#c86bff', scale: 1.0 },
-  desc: 'Good boy. Was. Long ago.',
+  model: { arch: 'ghoul', body: '#9aa894', belly: '#5a3a7a', accent: '#c86bff', eye: '#c86bff', scale: 1 },
+  desc: 'Crawled out of the tomb hungry and never stopped.',
 });
 mon('grave_colossus', {
   name: 'Grave Colossus', region: 5, tier: 'elite', hp: 460, dmg: 12, interval: 3.2, armor: 5, weak: ['holy'],

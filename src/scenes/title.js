@@ -20,7 +20,7 @@ import { SYNERGIES } from '../systems/forge.js';
 import { logo, materialSprite } from '../art/sprites.js';
 import { COLORS } from '../ui/font.js';
 import { save } from '../core/save.js';
-import { clamp, ease } from '../core/math.js';
+import { clamp } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
 import { STORIES } from '../data/stories.js';
 
@@ -138,9 +138,9 @@ export class TitleScene extends Scene {
       const c = this.chars[this.focus];
       const head = this.headOf(c);
       const out = new THREE.Vector3(c.seatPos.x, 0, c.seatPos.z + 2.4).sub(A.fire).setY(0).normalize();
-      const pos = head.clone().addScaledVector(out, 2.6).add(new THREE.Vector3(0, 0.55, 0));
-      const right = new THREE.Vector3(out.z, 0, -out.x);
-      const look = head.clone().add(new THREE.Vector3(0, -0.25, 0)).addScaledVector(right, -0.62);
+      const pos = head.clone().addScaledVector(out, 3.3).add(new THREE.Vector3(0, 0.45, 0));
+      const right = new THREE.Vector3(out.z, 0, -out.x); // camera-right: the explorer sits left of frame, the panel right
+      const look = head.clone().add(new THREE.Vector3(0, -0.45, 0)).addScaledVector(right, 0.75);
       this.rig.aim(pos.toArray(), look.toArray(), 34, 2.6);
     } else {
       const b = this.time * 0.18;
@@ -260,16 +260,26 @@ export class TitleScene extends Scene {
     this.co.start(function* () {
       c.setSeated && c.setSeated(false);
       c.play('walk', { loop: true });
-      const path = [c.group.position.clone(), new THREE.Vector3(A.mineEntrance.x + 0.2, 0, A.mineEntrance.z + 1.2), new THREE.Vector3(A.mineEntrance.x, 0, A.mineEntrance.z), new THREE.Vector3(A.mineDeep.x, 0, A.mineDeep.z)];
-      // the camera turns to watch them go into the dark
-      cam.moveTo([A.mineEntrance.x + 1.6, 1.9, A.mineEntrance.z + 4.4], [A.mineEntrance.x, 0.9, A.mineEntrance.z - 0.4], 36, 3.2, 'inOutSine');
+      // walk around the fire (front-row explorers pass in front of it), then into the mine
+      const p0 = c.group.position.clone(), tgt = new THREE.Vector3(A.mineEntrance.x + 0.2, 0, A.mineEntrance.z + 1.2);
+      const path = [p0];
+      const a0 = Math.atan2(p0.z, p0.x), a1 = Math.atan2(tgt.z, tgt.x);
+      let d = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0));
+      if (p0.z > 0 && d < 0) d += Math.PI * 2;
+      if (Math.abs(d) > 0.5) {
+        const R = p0.z > 0 ? 2.7 : Math.max(1.7, Math.hypot(p0.x, p0.z)), n = Math.ceil(Math.abs(d) / 0.45);
+        for (let k = 1; k <= n; k++) { const a = a0 + (d * k) / n; path.push(new THREE.Vector3(Math.cos(a) * R, 0, Math.sin(a) * R)); }
+      }
+      path.push(tgt, new THREE.Vector3(A.mineEntrance.x, 0, A.mineEntrance.z), new THREE.Vector3(A.mineDeep.x, 0, A.mineDeep.z));
+      // the camera rises to a wide shot of the camp and watches them go into the dark
+      cam.moveTo([0.6, 3.5, 5.6], [-1.5, 0.6, -2.3], 36, 2.4, 'inOutSine');
       for (let i = 1; i < path.length; i++) {
-        const a = path[i - 1], b = path[i], len = a.distanceTo(b), dur = len / 1.25;
+        const a = path[i - 1], b = path[i], len = a.distanceTo(b), dur = len / 1.6;
         c.group.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
         let t = 0;
         while (t < dur) {
           t += this.game.ui.dt || 0.016;
-          c.group.position.lerpVectors(a, b, ease.inOutSine(Math.min(1, t / dur)));
+          c.group.position.lerpVectors(a, b, Math.min(1, t / dur));
           if (i === path.length - 1) this.fade = clamp(t / dur, 0, 1) * 0.6;
           yield null;
         }

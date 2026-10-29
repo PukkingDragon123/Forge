@@ -1,11 +1,14 @@
 // Voxel painting kit for the explorers and their weapons: a sparse voxel "part" you paint with
-// shapes and colour functions in integer voxel units, then mesh into one geometry with baked
-// ambient occlusion, a soft bevel (outer edges of every face catch a little light), gentle face
-// shading and per-voxel colour variation. Emissive voxels go to a separate unlit mesh so they bloom.
+// shapes and colour functions in integer voxel units, then mesh into one greedy-merged geometry
+// with baked ambient occlusion, a soft bevel (outer edges of every face catch a little light) and
+// gentle face shading. Flat, evenly lit runs of one colour merge into single quads; corners keep
+// their per-vertex occlusion. Emissive voxels go to a separate unlit mesh so they bloom.
 import * as THREE from 'three';
 
-/** World size of one voxel for every voxel model at in-game scale (explorers, weapons, monsters, props). */
+/** World size of one voxel for voxel models at in-game scale (weapons, monsters, props). */
 export const VOX = 0.04;
+/** The party is drawn twice as fine, on its own grid (as are the weapons they hold). */
+export const VOX_PARTY = 0.02;
 
 const LIN = new Float32Array(256);
 for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
@@ -34,28 +37,35 @@ export function ramp(cols, t, x = 0, y = 0, z = 0, s = 0) {
   const i = Math.floor(t);
   return mix(cols[i], cols[Math.min(i + 1, cols.length - 1)], t - i);
 }
+/** Pick a tone from a ramp at t with no dither: flat colour blocks that the mesher can merge. */
+export function tone(cols, t) {
+  t = Math.max(0, Math.min(0.999, t)) * (cols.length - 1);
+  return rgb(cols[Math.floor(t + 0.5)] || cols[cols.length - 1]);
+}
 
-const pack = (c) => { const [r, g, b] = rgb(c); return ((Math.round(Math.min(255, r)) << 16) | (Math.round(Math.min(255, g)) << 8) | Math.round(Math.min(255, b))) >>> 0 || 0x010101; };
-const KEY = (x, y, z) => ((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512);
+const pack = (c) => { const [r, g, b] = rgb(c); return ((Math.round(Math.min(255, Math.max(0, r))) << 16) | (Math.round(Math.min(255, Math.max(0, g))) << 8) | Math.round(Math.min(255, Math.max(0, b)))) >>> 0 || 0x010101; };
+const OFF = 512;
+const KEY = (x, y, z) => ((x + OFF) * 1024 + (y + OFF)) * 1024 + (z + OFF);
+const KX = (k) => Math.floor(k / 1048576) - OFF, KY = (k) => (Math.floor(k / 1024) & 1023) - OFF, KZ = (k) => (k & 1023) - OFF;
 
 /** A sparse voxel model in integer voxel coordinates (voxel x spans [x, x+1)). */
 export class VPart {
   constructor() { this.m = new Map(); }
   set(x, y, z, c, glow = false) {
-    x = Math.floor(x); y = Math.floor(y); z = Math.floor(z);
-    if (c === null || c === 0) { this.m.delete(KEY(x, y, z)); return; }
-    if (c && c.glow) { glow = true; c = c.c; }
-    this.m.set(KEY(x, y, z), { x, y, z, v: pack(c) | (glow ? GLOW : 0) });
+    if (c === undefined) return;
+    const k = KEY(Math.floor(x), Math.floor(y), Math.floor(z));
+    if (c === null || c === 0) { this.m.delete(k); return; }
+    if (c.glow) { glow = true; c = c.c; }
+    this.m.set(k, pack(c) + (glow ? GLOW : 0));
   }
-  get(x, y, z) { const e = this.m.get(KEY(x, y, z)); return e ? e.v : 0; }
+  get(x, y, z) { return this.m.get(KEY(x, y, z)) || 0; }
   has(x, y, z) { return this.m.has(KEY(x, y, z)); }
   del(x, y, z) { this.m.delete(KEY(x, y, z)); }
   _put(x, y, z, c, a, glow) {
     const col = typeof c === 'function' ? c(x, y, z, a) : c;
     if (col === undefined) return;
     if (col === null) { this.del(x, y, z); return; }
-    if (col && col.glow) this.set(x, y, z, col.c, true);
-    else this.set(x, y, z, col, glow);
+    this.set(x, y, z, col, glow);
   }
   /** Box [x0,x1)×[y0,y1)×[z0,z1). */
   box(x0, y0, z0, x1, y1, z1, c, glow = false) {
@@ -90,6 +100,14 @@ export class VPart {
         }
     return this;
   }
+  /** A chain of capsules through points [[x,y,z,r],...]; colour fn gets (x,y,z,t) with t along the whole chain. */
+  path(pts, c, glow = false, o = {}) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1], n = pts.length - 1;
+      this.cap(a, b, a[3], b[3], typeof c === 'function' ? (x, y, z, t) => c(x, y, z, (i + t) / n) : c, glow, o);
+    }
+    return this;
+  }
   /**
    * Stack of elliptical slices from y0 up to y1: f(y) → [rx, rz, cx = 0, cz = 0] or null.
    * o.shell = wall thickness (hollow), o.front = only z ≥ cz (for bibs and plates).
@@ -100,107 +118,169 @@ export class VPart {
       const s = f(y + 0.5);
       if (!s) continue;
       const [rx, rz, cx = 0, cz = 0] = s;
+      if (rx <= 0 || rz <= 0) continue;
       for (let z = Math.floor(cz - rz); z <= Math.ceil(cz + rz); z++) for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
         const dx = (x + 0.5 - cx) / rx, dz = (z + 0.5 - cz) / rz;
         const d = dx * dx + dz * dz;
         if (d > 1) continue;
         if (o.shell) { const ix = (x + 0.5 - cx) / Math.max(0.3, rx - o.shell), iz = (z + 0.5 - cz) / Math.max(0.3, rz - o.shell); if (ix * ix + iz * iz < 1) continue; }
         if (o.front && z + 0.5 < cz) continue;
-        this._put(x, y, z, c, { u: Math.atan2(x + 0.5 - cx, z + 0.5 - cz), d });
+        this._put(x, y, z, c, { u: Math.atan2(x + 0.5 - cx, z + 0.5 - cz), d }, o.glow);
       }
     }
     return this;
   }
+  /** Each voxel as {x, y, z, v} (a snapshot, safe to edit the part while iterating). */
+  entries() { const out = []; for (const [k, v] of this.m) out.push({ x: KX(k), y: KY(k), z: KZ(k), v }); return out; }
   /** Recolour existing voxels: fn(x,y,z,[r,g,b]) → colour | null (delete) | undefined (keep). */
   paint(fn) {
-    for (const e of [...this.m.values()]) {
+    for (const e of this.entries()) {
       const v = e.v;
       const col = fn(e.x, e.y, e.z, [(v >> 16) & 255, (v >> 8) & 255, v & 255]);
       if (col === undefined) continue;
-      if (col === null) this.m.delete(KEY(e.x, e.y, e.z));
+      if (col === null) this.del(e.x, e.y, e.z);
       else if (col && col.glow) this.set(e.x, e.y, e.z, col.c, true);
-      else this.set(e.x, e.y, e.z, col, !!(v & GLOW));
+      else this.set(e.x, e.y, e.z, col, (v & GLOW) !== 0);
     }
     return this;
   }
   /** Delete voxels where test(x,y,z) is true. */
-  carve(test) { for (const e of [...this.m.values()]) if (test(e.x, e.y, e.z)) this.m.delete(KEY(e.x, e.y, e.z)); return this; }
+  carve(test) { for (const e of this.entries()) if (test(e.x, e.y, e.z)) this.del(e.x, e.y, e.z); return this; }
   /** True if the voxel is on the outside (has an empty neighbour). */
   surface(x, y, z) { return !this.has(x + 1, y, z) || !this.has(x - 1, y, z) || !this.has(x, y + 1, z) || !this.has(x, y - 1, z) || !this.has(x, y, z + 1) || !this.has(x, y, z - 1); }
   /** Copy the x ≥ 0 half to the mirrored side (voxel x ↦ -x-1). */
-  mirrorX() { for (const e of [...this.m.values()]) if (e.x >= 0) this.m.set(KEY(-e.x - 1, e.y, e.z), { x: -e.x - 1, y: e.y, z: e.z, v: e.v }); return this; }
-  add(other, dx = 0, dy = 0, dz = 0) { for (const e of other.m.values()) this.m.set(KEY(e.x + dx, e.y + dy, e.z + dz), { x: e.x + dx, y: e.y + dy, z: e.z + dz, v: e.v }); return this; }
+  mirrorX() { for (const e of this.entries()) if (e.x >= 0) this.m.set(KEY(-e.x - 1, e.y, e.z), e.v); return this; }
+  add(other, dx = 0, dy = 0, dz = 0) { for (const e of other.entries()) this.m.set(KEY(e.x + dx, e.y + dy, e.z + dz), e.v); return this; }
   get count() { return this.m.size; }
   /**
-   * Re-voxelise onto a coarser grid (k output voxels per voxel, k < 1) so a part painted in fine
-   * design units lands on the shared world grid. Every voxel maps to the output cell holding its
-   * centre; where several share a cell the one that matters most wins: glowing, then exposed, then
-   * one that stands out sharply from its neighbours (seams, slits, rivets survive the downsample),
-   * then the one nearest the cell centre.
+   * Re-voxelise onto a coarser grid (k output voxels per voxel, k < 1). Every voxel maps to the
+   * output cell holding its centre; where several share a cell the one that matters most wins:
+   * glowing, then exposed, then one that stands out sharply from its neighbours (seams, slits,
+   * rivets survive the downsample), then the one nearest the cell centre.
    */
   resample(k) {
     if (k === 1) return this;
     const best = new Map();
     const N = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-    for (const e of this.m.values()) {
+    for (const e of this.entries()) {
       const ox = Math.floor((e.x + 0.5) * k), oy = Math.floor((e.y + 0.5) * k), oz = Math.floor((e.z + 0.5) * k);
       const key = KEY(ox, oy, oz);
       let s = e.v & GLOW ? 1e6 : 0, open = false, diff = 0;
       for (const n of N) {
-        const ne = this.m.get(KEY(e.x + n[0], e.y + n[1], e.z + n[2]));
-        if (!ne) { open = true; continue; }
-        diff += Math.abs(((e.v >> 16) & 255) - ((ne.v >> 16) & 255)) + Math.abs(((e.v >> 8) & 255) - ((ne.v >> 8) & 255)) + Math.abs((e.v & 255) - (ne.v & 255));
+        const nv = this.m.get(KEY(e.x + n[0], e.y + n[1], e.z + n[2]));
+        if (nv === undefined) { open = true; continue; }
+        diff += Math.abs(((e.v >> 16) & 255) - ((nv >> 16) & 255)) + Math.abs(((e.v >> 8) & 255) - ((nv >> 8) & 255)) + Math.abs((e.v & 255) - (nv & 255));
       }
-      // a real feature (seam, slit, rivet) beats mere colour noise; otherwise the voxel nearest the cell centre wins
       const fx = (e.x + 0.5) * k - ox - 0.5, fy = (e.y + 0.5) * k - oy - 0.5, fz = (e.z + 0.5) * k - oz - 0.5;
       s += (open ? 1e4 : 0) + (diff / 6 > 60 ? 100 + diff / 6 : 0) + (1 - (fx * fx + fy * fy + fz * fz)) * 20;
       const b = best.get(key);
-      if (!b || s > b.s) best.set(key, { s, x: ox, y: oy, z: oz, v: e.v });
+      if (!b || s > b.s) best.set(key, { s, v: e.v });
     }
     const out = new VPart();
-    for (const [key, b] of best) out.m.set(key, { x: b.x, y: b.y, z: b.z, v: b.v });
+    for (const [key, b] of best) out.m.set(key, b.v);
     return out;
   }
 
   /**
    * Mesh into { solid, glow } BufferGeometries (vertex colours, linear). vs: voxel size;
-   * offset: [x,y,z] voxel-space point that maps to the local origin.
+   * offset: [x,y,z] voxel-space point that maps to the local origin. Greedy: runs of faces with the
+   * same colour and the same, even lighting at all four corners merge into one quad.
    */
   geometry(vs, offset = [0, 0, 0], o = {}) {
-    const solid = { p: [], n: [], c: [], i: [] }, glow = { p: [], n: [], c: [], i: [] };
-    const occ = (x, y, z) => { const e = this.m.get(KEY(x, y, z)); return e && !(e.v & GLOW) ? 1 : 0; };
-    const jitter = o.jitter ?? 0.03, gi = o.glowIntensity ?? 2.4;
-    for (const e of this.m.values()) {
-      const { x, y, z, v } = e;
-      const isGlow = (v & GLOW) !== 0;
-      const base = [LIN[(v >> 16) & 255], LIN[(v >> 8) & 255], LIN[v & 255]];
-      const jit = 1 + (hash(x, y, z, 7) - 0.5) * 2 * jitter;
-      for (let f = 0; f < 6; f++) {
-        const F = FACES[f];
-        const ne = this.m.get(KEY(x + F.n[0], y + F.n[1], z + F.n[2]));
-        if (ne && !((ne.v & GLOW) && !isGlow)) continue;
-        const B = isGlow ? glow : solid;
-        const vi = B.p.length / 3;
-        const aos = [];
-        for (let k = 0; k < 4; k++) {
-          const c = F.c[k];
-          B.p.push((x + c[0] - offset[0]) * vs, (y + c[1] - offset[1]) * vs, (z + c[2] - offset[2]) * vs);
-          B.n.push(F.n[0], F.n[1], F.n[2]);
-          let m;
-          if (isGlow) m = gi;
-          else {
-            const [s1, s2, cc, t1, t2] = F.ao[k];
-            const a1 = occ(x + s1[0], y + s1[1], z + s1[2]), a2 = occ(x + s2[0], y + s2[1], z + s2[2]), a3 = occ(x + cc[0], y + cc[1], z + cc[2]);
-            const ao = a1 && a2 ? 0 : 3 - (a1 + a2 + a3);
-            aos.push(ao);
-            // soft bevel: a corner on the outer rim of this face (no in-plane neighbour) catches light
-            const rim = !this.has(x + t1[0], y + t1[1], z + t1[2]) || !this.has(x + t2[0], y + t2[1], z + t2[2]);
-            m = AO[ao] * SHADE[f] * jit * (rim ? (f === 2 ? 1.16 : 1.08) : 1);
+    const jitter = o.jitter ?? 0, gi = o.glowIntensity ?? 2.4;
+    if (!this.m.size) return { solid: null, glow: null };
+    let x0 = 1e9, y0 = 1e9, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9;
+    for (const k of this.m.keys()) {
+      const x = KX(k), y = KY(k), z = KZ(k);
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    // dense grid with a one-cell empty border
+    const NX = x1 - x0 + 3, NY = y1 - y0 + 3, NZ = z1 - z0 + 3, SY = NX, SZ = NX * NY;
+    const G = new Uint32Array(NX * NY * NZ);
+    for (const [k, v] of this.m) G[(KX(k) - x0 + 1) + (KY(k) - y0 + 1) * SY + (KZ(k) - z0 + 1) * SZ] = v;
+    const N3 = [NX, NY, NZ], ST = [1, SY, SZ], O3 = [x0 - 1, y0 - 1, z0 - 1];
+    const solid = { p: [], c: [], n: [], i: [] }, glow = { p: [], c: [], n: [], i: [] };
+    const occ = (i) => { const v = G[i]; return v && !(v & GLOW) ? 1 : 0; };
+    const hasV = (i) => (G[i] ? 1 : 0);
+    const emit = (B, d, s, slice, a0, b0, a1, b1, cols, nrm) => {
+      const u = (d + 1) % 3, w = (d + 2) % 3;
+      const vi = B.p.length / 3;
+      const corners = [[a0, b0], [a1, b0], [a1, b1], [a0, b1]];
+      for (const [a, b] of corners) {
+        const q = [0, 0, 0];
+        q[d] = slice; q[u] = a; q[w] = b;
+        B.p.push((q[0] + O3[0] - offset[0]) * vs, (q[1] + O3[1] - offset[1]) * vs, (q[2] + O3[2] - offset[2]) * vs);
+        B.n.push(nrm[0], nrm[1], nrm[2]);
+      }
+      for (let k = 0; k < 4; k++) B.c.push(cols[k * 3], cols[k * 3 + 1], cols[k * 3 + 2]);
+      // flip the diagonal so occlusion gradients don't crease
+      const ao = cols.ao;
+      const flip = ao && ao[0] + ao[2] < ao[1] + ao[3];
+      if (s > 0) { if (flip) B.i.push(vi + 1, vi + 2, vi + 3, vi + 1, vi + 3, vi); else B.i.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3); }
+      else if (flip) B.i.push(vi + 1, vi + 3, vi + 2, vi + 1, vi, vi + 3); else B.i.push(vi, vi + 2, vi + 1, vi, vi + 3, vi + 2);
+    };
+    const SHADEF = [[0.9, 0.9], [1.0, 0.7], [0.96, 0.82]]; // [axis][+,-]
+    for (let d = 0; d < 3; d++) {
+      const u = (d + 1) % 3, w = (d + 2) % 3, NU = N3[u], NW = N3[w], sd = ST[d], su = ST[u], sw = ST[w];
+      for (const s of [1, -1]) {
+        const nrm = [0, 0, 0]; nrm[d] = s;
+        const shade = SHADEF[d][s > 0 ? 0 : 1], top = d === 1 && s > 0;
+        const keys = new Float64Array(NU * NW);
+        for (let sl = 1; sl < N3[d] - 1; sl++) {
+          keys.fill(0);
+          const pending = [];
+          for (let b = 1; b < NW - 1; b++) for (let a = 1; a < NU - 1; a++) {
+            const i = sl * sd + a * su + b * sw, v = G[i];
+            if (!v) continue;
+            const ni = i + s * sd, nv = G[ni];
+            const isGlow = (v & GLOW) !== 0;
+            if (nv && !((nv & GLOW) && !isGlow)) continue;
+            if (isGlow) { keys[a + b * NU] = v + 1e9; continue; }
+            // per-corner occlusion and bevel
+            const code = [];
+            for (let k = 0; k < 4; k++) {
+              const cu = k === 1 || k === 2 ? 1 : -1, cw = k >= 2 ? 1 : -1;
+              const s1 = occ(ni + cu * su), s2 = occ(ni + cw * sw), c3 = occ(ni + cu * su + cw * sw);
+              const ao = s1 && s2 ? 0 : 3 - (s1 + s2 + c3);
+              const rim = !hasV(i + cu * su) || !hasV(i + cw * sw) ? 1 : 0;
+              code.push(ao * 2 + rim);
+            }
+            if (code[0] === code[1] && code[1] === code[2] && code[2] === code[3] && !jitter) keys[a + b * NU] = v * 8 + code[0] + 1;
+            else pending.push([a, b, v, code]);
           }
-          B.c.push(base[0] * m, base[1] * m, base[2] * m);
+          const slice = s > 0 ? sl + 1 : sl;
+          const colOf = (v, codes, a, b) => {
+            const base = [LIN[(v >> 16) & 255], LIN[(v >> 8) & 255], LIN[v & 255]];
+            const jit = jitter ? 1 + (hash(a, b, sl, d * 2 + (s > 0 ? 1 : 0)) - 0.5) * 2 * jitter : 1;
+            const out = []; out.ao = [];
+            for (let k = 0; k < 4; k++) {
+              const ao = codes[k] >> 1, rim = codes[k] & 1;
+              const m = AO[ao] * shade * jit * (rim ? (top ? 1.16 : 1.08) : 1);
+              out.push(base[0] * m, base[1] * m, base[2] * m);
+              out.ao.push(ao);
+            }
+            return out;
+          };
+          for (const [a, b, v, code] of pending) emit(solid, d, s, slice, a, b, a + 1, b + 1, colOf(v, code, a, b), nrm);
+          // greedy merge of the evenly lit faces
+          for (let b = 1; b < NW - 1; b++) for (let a = 1; a < NU - 1;) {
+            const k0 = keys[a + b * NU];
+            if (!k0) { a++; continue; }
+            let wa = 1;
+            while (a + wa < NU - 1 && keys[a + wa + b * NU] === k0) wa++;
+            let hb = 1;
+            outer: while (b + hb < NW - 1) { for (let t = 0; t < wa; t++) if (keys[a + t + (b + hb) * NU] !== k0) break outer; hb++; }
+            for (let tb = 0; tb < hb; tb++) for (let t = 0; t < wa; t++) keys[a + t + (b + tb) * NU] = 0;
+            if (k0 >= 1e9) {
+              const v = k0 - 1e9, c = [LIN[(v >> 16) & 255] * gi, LIN[(v >> 8) & 255] * gi, LIN[v & 255] * gi];
+              emit(glow, d, s, slice, a, b, a + wa, b + hb, [...c, ...c, ...c, ...c], nrm);
+            } else {
+              const v = Math.floor((k0 - 1) / 8), code = (k0 - 1) % 8;
+              emit(solid, d, s, slice, a, b, a + wa, b + hb, colOf(v, [code, code, code, code], a, b), nrm);
+            }
+            a += wa;
+          }
         }
-        if (!isGlow && aos[0] + aos[2] > aos[1] + aos[3]) B.i.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
-        else B.i.push(vi + 1, vi + 2, vi + 3, vi + 1, vi + 3, vi);
       }
     }
     const build = (B) => {
@@ -217,28 +297,9 @@ export class VPart {
   }
 }
 
-const FACES = [
-  { n: [1, 0, 0], c: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] },
-  { n: [-1, 0, 0], c: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] },
-  { n: [0, 1, 0], c: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] },
-  { n: [0, -1, 0], c: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
-  { n: [0, 0, 1], c: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] },
-  { n: [0, 0, -1], c: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] },
-];
-for (const F of FACES) {
-  const dims = [0, 1, 2].filter((d) => F.n[d] === 0);
-  F.ao = F.c.map((corner) => {
-    const a = [0, 0, 0], b = [0, 0, 0];
-    a[dims[0]] = corner[dims[0]] ? 1 : -1;
-    b[dims[1]] = corner[dims[1]] ? 1 : -1;
-    const n = F.n;
-    return [[n[0] + a[0], n[1] + a[1], n[2] + a[2]], [n[0] + b[0], n[1] + b[1], n[2] + b[2]], [n[0] + a[0] + b[0], n[1] + a[1] + b[1], n[2] + a[2] + b[2]], a, b];
-  });
-}
 const AO = [0.56, 0.72, 0.87, 1.0];
-const SHADE = [0.9, 0.9, 1.0, 0.7, 0.96, 0.82];
 
-/** Vertex-coloured toon material (unique so a character can flash). */
+/** Vertex-coloured material (unique so a character can flash). */
 export function voxToon(o = {}) {
   // soft per-face light (no hard toon bands): voxels read clean, the baked AO and bevel do the rest
   return new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true, emissive: new THREE.Color(0, 0, 0), ...o });

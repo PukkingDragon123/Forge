@@ -121,7 +121,7 @@ const L3 = [0, 0, 0];
 /**
  * Mesh a VWorld for the oblique camera: only front (+z) and top (+y) faces can ever be seen, so only
  * those are emitted. Light (rig), ambient occlusion and ordered-dither light bands are baked in.
- * opts: { material, glowK, tint (face multiplier) }
+ * opts: { material, glowMaterial, glowK, topK(x,y,z) → light multiplier for a top face }
  */
 export function meshVox(w, R, opts = {}) {
   const sol = { p: [], n: [], c: [], i: [] }, glo = { p: [], n: [], c: [], i: [] };
@@ -140,7 +140,7 @@ export function meshVox(w, R, opts = {}) {
   };
   const quant = (x, y, tint) => {
     const dth = bayer(x, y) - 0.5;
-    return [0, 1, 2].map((q) => Math.max(0, Math.floor(L3[q] * tint * bands + 0.5 + dth * 0.5) / bands));
+    return [0, 1, 2].map((q) => Math.max(0, Math.floor(L3[q] * tint * bands + 0.5 + dth * 0.18) / bands));
   };
   const ONE = [1, 1, 1];
   for (const [k, ch] of w.chunks) {
@@ -170,7 +170,7 @@ export function meshVox(w, R, opts = {}) {
         let light = ONE, aos = [3, 3, 3, 3];
         if (!glow) {
           lightAt(R, (x + 0.5) * S, (y + 1) * S, (z + 0.5) * S, 0, 1, 0, L3);
-          light = quant(x, z, 1.04);
+          light = quant(x, z, opts.topK ? 1.04 * opts.topK(x, y, z) : 1.04);
           if (!noao) aos = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([dx, dz]) => { const s1 = occ(x + dx, y + 1, z), s2 = occ(x, y + 1, z + dz); return s1 && s2 ? 0 : 3 - (s1 + s2 + occ(x + dx, y + 1, z + dz)); });
         }
         emit(B, [[x, y + 1, z + 1], [x + 1, y + 1, z + 1], [x + 1, y + 1, z], [x, y + 1, z]], [0, 1, 0], base, light, aos);
@@ -254,11 +254,6 @@ function paintChamber(w, region, BOARD) {
     if (!mortar && dv > 0.62 && n3(u >> 1, v, 3, seed) > 0.55 && v > FY + 30) w.set(u, v, zf + 1, moss[1 + (u & 1)]);
   }
   // fossils pressed into the wall
-  for (let k = 0; k < 14; k++) {
-    const u = Math.round(-118 + n3(k, 1, seed, 5) * 236), v = Math.round(FY + 12 + n3(k, 2, seed, 5) * 90);
-    if (u > bx0 - 6 && u < bx1 + 6) continue;
-    fossilVox(w, u, v, -7, k);
-  }
 
   // ---- the face's recess: deep plum rock with roots and a few crystals, seen through broken stones
   for (let u = bx0; u < bx1; u++) for (let v = by0; v < by1; v++) {
@@ -300,9 +295,9 @@ function paintChamber(w, region, BOARD) {
   // ---- floor: dusty dirt, pebbles, a plank walkway, puddles, rails
   for (let u = -122; u <= 122; u++) for (let z = -14; z <= 40; z++) {
     const n = fbm2(u * 0.09, z * 0.14, 2, seed + 11);
-    const col = ramp(dirt, 0.42 + (n - 0.5) * 0.5 + (n3(u, z, 1, seed) - 0.5) * 0.12, u, z);
+    const col = ramp(dirt, 0.42 + (n - 0.5) * 0.45, u, z);
     w.set(u, FY - 1, z, col); w.set(u, FY - 2, z, dirt[1]); w.set(u, FY - 3, z, dirt[0]);
-    if (n3(u, z, 2, seed) > 0.965) w.set(u, FY, z, ramp(pal5(S7[2 + (u & 3)]), 0.5, u, z)); // pebbles
+    if (n3(u, z, 2, seed) > 0.988) w.set(u, FY, z, ramp(pal5(S7[2 + (u & 3)]), 0.5, u, z)); // pebbles
   }
   const wx0 = U(282), wx1 = U(712);
   for (let u = wx0; u < wx1; u++) for (let z = 0; z < 14; z++) {
@@ -312,7 +307,7 @@ function paintChamber(w, region, BOARD) {
     if (!seam && (u - wx0 + plank * 11) % 37 === 2 && z % 3 === 1) w.set(u, FY, z, PR.IRON[3]);
   }
   for (const [sx, z, rx, rz] of [[230, 24, 9, 3], [470, 30, 7, 2], [640, 22, 6, 2]]) PR.puddle(w, U(sx), FY - 1, z, rx, rz, '#8ac0d8');
-  PR.rails(w, U(716), 126, FY, 30);
+  PR.rails(w, U(716), 126, FY, 18);
 
   // ---- rubble heap at the foot of the face
   for (let k = 0; k < 40; k++) {
@@ -397,14 +392,6 @@ function paintChamber(w, region, BOARD) {
   else for (const [sx, z] of [[26, 2], [702, -3]]) PR.mushroom(w, U(sx), FY, z, 6, PR.CLOTH.salmon, accent, sx);
 }
 
-/** Ammonite spiral in bone colours, raised one voxel. */
-function fossilVox(w, u, v, z, s) {
-  const B = PR.BONE;
-  for (let k = 0; k < 26; k++) {
-    const a = k * 0.55, r = 0.6 + k * 0.17;
-    w.set(Math.round(u + Math.cos(a) * r), Math.round(v + Math.sin(a) * r), z, B[k % 3 === 0 ? 1 : 2 + (k & 1)]);
-  }
-}
 
 // ------------------------------------------------------------------ the rock face
 const VOID = 0;
@@ -469,19 +456,20 @@ export class RockFace {
     const baseHex = hard ? mixHex(bandHex(Math.round(cv)), '#7a8ab8', 0.45) : null;
     for (let u = u0; u < u1; u++) for (let v = v0; v < v1; v++) {
       const d = distAt(u, v);
-      if (d < 2.1) continue;
-      // bevelled pillow: the core sits proud, two rings step back toward the edge
-      let zf = d > 8 ? -1 : d > 4.6 ? -2 : -3;
+      if (d < 2.6) continue;
+      // bevelled pillow: the face sits proud, one bevel steps back toward the edge
+      const zf = d > 5.5 ? -1 : -2;
       let bf = c.facets[0], bd = 1e9;
       const gx = lu(u) + c.bx, gy = lv(v) + c.by;
       for (const fc of c.facets) { const e = (gx - fc.x) ** 2 + (gy - fc.y) ** 2; if (e < bd) { bd = e; bf = fc; } }
-      if (zf === -1 && (bf.tx * -0.6 + bf.ty * -0.8) > 0.12) zf = 0; // facets tilted to the light bulge out
       const P = pal5(baseHex || bandHex(v));
       const [nx, ny] = nrmAt(u, v);
-      let val = 0.5 + (bf.tx * -0.6 + bf.ty * -0.8) * 0.5 + (fbm2(u * 0.3, v * 0.3, 2, seed) - 0.5) * 0.24 + (n3(u, v, 1, seed) - 0.5) * 0.08;
-      if (d < 8 && (nx * -0.55 + ny * -0.83) > 0.3) val += 0.24; // lamp-facing rim
-      if (d < 6 && ny > 0.5) val -= 0.22;
-      for (let z = -6; z <= zf; z++) {
+      // chisel facets catch the light from the upper left; the rim glows, the underside sinks into shadow
+      let val = 0.52 + (bf.tx * -0.6 + bf.ty * -0.8) * 0.4 + (fbm2(u * 0.16, v * 0.16, 2, seed) - 0.5) * 0.1;
+      const rim = nx * -0.55 + ny * -0.83;
+      if (d < 9) val += clamp(rim, -1, 1) * (1 - d / 9) * 0.45;
+      const zb = d > 8 ? -6 : d > 5.5 ? -4 : zf - 1; // the body tapers toward its edges
+      for (let z = zb; z <= zf; z++) {
         if (chips.has(u + ',' + v + ',' + z)) continue;
         w.set(u, v, z, z === zf ? ramp(P, val, u, v) : ramp(P, 0.25 + (z - zf + 6) * 0.03, u, v));
       }
@@ -500,9 +488,9 @@ export class RockFace {
     // hits on hard rock: a dark split across the stone
     if (t.hits) { let v = icv + Math.round((rnd(5) - 0.5) * 4); for (let u = u0; u < u1; u++) { carve(u, v, C('#1c1028')); if (rnd(u + 20) > 0.65) v += rnd(u + 40) > 0.5 ? 1 : -1; } }
     // red hairline cracks: a hazard is next door
-    if (t.crack) for (let q = 0; q < 2; q++) {
+    if (t.crack) for (let q = 0; q < 1; q++) {
       let u = icu - 3 + Math.round(rnd(q + 3) * 6), v = icv + 4;
-      for (let k = 0; k < 9; k++) { carve(u, v, k % 3 === 1 ? glowC('#ff5a4a') : C('#8a1e2e')); v--; u += rnd(k * 3 + q) > 0.55 ? 1 : rnd(k * 5 + q) > 0.5 ? -1 : 0; }
+      for (let k = 0; k < 9; k++) { carve(u, v, k === 4 ? glowC('#ff6a4a') : C(k % 2 ? '#a02838' : '#6a1828')); v--; u += rnd(k * 3 + q) > 0.55 ? 1 : rnd(k * 5 + q) > 0.5 ? -1 : 0; }
     }
     if ((t.revealed || f.flare) && t.t === 'hazard') for (let k = 0; k < 9; k++) paint(icu - 4 + k, icv + (k % 2 ? 1 : -1), glowC('#ff5a5a'), 1);
     // mineral veins toward hidden ore: beaded, raised, in the ore's colour
@@ -541,7 +529,7 @@ export class RockFace {
       if (big) for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) paint(u + a, v + b, glowC('#fff0c0'), 1);
     }
     // a little life in the stone: fossils, crystal sprigs, moss along the top row, a wet sheen
-    if (!showOre && rnd(40) > 0.84) fossilStone(paint, icu + Math.round((rnd(41) - 0.5) * 4), icv + Math.round((rnd(42) - 0.5) * 4), rnd(43));
+    if (!showOre && rnd(40) > 0.93) fossilStone(paint, icu + Math.round((rnd(41) - 0.5) * 4), icv + Math.round((rnd(42) - 0.5) * 4), rnd(43));
     if (!showOre && rnd(44) > 0.9) { const ac = ACCENT[(this.region + t.x) % ACCENT.length]; for (let q = 0; q < 3; q++) { const u = icu - 2 + q * 2; for (let h = 0; h < 2 + q % 2; h++) paint(u, v0 + 3 + h, h === 1 + q % 2 ? glowC(ac) : C(mixHex(ac, '#2a1e3e', 0.3)), 1); } }
     if (t.y === 0 || rnd(45) > 0.85) {
       const st = STYLE[this.region] || STYLE[0];
@@ -557,7 +545,8 @@ export class RockFace {
       }
     }
     if (t.marked) for (let k = 0; k < 20; k++) { const a = (k / 20) * Math.PI * 2; paint(Math.round(cu + Math.cos(a) * 4.6), Math.round(cv + Math.sin(a) * 4.2), glowC('#bfffd2'), 1); }
-    const mesh = meshVox(w, this.rig, { glowK: 1.9 });
+    // a lip whose row above lies outside the stone is the mortar seam: in the shadow of the stone above
+    const mesh = meshVox(w, this.rig, { glowK: 1.9, topK: t.y === 0 ? null : (x, y) => (front.has(x + ',' + (y + 1)) ? 1 : 0.22) });
     const group = new THREE.Group();
     group.add(mesh);
     if (ore) group.add(ore);
@@ -598,7 +587,7 @@ export class RockFace {
 }
 function fossilStone(paint, u, v, r) {
   const B = PR.BONE;
-  for (let k = 0; k < 16; k++) { const a = k * 0.62 + r * 6, rr = 0.5 + k * 0.2; paint(Math.round(u + Math.cos(a) * rr), Math.round(v + Math.sin(a) * rr), B[k % 3 === 0 ? 1 : 2 + (k & 1)], 1); }
+  for (let k = 0; k < 14; k++) { const a = k * 0.62 + r * 6, rr = 0.5 + k * 0.2; paint(Math.round(u + Math.cos(a) * rr), Math.round(v + Math.sin(a) * rr), B[k % 3 === 0 ? 0 : 1 + (k & 1)], 0); }
 }
 
 // ------------------------------------------------------------------ the props you touch
@@ -613,7 +602,7 @@ function propMesh(region, paintFn) {
 export const PROP_AT = {
   anvil: { sx: 368, z: 8 },
   crate: { sx: 604, z: 6 },
-  cart: { sx: 846, z: 30 },
+  cart: { sx: 846, z: 18 },
   slate: { sx: 864, sy: 44 },
   note: { sx: 758, sy: 150 },
 };
@@ -632,12 +621,12 @@ export function crateProp(region) {
     const P = PR.WOOD_PALE;
     box(w, x0, FY, z - 6, x1, FY + h, z + 7, (px, py, pz) => {
       const wall = px === x0 || px === x1 - 1 || pz === z - 6 || pz === z + 6 || py === FY;
-      if (!wall) return py < FY + h - 4 ? C('#c8a048') : undefined;
+      if (!wall) return py < FY + h - 4 ? C('#a88a5a') : undefined;
       const plank = Math.floor((py - FY) / 4), seam = (py - FY) % 4 === 0 && py !== FY;
       if ((px === x0 || px === x1 - 1) && (pz === z - 6 || pz === z + 6)) return ramp(PR.WOOD, 0.35, px, py);
       return seam ? P[0] : ramp(P, 0.45 + n3(px >> 2, plank, pz, 7) * 0.25, px, py);
     });
-    for (let px = x0 + 1; px < x1 - 1; px++) for (let pz = z - 5; pz < z + 6; pz++) if (n3(px, pz, 1, 3) > 0.35) w.set(px, FY + h - 4 + (n3(px, pz, 2, 3) > 0.7 ? 1 : 0), pz, C(n3(px, pz, 3, 3) > 0.5 ? '#f0d078' : '#c8a048'));
+    for (let px = x0 + 1; px < x1 - 1; px++) for (let pz = z - 5; pz < z + 6; pz++) if (n3(px, pz, 1, 3) > 0.35) w.set(px, FY + h - 4 + (n3(px, pz, 2, 3) > 0.7 ? 1 : 0), pz, C(n3(px, pz, 3, 3) > 0.5 ? '#e0c894' : '#b89a68'));
     for (const [nx, ny] of [[x0 + 1, FY + 2], [x1 - 2, FY + 2], [x0 + 1, FY + h - 2], [x1 - 2, FY + h - 2]]) w.set(nx, ny, z + 7, PR.IRON[3]);
     for (let k = -2; k <= 2; k++) w.set(cx + k, FY + 6 + (Math.abs(k) === 2 ? 0 : 1), z + 7, C('#c05a4e'));
   });

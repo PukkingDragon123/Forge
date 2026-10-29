@@ -119,7 +119,7 @@ export class MiningScene extends Scene {
     const box = new THREE.Box3().setFromObject(hero.group);
     // the explorer keeps scale 1: it shares the room's 0.04 voxel grid (1 unit = 100 px here)
     hero.group.position.set(HERO_W.x, FLOOR_W - box.min.y, HERO_W.z);
-    hero.group.rotation.y = 1.0;
+    hero.group.rotation.y = 0.6;
     hero.play('idle', { loop: true });
     scene.add(hero.group);
     this.hero = hero;

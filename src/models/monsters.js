@@ -13,8 +13,9 @@ import { VoxelBurst } from './vox_mon_fx.js';
 import { NORMAL_ARCHES } from './monster_normals.js';
 import { BOSS_ARCHES } from './monster_bosses.js';
 import { RPG_ARCHES } from './vox_mon_rpg.js';
+import { RPG_ARCHES2 } from './vox_mon_rpg2.js';
 
-const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES, ...RPG_ARCHES };
+const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES, ...RPG_ARCHES, ...RPG_ARCHES2 };
 
 // state → duration (seconds). States missing here hold until the next play().
 const DUR = { attack: 0.45, multi: 0.9, special: 0.9, hurt: 0.3, die: 1.2, intro: 0.9, roar: 1.4 };

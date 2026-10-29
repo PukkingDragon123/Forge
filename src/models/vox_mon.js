@@ -49,6 +49,10 @@ function vn(x, y, z, k) {
   const q0 = p0 + (p1 - p0) * fy, q1 = p2 + (p3 - p2) * fy;
   return q0 + (q1 - q0) * fz;
 }
+const GLYPHS = [
+  ['#..#', '#.#.', '##..', '#.#.', '#..#'], ['.#..', '.##.', '.#.#', '.#..', '.#..'], ['#...', '##..', '#.#.', '#..#', '#...'],
+  ['..#.', '.##.', '#.#.', '..#.', '..#.'], ['#..#', '.##.', '..#.', '.##.', '#..#'], ['.##.', '#..#', '.##.', '.#..', '.#..'],
+];
 /** → [shade 0..1 (0.5 = base), accent 0|1, glow mask 0|1] */
 function pattern(tile, x, y, z, seed) {
   const h = H(x, y, z, seed);
@@ -84,7 +88,14 @@ function pattern(tile, x, y, z, seed) {
     case 'flesh': return [0.5 + (h - 0.5) * 0.18, vn(x / 3, y / 3, z / 3, seed) > 0.66 ? 1 : 0, 0];
     case 'wart': { const b = H(x >> 1, y >> 1, z >> 1, seed) > 0.8; return [b ? 0.7 : 0.48 + j, b ? 1 : 0, 0]; }
     case 'smooth': return [0.52 + j * 0.6, 0, 0];
-    case 'rune': { const on = (x % 4 === 0 && y % 3 !== 0) || (y % 6 === 0 && x % 4 < 3); return [0.45 + j, on ? 1 : 0, on ? 1 : 0]; }
+    case 'rune': {
+      // sparse carved glyphs: 6×7-voxel cells, ~half of them hold one of a few runic shapes
+      const u = x + z, cu = Math.floor(u / 6), cv = Math.floor(y / 7);
+      if (H(cu, cv, 3, seed) > 0.5) return [0.45 + j, 0, 0];
+      const g = GLYPHS[(H(cu, cv, 4, seed) * GLYPHS.length) | 0], lu = u - cu * 6 - 1, lv = 5 - (y - cv * 7);
+      const on = lu >= 0 && lu < 4 && lv >= 0 && lv < 5 && g[lv][lu] === '#';
+      return [on ? 0.6 : 0.42 + j, on ? 1 : 0, on ? 1 : 0];
+    }
     case 'moss': return [0.42 + h * 0.3, h > 0.6 ? 1 : 0, 0];
     case 'gill': return [y % 3 === 0 ? 0.3 : 0.55, y % 3 === 0 ? 1 : 0, 0];
     case 'hide': { const n = vn(x / 4, y / 4, z / 4, seed); return [0.5 + (n - 0.5) * 0.32 + j, n > 0.63 ? 1 : 0, 0]; }
