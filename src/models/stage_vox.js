@@ -12,7 +12,7 @@ import { ParticleSystem } from '../gfx/particles.js';
 import { LAYER_FX } from '../gfx/renderer.js';
 import { noise2, clamp, smoothstep, hexToRgb } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
-import { S, VWorld, vx, C, glowC, mixC, ramp, tone, bayer, box, ell, cyl, cylX, seg, sag, makeLightRig, meshWorld, worldMeshes, h3, NOAO } from './stage_vox_kit.js';
+import { S, VWorld, vx, C, glowC, mixC, ramp, tone, bayer, box, ell, cyl, cylX, sag, makeLightRig, meshWorld, worldMeshes, h3, NOAO } from './stage_vox_kit.js';
 import * as PR from './stage_vox_props.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -495,7 +495,6 @@ function finish(st, plan, o = {}) {
 }
 
 // ---------------------------------------------------------------------------- dressing vocabulary
-const VY = (u) => vx(u);
 function lanternAt(B, x, y, z, col, r = 3.2, i = 1.1) {
   B.op(x - 0.2, x + 0.2, (w) => PR.lantern(w, vx(x), vx(y), vx(z), col));
   B.lamp(x, y + 0.2, z + 0.2, col, r, i);

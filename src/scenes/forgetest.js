@@ -2,7 +2,7 @@
 //   flat=1 opens the forge without a 3D anvil/rig, the way the mining spot does.
 import { Scene } from '../core/game.js';
 import { Run } from '../systems/run.js';
-import { buildStage as buildSet } from '../models/stage2d.js';
+import { buildStage as buildSet } from '../models/stage_vox.js';
 import { buildProp } from '../models/props.js';
 import { makeWorld, hud } from './common.js';
 import { openForge } from './forgeui.js';

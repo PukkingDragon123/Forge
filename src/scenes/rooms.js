@@ -4,7 +4,7 @@
 // sprout tags when you walk up to them, the anvil/fire/bedroll at camp, an arrow sign to move on.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
-import { buildStage as buildSet } from '../models/stage2d.js';
+import { buildStage as buildSet } from '../models/stage_vox.js';
 import { buildProp } from '../models/props.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildMonster } from '../models/monsters.js';

@@ -1,7 +1,7 @@
 // Mystery event: a dressed 3D room + a hand-drawn storybook page with choices, QTEs and item pickers.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
-import { buildStage as buildSet } from '../models/stage2d.js';
+import { buildStage as buildSet } from '../models/stage_vox.js';
 import { buildCharacter } from '../models/characters.js';
 import * as Props from '../models/props.js';
 import { buildMonster } from '../models/monsters.js';
