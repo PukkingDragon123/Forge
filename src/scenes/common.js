@@ -77,7 +77,13 @@ export function speech(ui, x, y, text, opts = {}) {
   if (!bg) {
     const p = new Painter(w, h + 5);
     const fill = opts.dark ? '#1c1421' : '#fff6e0', shade = opts.dark ? '#140f19' : '#e6d6b8';
+    const lite = opts.dark ? [44, 34, 52] : [255, 252, 240], mott = opts.dark ? [22, 16, 26] : [240, 226, 196];
     p.rect(1, 0, w - 2, h, fill); p.rect(0, 1, w, h - 2, fill);
+    // parchment grain: soft mottling and a lit top rim give the voxel relief something to catch
+    for (let y = 1; y < h - 2; y++) for (let x = 1; x < w - 1; x++) {
+      const n = Math.sin(x * 0.7 + y * 1.3) + Math.sin(x * 0.23 - y * 0.9) * 1.4 + (((x * 73856093) ^ (y * 19349663)) & 7) / 7;
+      if (y <= 1) p.set(x, y, lite); else if (n > 2.1) p.set(x, y, mott);
+    }
     p.hline(1, w - 2, h - 1, shade); p.hline(2, w - 3, h - 2, shade);
     // tail
     const tx = Math.floor(w / 2) - 2;

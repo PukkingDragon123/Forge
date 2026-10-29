@@ -12,7 +12,7 @@ export class PauseOverlay extends Scene {
   draw(ui) {
     const g = this.game;
     dim(ui, 0.65);
-    const W = 200, H = 168, x = ui.w / 2 - W / 2, y = ui.h / 2 - H / 2;
+    const W = 260, H = 184, x = ui.w / 2 - W / 2, y = ui.h / 2 - H / 2;
     ui.panel('leather', x, y, W, H, { tone: 'dark' });
     ribbonTitle(ui, 'Paused', ui.w / 2, y - 8, 'brown');
     const s = save.data.settings;

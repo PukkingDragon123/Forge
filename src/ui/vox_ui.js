@@ -17,9 +17,9 @@ import { voxSprite } from '../gfx/voxsprite.js';
 const PITCH = 0.45, COS = Math.cos(PITCH), SIN = Math.sin(PITCH);
 const U = 0.05; // world units per pixel: keeps big panels well inside the sprite camera's depth range
 const LIN = new Float32Array(256);
-// three writes plain render targets in linear space without encoding, so feeding sRGB values straight
-// through (no linearisation) reads back exactly as designed
-for (let i = 0; i < 256; i++) LIN[i] = i / 255;
+// voxSprite's target is sRGB-encoded on write, so vertex colours are linearised here to read back
+// exactly as designed
+for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
 const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
 const hash = (x, y, s = 0) => { let h = (x * 374761393 + y * 668265263 + s * 2246822519) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 
