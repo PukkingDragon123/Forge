@@ -196,10 +196,15 @@ export class CrossroadsScene extends Scene {
       if (active) {
         const h = ui.hit('mouth' + i, m.x - m.w / 2, m.y - m.h, m.w, m.h + 30, { sound: false });
         if (h.hover) hov = i;
-        if (h.clicked) this.choose(i);
+        if (h.clicked) {
+          // touch: the first tap shows what lies down that tunnel, the second takes it
+          if (!this.game.input.touch || this.picked === i) this.choose(i);
+          else { this.picked = i; this.game.audio.play('ui_pop'); }
+        }
       }
     });
     if (active && hov >= 0) this.hover = hov;
+    else if (active && this.game.input.touch) this.hover = this.picked ?? -1;
     else if (active && this.game.input.moved) this.hover = -1;
     const show = this.leaving ? this.sel : this.hover;
     if (show >= 0) {
@@ -209,8 +214,9 @@ export class CrossroadsScene extends Scene {
       ctx.globalAlpha = 0.25 + Math.sin(this.time * 4) * 0.06;
       ctx.drawImage(glowCanvas(Math.round(m.w * 0.7), '#ffcf8a'), m.x - Math.round(m.w * 0.7), m.y - m.h * 0.55 - Math.round(m.w * 0.7));
       ctx.restore();
-      if (!this.leaving) this.say(this.describe(show));
-    } else if (!this.leaving && this.narr.t > 6 && active) this.say(this.boss ? 'Only one way remains. Steel yourself.' : 'Which way? (click a tunnel)');
+      if (!this.leaving) this.say(this.describe(show) + (this.game.input.touch && this.picked === show ? ' {dim}(tap it again to go){/}' : ''));
+      if (!this.leaving && active && this.game.input.touch && this.picked === show) ui.touchButton('confirm', ui.w - 64, ui.h - 92, 32, { icon: 'arrowR', label: 'GO', style: 'brass', glow: true });
+    } else if (!this.leaving && this.narr.t > 6 && active) this.say(this.boss ? 'Only one way remains. Steel yourself.' : (this.game.input.touch ? 'Which way? (tap a tunnel)' : 'Which way? (click a tunnel)'));
     // the hanging lamp
     const o = this.bgOffset();
     const lx = 504 + o.x, ly = 96 + o.y;

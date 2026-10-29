@@ -11,11 +11,22 @@ const shell = (body) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#07060b">
 <title>FORGLITE</title>
 <style>
   html, body { margin: 0; height: 100%; background: #07060b; overflow: hidden; }
-  body { touch-action: none; user-select: none; -webkit-user-select: none; }
+  body { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+         -webkit-tap-highlight-color: transparent; overscroll-behavior: none; position: fixed; inset: 0; }
+  #turn { display: none; position: fixed; inset: 0; z-index: 9; background: #07060b; color: #e8d8b8;
+          flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+          font: 15px/1.4 monospace; letter-spacing: 1px; text-align: center; padding: 24px; }
+  #turn svg { width: 92px; height: 92px; animation: tilt 2.4s ease-in-out infinite; }
+  @keyframes tilt { 0%, 35% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) and (pointer: coarse) { #turn { display: flex; } }
   #stage { position: fixed; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
   #stage canvas { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
   #boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -24,6 +35,7 @@ const shell = (body) => `<!doctype html>
 </head>
 <body>
 <div id="boot">KINDLING THE FORGE…</div>
+<div id="turn"><svg viewBox="0 0 64 64" fill="none" stroke="#e8b86a" stroke-width="3" stroke-linejoin="round"><rect x="20" y="6" width="24" height="44" rx="4"/><path d="M28 44h8"/><path d="M50 30c6 6 6 16 0 22M54 48l-4 4-4-4" stroke="#c9a36a"/></svg><div>Turn your phone sideways<br><span style="color:#9a8a72">the mine is wider than it is tall</span></div></div>
 <div id="stage"></div>
 ${body}
 </body>

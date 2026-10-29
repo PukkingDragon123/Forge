@@ -3,6 +3,7 @@
 import { drawText, measure, bigText, COLORS, setIconProvider, FONTS, layout } from './font.js';
 import { icon, keycap, PAL } from './icons.js';
 import * as F from './frames.js';
+import { medallion } from './touch.js';
 import { fromStrings, withOutline } from '../art/pixel.js';
 import { clamp, ease } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
@@ -78,6 +79,7 @@ export class UI {
     this.layer = 0;
     this.dragging = null;
     this.toasts = [];
+    this._tb = [];
   }
   get w() { return this.r.vw; }
   get h() { return this.r.vh; }
@@ -100,6 +102,8 @@ export class UI {
     this.prevHover = this.hoverId;
     this.hoverId = hov;
     this.regions = [];
+    this.input.buttons = this._tb; // on-screen buttons drawn last frame are what fingers can hit
+    this._tb = [];
     this.tip = null;
     this.cursor = 'arrow';
     this.layer = 0;
@@ -108,7 +112,7 @@ export class UI {
     ctx.clearRect(0, 0, this.w, this.h);
     ctx.imageSmoothingEnabled = false;
     ctx.globalAlpha = 1;
-    if (!this.input.down) this.activeId = null;
+    if (!this.input.down && !this.input.released) this.activeId = null; // keep it through the release frame so slow clicks count
   }
 
   /** True when pointer is over any interactive UI region (so 3D picking should ignore it). */
@@ -121,7 +125,7 @@ export class UI {
     const inp = this.input;
     let pressed = false, clicked = false, rclicked = false;
     if (hover && inp.pressed && !inp.consumed) { this.activeId = id; pressed = true; }
-    if (hover && inp.released && this.activeId === id) { clicked = true; inp.consume(); }
+    if (hover && inp.released && this.activeId === id && !inp.suppressClick) { clicked = true; inp.consume(); }
     if (hover && inp.rpressed) { rclicked = true; }
     if (pressed) inp.consume();
     if (hover && opts.cursor !== false) this.cursor = opts.cursor || 'hand';
@@ -249,6 +253,27 @@ export class UI {
     return this.button(id, x, y, s, s + 2, '', { ...opts, icon: iconName, style: opts.style || 'iron' });
   }
 
+  /** True while the player is on a touchscreen (on-screen controls are shown). */
+  get touch() { return this.input.touch; }
+  /**
+   * On-screen button for touch play, standing in for a keyboard action. Drawn only in touch mode;
+   * press it with any finger (several at once). opts: {label, icon, style, glow, small}
+   */
+  touchButton(action, x, y, r, opts = {}) {
+    if (!this.input.touch) return false;
+    this._tb.push({ action, x, y, r });
+    const held = this.input.held.has(action);
+    const m = medallion(r, opts.style || 'brass', held);
+    const c = this.ctx;
+    if (opts.glow) { c.save(); c.globalAlpha = 0.35 + Math.sin(this.time * 6) * 0.15; c.fillStyle = opts.glowColor || '#ffd27a'; c.beginPath(); c.arc(x, y, r + 5, 0, Math.PI * 2); c.fill(); c.restore(); }
+    c.globalAlpha = opts.alpha ?? 0.9;
+    c.drawImage(m, Math.round(x - m.width / 2), Math.round(y - m.height / 2 + (held ? 1 : 0)));
+    c.globalAlpha = 1;
+    if (opts.icon) { const ic = icon(opts.icon); if (ic) { const s = r >= 24 ? 2 : 1; c.drawImage(ic.canvas, Math.round(x - (ic.w * s) / 2), Math.round(y - (ic.h * s) / 2 - (opts.label && r >= 24 ? 4 : 0) + (held ? 1 : 0)), ic.w * s, ic.h * s); } }
+    if (opts.label) drawText(c, opts.label, Math.round(x), Math.round(y + (opts.icon && r >= 24 ? r * 0.42 : -3) + (held ? 1 : 0)), { align: 'center', font: 'small', color: '#f4e6c8', outline: '#140c10' });
+    return held;
+  }
+
   /** Deferred tooltip; content is rich text string or {title, body, w} or a draw fn(ui, x, y). */
   tooltip(content, opts = {}) { this.tip = { content, opts }; }
 
@@ -264,7 +289,8 @@ export class UI {
     const tw = Math.max(title ? measure(title, 'body') + 12 : 0, ...bodyLines.map((l) => l.w + 12), 40);
     const th = (title ? 14 : 4) + bodyLines.length * 11 + 6;
     let x = this.mx + 10, y = this.my + 10;
-    if (x + tw > this.w - 2) x = this.mx - tw - 6;
+    if (this.input.touch) { x = this.mx - tw / 2; y = this.my - th - 26; if (y < 2) y = this.my + 30; } // above the finger
+    if (x + tw > this.w - 2) x = this.input.touch ? this.w - tw - 2 : this.mx - tw - 6;
     if (y + th > this.h - 2) y = this.h - th - 2;
     x = Math.max(2, x); y = Math.max(2, y);
     this.img(F.dark(tw, th, { accent: (isObj && content.accent) || 'gold' }), x, y);

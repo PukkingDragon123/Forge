@@ -43,7 +43,7 @@ export function hud(ui, game, opts = {}) {
   if (ui.hit('hud-hp', 8, 8, 64, 16, { cursor: false, sound: false }).hover) ui.tooltip({ title: 'Health', body: 'Lose it all and the curse drags you back to the campfire.' });
   ui.icon('coin', 82, 10);
   ui.text(String(run.coins), 98, 11, { color: COLORS.gold, outline: '#140c10' });
-  ui.text(REGIONS[run.region].name, ui.w - 10, 11, { align: 'right', color: '#e8d8c0', outline: '#140c10' });
+  ui.text(REGIONS[run.region].name, ui.w - (ui.touch ? 38 : 10), 11, { align: 'right', color: '#e8d8c0', outline: '#140c10' });
   let bagClicked = false;
   if (opts.bag !== false) {
     const b = ui.hit('hud-bag', 6, ui.h - 34, 30, 30, { sound: false });
@@ -97,9 +97,11 @@ export function ribbonTitle(ui, text, cx, y, color = 'red', alpha = 1) {
 /** QTE prompt: keycap + mouse glyph + label, pulsing. */
 export function prompt(ui, x, y, keyLabel, label, t = 0, opts = {}) {
   const pulse = Math.sin(t * 10) > 0;
+  // on a touchscreen the key becomes what your finger does: tap, or the guard button
+  if (ui.touch) keyLabel = opts.mouse === 'mouseR' || keyLabel === 'SHIFT' ? 'GUARD' : keyLabel === 'E' ? 'SPECIAL' : 'TAP';
   const k = ui.keycap(keyLabel, Math.round(x), Math.round(y), pulse && opts.pulse !== false);
   let cx = x + k.w + 3;
-  if (opts.mouse) { ui.icon(opts.mouse, cx, y + 1); cx += 11; }
+  if (opts.mouse && !ui.touch) { ui.icon(opts.mouse, cx, y + 1); cx += 11; }
   if (label) ui.text(label, cx, y + 2, { color: opts.color || COLORS.white, outline: '#140c10', outlineShadow: false });
 }
 

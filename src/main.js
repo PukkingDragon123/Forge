@@ -15,6 +15,20 @@ CameraRig.shakeSetting = st.shake ? 1 : 0;
 if (st.pixelScale) game.renderer.setScaleBias(st.pixelScale === 1 ? 1 : -1);
 audio.setVolumes({ master: st.master, music: st.music, sfx: st.sfx });
 window.FORGLITE = game; // handy for debugging & automated tests
+// phones: the first tap goes fullscreen and asks for landscape (silently skipped where not allowed)
+const firstGesture = game.input.onFirstGesture;
+game.input.onFirstGesture = () => { firstGesture && firstGesture(); if (game.input.touch && st.fullscreen !== 0) enterFullscreen(); };
+export function enterFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req || document.fullscreenElement || document.webkitFullscreenElement) return;
+  try {
+    const p = req.call(el, { navigationUI: 'hide' });
+    const lock = () => { try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* unsupported */ } };
+    if (p && p.then) p.then(lock).catch(() => {}); else lock();
+  } catch (e) { /* not allowed in this frame */ }
+}
+game.enterFullscreen = enterFullscreen;
 registerScenes(game);
 const params = new URLSearchParams(location.search);
 // dev shortcut: ?scene=map&char=bran&region=2 starts a throwaway run

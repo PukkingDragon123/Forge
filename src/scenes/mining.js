@@ -479,8 +479,10 @@ export class MiningScene extends Scene {
     }
     this.drawNote(ui);
     if (this.tool && !busyUI) {
-      this.tag(ui, inp.x + 4, inp.y + 14, `${MATERIALS[this.tool.id].name}: click a stone`, '#14503a');
-      if (inp.rpressed) this.tool = null;
+      if (ui.touch) this.tag(ui, PROPS.crate.x + 48, PROPS.crate.y - 92, `${MATERIALS[this.tool.id].name}: tap a stone`, '#14503a');
+      else this.tag(ui, inp.x + 4, inp.y + 14, `${MATERIALS[this.tool.id].name}: click a stone`, '#14503a');
+      ui.touchButton('back', ui.w - 52, ui.h - 150, 26, { icon: 'cross', label: 'CANCEL', style: 'iron' });
+      if ((inp.rpressed && !inp.longPress) || inp.actionPressed('back')) this.tool = null;
     }
     if (this.reveal) this.drawReveal(ui);
     if (this.qte) this.drawQte(ui);

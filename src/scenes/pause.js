@@ -36,6 +36,16 @@ export class PauseOverlay extends Scene {
       if (ui.button('p-yes', x + 14, y + 114, 80, 18, 'Yes', { style: 'red' })) { g.popOverlay(this); gameOver(g, 'Abandoned'); }
       if (ui.button('p-no', x + W - 94, y + 114, 80, 18, 'No', { style: 'wood' })) this.confirm = false;
     }
-    ui.text('{dim}Controls: SPACE/click strike · SHIFT/right-click guard · E special · TAB bag · R rotate{/}', ui.w / 2, y + H - 18, { align: 'center', font: 'small', maxW: W - 10 });
+    if (ui.touch) {
+      // phone settings: buzz and fullscreen
+      const s2 = save.data.settings;
+      if (ui.button('p-buzz', x + 14, y + H + 6, (W - 34) / 2, 18, `Vibration: ${s2.haptics === 0 ? 'Off' : 'On'}`, { style: 'wood' })) { s2.haptics = s2.haptics === 0 ? 1 : 0; save.write(); g.haptic(20); }
+      const fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      if (ui.button('p-full', x + W / 2 + 3, y + H + 6, (W - 34) / 2, 18, fs ? 'Windowed' : 'Fullscreen', { style: 'wood' })) {
+        if (fs) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); s2.fullscreen = 0; } else { s2.fullscreen = 1; g.enterFullscreen && g.enterFullscreen(); }
+        save.write();
+      }
+      ui.text('{dim}Tap: strike, pick, act · Hold: inspect · Buttons: guard, special, rotate · Bag: bottom left{/}', ui.w / 2, y + H - 18, { align: 'center', font: 'small', maxW: W - 10 });
+    } else ui.text('{dim}Controls: SPACE/click strike · SHIFT/right-click guard · E special · TAB bag · R rotate{/}', ui.w / 2, y + H - 18, { align: 'center', font: 'small', maxW: W - 10 });
   }
 }

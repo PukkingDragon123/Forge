@@ -310,7 +310,7 @@ export class TitleScene extends Scene {
     // the prologue scroll by the fire
     const sc = OBJECTS.prologue;
     ui.img(noteCanvas(40, 14, 5), sc.x, sc.y + 2, { rot: 0.12 });
-    if (!this.panel && this.time > 2 && this.time < 30) this.tag(ui, ui.w / 2, ui.h - 40 + Math.round(Math.sin(this.time * 2) * 2), 'Click an explorer by the fire to choose who descends');
+    if (!this.panel && this.time > 2 && this.time < 30) this.tag(ui, ui.w / 2, ui.h - 40 + Math.round(Math.sin(this.time * 2) * 2), (ui.touch ? 'Tap an explorer by the fire to choose who descends' : 'Click an explorer by the fire to choose who descends'));
     if (this.panel === 'codex') this.drawCodex(ui);
     if (this.panel === 'settings') this.drawSettings(ui);
   }

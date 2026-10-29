@@ -1038,6 +1038,12 @@ export class CombatScene extends Scene {
     }
     if (this.caption) ui.text(this.caption, ui.w / 2, ui.h - 22, { align: 'center', color: COLORS.white, outline: '#000000', outlineShadow: false, maxW: ui.w - 60 });
     this.drawTitleCard(ui);
+    // touch: strike / guard / special medallions in the free bottom-right corner
+    if (sim && this.phase === 'fight' && !this.tip && !this.specialQ) {
+      ui.touchButton('strike', ui.w - 60, ui.h - 70, 40, { icon: 'sword', label: 'STRIKE', style: 'brass' });
+      ui.touchButton('block', ui.w - 146, ui.h - 46, 30, { icon: 'shield', label: 'GUARD', style: 'iron' });
+      if (sim.special >= 1) ui.touchButton('special', ui.w - 140, ui.h - 126, 30, { icon: 'star', label: 'SPECIAL', style: 'rune', glow: true, glowColor: '#c08aff' });
+    }
     for (const b of this.bigs) {
       const k = b.t / b.dur;
       const pop = k < 0.15 ? 1 + (1 - k / 0.15) * 0.8 : 1;

@@ -154,12 +154,24 @@ export class BagOverlay extends Scene {
     // dragging
     if (this.drag) {
       const d = this.drag;
-      if (inp.actionPressed('rotate') || inp.rpressed || inp.wheel) { d.item.rot = (d.item.rot + (inp.wheel < 0 ? 3 : 1)) % 4; game.audio && game.audio.play('rotate'); }
+      if (inp.actionPressed('rotate') || (inp.rpressed && !inp.longPress) || inp.wheel) { d.item.rot = (d.item.rot + (inp.wheel < 0 ? 3 : 1)) % 4; game.audio && game.audio.play('rotate'); }
+      // touch: a second finger turns or reads what the first one holds
+      ui.touchButton('rotate', ui.w - 52, ui.h - 132, 30, { icon: 'tool', label: 'ROTATE', style: 'brass' });
+      if (d.item.id === 'recipe_scroll' && d.item.recipe) ui.touchButton('read', ui.w - 52, ui.h - 204, 26, { icon: 'scroll', label: 'READ', style: 'jade' });
+      if (inp.actionPressed('read') && d.item.id === 'recipe_scroll') {
+        d.item.rot = d.rot0;
+        if (d.from === 'bag') bag.place(d.item, d.x0, d.y0, d.rot0) || bag.toOverflow(d.item);
+        this.drag = null; ui.dragging = false;
+        this.contextAction(d.item);
+        return;
+      }
+      if (inp.longPress && inp.dragDist < 9) ui.tooltip(itemTooltip(d.item));
+      const iy = inp.y - (ui.touch ? 26 : 0); // keep the item visible above the finger
       const cells = cellsOf(d.item);
       const w = (Math.max(...cells.map((c) => c[0])) + 1) * CELL, h = (Math.max(...cells.map((c) => c[1])) + 1) * CELL;
-      const ox = Math.round(inp.x - w / 2), oy = Math.round(inp.y - h / 2);
+      const ox = Math.round(inp.x - w / 2), oy = Math.round(iy - h / 2);
       const gxCell = Math.round((ox - L.gx) / CELL), gyCell = Math.round((oy - L.gy) / CELL);
-      const overGrid = inp.x >= L.gx - CELL && inp.x < L.gx + (bag.w + 1) * CELL && inp.y >= L.gy - CELL && inp.y < L.gy + (bag.h + 1) * CELL;
+      const overGrid = inp.x >= L.gx - CELL && inp.x < L.gx + (bag.w + 1) * CELL && iy >= L.gy - CELL && iy < L.gy + (bag.h + 1) * CELL;
       if (overGrid) {
         const ok = bag.canPlace(d.item, gxCell, gyCell, d.item.rot);
         for (const [cx, cy] of cells) {
@@ -198,12 +210,12 @@ export class BagOverlay extends Scene {
       const tt = itemTooltip(hoverItem);
       const b = bonus[hoverItem.uid];
       if (b) tt.body += `\n{gold}Bag bonus:{/} ${b.q ? '+1 quality ' : ''}${b.chips ? `{chips}+${b.chips} chips{/} ` : ''}${b.mult ? `{mult}+${b.mult} mult{/}` : ''} {dim}(${b.from.join(', ')}){/}`;
-      if (hoverItem.id === 'recipe_scroll') tt.body += '\n{gold}Right-click to read.{/}';
+      if (hoverItem.id === 'recipe_scroll') tt.body += ui.touch ? '\n{gold}Lift it, then tap READ.{/}' : '\n{gold}Right-click to read.{/}';
       ui.tooltip(tt);
     }
 
     // hints on a tag; the brass "done" plaque
-    this.drawTag(ui, L.cloth.x + L.cloth.w / 2, L.cloth.y + L.cloth.h + 10, 'drag to arrange · R or right-click rotates', { seed: 5, string: 6 });
+    this.drawTag(ui, L.cloth.x + L.cloth.w / 2, L.cloth.y + L.cloth.h + 10, ui.touch ? 'drag to arrange · ROTATE turns what you hold' : 'drag to arrange · R or right-click rotates', { seed: 5, string: 6 });
     const D = L.done;
     const dh = ui.hit('bag-done', D.x, D.y, D.w + 20, D.h + 20);
     const pc = plaqueCanvas(D.w, D.h, dh.down ? 'down' : dh.hover ? 'hover' : 'idle');

@@ -53,8 +53,15 @@ export class Renderer {
     this.scaleBias = 0;
     this.time = 0;
     this.flash = 0; this.flashColor = new THREE.Vector3(1, 1, 1);
+    // a probe that sits inside the phone's safe area (notch, rounded corners, home bar)
+    this.safe = document.createElement('div');
+    this.safe.style.cssText = 'position:fixed;pointer-events:none;visibility:hidden;left:env(safe-area-inset-left,0px);right:env(safe-area-inset-right,0px);top:env(safe-area-inset-top,0px);bottom:env(safe-area-inset-bottom,0px)';
+    document.body.appendChild(this.safe);
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    const re = () => this.resize();
+    window.addEventListener('resize', re);
+    window.addEventListener('orientationchange', () => setTimeout(re, 120));
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', re);
   }
 
   /** bias: +1 = chunkier pixels, -1 = finer pixels, 0 = auto */
@@ -64,7 +71,9 @@ export class Renderer {
     // Fixed 960×540 stage scaled to fit the window (letterboxed). Whole-number scales are
     // preferred when close, so pixels stay even; otherwise a crisp nearest-neighbour stretch.
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const fit = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H);
+    const area = this.safe ? this.safe.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    const AW = area.width || window.innerWidth, AH = area.height || window.innerHeight;
+    const fit = Math.min(AW / BASE_W, AH / BASE_H);
     const whole = Math.floor(fit * dpr) / dpr;
     const s = whole >= 1 && fit - whole < 0.12 ? whole : fit;
     const vw = BASE_W, vh = BASE_H;
@@ -78,8 +87,8 @@ export class Renderer {
     this.canvasUI.width = vw; this.canvasUI.height = vh;
     this.ctx.imageSmoothingEnabled = false;
     // center the overflow so cropping is symmetric
-    this.stage.style.left = Math.floor((window.innerWidth - cssW) / 2) + 'px';
-    this.stage.style.top = Math.floor((window.innerHeight - cssH) / 2) + 'px';
+    this.stage.style.left = Math.floor((area.left || 0) + (AW - cssW) / 2) + 'px';
+    this.stage.style.top = Math.floor((area.top || 0) + (AH - cssH) / 2) + 'px';
     this.stage.style.width = cssW + 'px'; this.stage.style.height = cssH + 'px';
     this.rtScene.setSize(vw, vh);
     this.rtNormal.setSize(vw, vh);

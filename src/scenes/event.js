@@ -293,7 +293,7 @@ export class EventScene extends Scene {
       const label = this.pendingFight ? 'Fight!' : 'Continue';
       const hh = ui.hit('ev-continue', x - 4, y, 200, 14, { sound: false });
       ui.text(`${hh.hover ? '› ' : ''}${label}`, x, y + 2, { color: this.pendingFight ? '#ff8a7a' : '#ffe2a0' });
-      ui.text('{dim}(space){/}', x + ui.measure(label) + 20, y + 2, { font: 'small' });
+      if (!ui.touch) ui.text('{dim}(space){/}', x + ui.measure(label) + 20, y + 2, { font: 'small' });
       if (hh.clicked || game.input.actionPressed('confirm')) this.continueOn();
     }
     if (this.phase === 'pick' && this.picker) this.drawPicker(ui, x, y);

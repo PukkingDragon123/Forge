@@ -63,6 +63,9 @@ export class Game {
     this.paused = false;
     stage.style.cursor = 'none';
     this.input.onFirstGesture = () => audio && audio.unlock();
+    // iOS only lets audio start inside a finger lift, so keep trying until it runs
+    this.input.onGesture = () => { if (audio && (!audio.ctx || audio.ctx.state !== 'running')) audio.unlock(); };
+    this.input.onButton = () => this.haptic(8);
   }
   register(name, cls) { this.scenes[name] = cls; }
 
@@ -94,7 +97,12 @@ export class Game {
     const i = o ? this.overlays.indexOf(o) : this.overlays.length - 1;
     if (i >= 0) { const [ov] = this.overlays.splice(i, 1); ov.exit(); }
   }
-  hitStop(t) { this.hitstop = Math.max(this.hitstop, t); }
+  hitStop(t) { this.hitstop = Math.max(this.hitstop, t); this.haptic(Math.min(45, Math.round(10 + t * 300))); }
+  /** A short buzz on phones that support it (touch play only, can be turned off). */
+  haptic(ms) {
+    if (!this.input.touch || save.data.settings.haptics === 0) return;
+    try { navigator.vibrate && navigator.vibrate(ms); } catch (e) { /* not allowed here */ }
+  }
 
   start() {
     const loop = (now) => {
@@ -136,6 +144,13 @@ export class Game {
     if (this.scene) this.scene.draw(ui);
     for (const o of this.overlays) { ui.block(2); o.draw(ui); }
     ui.unblock();
+    // touch: a pause medallion in the corner wherever a run is in progress
+    const pausable = this.run && this.scene && !['title', 'gameover', 'victory', 'descend'].includes(this.scene.name) && !this.overlays.length && !this.trans;
+    if (pausable && this.input.touch) {
+      ui.touchButton('pause', ui.w - 17, 17, 12, { style: 'iron' });
+      ui.rect(ui.w - 21, 12, 3, 10, '#f4e6c8'); ui.rect(ui.w - 15, 12, 3, 10, '#f4e6c8');
+    }
+    if (pausable && this.input.actionPressed('pause')) this.pushOverlay('pause');
     this._drawTransition(rdt);
     ui.end(rdt);
     this.input.endFrame();

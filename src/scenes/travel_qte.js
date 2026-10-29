@@ -87,6 +87,8 @@ export class TimingQTE {
     const kc = KEYS[this.action];
     const total = lw + 4 + (kc.length * 4 + 10) + 12;
     prompt(ui, Math.round(x - total / 2), Math.round(y + 18), kc, this.label, this.t, { mouse: this.action === 'block' ? 'mouseR' : 'mouseL', color: col });
+    // touch: guarding needs its own button (a tap anywhere strikes)
+    if (!done && this.action === 'block') ui.touchButton('block', ui.w - 70, ui.h - 74, 36, { icon: 'shield', label: 'GUARD', style: 'iron', glow: true, glowColor: '#7fb8ff' });
   }
 }
 
