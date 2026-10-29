@@ -96,7 +96,6 @@ export class Kindle {
     }
     this.eyes = new THREE.Mesh(kindleGeo('fire').eyes, this.eyeMat);
     this.body.add(this.eyes);
-    this.halo = null;
     const halo = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff7a2a').multiplyScalar(0.6), transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     halo.layers.set(LAYER_FX);
     this.halo = halo;
@@ -127,6 +126,7 @@ export class Kindle {
     const m = this.meshes[this.element];
     const pulse = 1 + Math.sin(t * 7) * 0.05 + this.excite * 0.25;
     m.scale.set(pulse * (1 - Math.sin(t * 13) * 0.04), pulse * (1 + Math.sin(t * 13) * 0.08), pulse);
+    this.eyes.scale.copy(m.scale);
     this.halo.scale.setScalar(1 + Math.sin(t * 5) * 0.1 + this.excite * 0.4);
     this.blink -= dt;
     if (this.blink < 0) this.blink = 2 + Math.random() * 3;
@@ -494,14 +494,19 @@ export class Character {
       R['mount' + side] = m;
     }
   }
-  /** Paint a voxel part (voxel units around the joint) and hang it on the joint. Cached per explorer. */
+  /**
+   * Paint a voxel part around the joint and hang it on the joint. Cached per explorer. Painted in
+   * design units (VS) unless o.native, which paints straight onto the shared VOX grid.
+   */
   part(joint, paint, o = {}) {
     const key = this.id + '|' + this.partN++;
     let g = GEO_CACHE.get(key);
     if (!g) {
       const P = new VPart();
       paint(P);
-      g = P.resample(RES).geometry(VOX, (o.offset || [0, 0, 0]).map((v) => v * RES), { glowIntensity: o.glow ?? 2.6 });
+      // design-unit parts are re-voxelised onto the shared grid; native parts are placed on it directly
+      const k = o.native ? 1 : RES;
+      g = (o.native ? P : P.resample(RES)).geometry(VOX, (o.offset || [0, 0, 0]).map((v) => v * k), { glowIntensity: o.glow ?? 2.6 });
       GEO_CACHE.set(key, g);
     }
     const grp = new THREE.Group();
@@ -689,6 +694,17 @@ const band = (P, y0, y1, col) => P.paint((x, y, z) => (y >= y0 && y < y1 ? (type
 /** Paint the outward surface voxels matching test with col. */
 const skin = (P, test, col) => P.paint((x, y, z, c) => (test(x, y, z) && P.surface(x, y, z) ? (typeof col === 'function' ? col(x, y, z, c) : col) : undefined));
 /** Ring of studs/rivets around a y level at radius r. */
+/** A block on the shared grid with its edges trimmed (inclusive bounds): the basic voxel head. */
+function block(P, x0, y0, z0, x1, y1, z1, c) {
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+    if ((x === x0 || x === x1) + (y === y0 || y === y1) + (z === z0 || z === z1) >= 2) continue;
+    P.set(x, y, z, typeof c === 'function' ? c(x, y, z) : c);
+  }
+}
+/** Set a list of [x,y,z] voxels to a colour (or colour function). */
+function at(P, list, c) { for (const [x, y, z] of list) P.set(x, y, z, typeof c === 'function' ? c(x, y, z) : c); }
+/** Heads are placed voxel by voxel on the shared grid, odd-wide so masks and visors have a true centre. */
+const NATIVE = { native: true, offset: [0.5, 0, 0.5] };
 function rivets(P, y, r, n, col, rz = r) {
   for (let i = 0; i < n; i++) { const a = (i / n) * TAU; P.set(Math.floor(Math.sin(a) * r), y, Math.floor(Math.cos(a) * rz), col); }
 }
@@ -784,26 +800,29 @@ const BUILD = {
       P.cap([1.4, 13.1, 3.2], [0.6, 10.9, 3.8], 0.7, 0.45, fabric(C.kerchief, 26));
     });
     // head: leather forge hood, a riveted iron welding mask with one amber window — no face
+    // the head, voxel by voxel: a leather hood and an iron welding mask with a recessed amber window
     c.part(R.head, (P) => {
-      P.ell(0, 4.6, -0.2, 4.6, 5.3, 4.6, leather(C.hood, 31));
-      P.loft(-1.5, 1.5, () => [3.4, 3.2, 0, 0.1], leather(C.hood, 32));
-      skin(P, (x, y, z) => (x === 0 || x === -1) && y > 6 && z < 2 && (y & 1), mix(C.hood[0], '#d8b080', 0.3));
-      // the mask: a curved iron plate from chin to brow
-      const iron = metal(['#24262c', '#3a3e48', '#5a606c', '#8a92a0'], 33);
-      P.loft(0.5, 8.6, (y) => [4.1 - Math.max(0, y - 6.5) * 0.4 - Math.max(0, 2 - y) * 0.5, 4.9 + Math.sin(Math.PI * clamp((y - 0.5) / 8, 0, 1)) * 0.5], iron, { front: true });
-      for (let x = -3; x < 3; x++) for (let y = 4; y < 6; y++) { P.set(x, y, 5, ramp(C.lens, y === 5 ? 0.75 : 0.45, x, y, 5, 34)); P.set(x, y, 6, null); }
-      P.set(-3, 5, 5, C.lens[3]);
-      for (let x = -4; x <= 3; x++) { P.set(x, 6, 6, ramp(['#3a3e48', '#5a606c', '#8a92a0'], 0.8, x, 6, 6, 35)); P.set(x, 3, 6, ramp(['#3a3e48', '#5a606c'], 0.6, x, 3, 6, 35)); }
-      for (const [x, y] of [[-4, 7], [3, 7], [-4, 1], [3, 1], [-1, 8]]) P.set(x, y, 5, C.brass[2]);
-      // hinge bolts at the temples, a soot smudge
-      for (const sx of [-1, 1]) P.ell(sx * 4.4, 5, 0.6, 1.1, 1.1, 1.1, metal(C.brass, 36));
-      for (let y = 0; y < 4; y++) P.set(-1, y, 5, ramp(['#5a606c', '#8a92a0'], 0.6, -1, y, 5, 39)); // centre ridge
-      // auburn hair bursting out of the hood top and back
-      for (let x = -3; x < 3; x++) for (let z = -3; z < 2; z++) {
-        const h = 1 + Math.floor(hash(x, z, 37) * 3) + (z < 0 ? 1 : 0);
-        for (let k = 0; k < h; k++) P.set(x + (k > 1 ? Math.round(hash(x, k, z) - 0.5) : 0), 9 + k, z - (k > 1 ? 1 : 0), ramp(C.hair, 0.3 + k * 0.22, x, k, z, 38));
+      block(P, -4, 0, -4, 4, 8, 4, (x, y, z) => ramp(C.hood, 0.3 + y * 0.05 + (hash(x, y, z, 31) - 0.5) * 0.2, x, y, z, 31));
+      block(P, -3, -2, -3, 3, -1, 3, (x, y, z) => ramp(C.hood, 0.28 + (hash(x, y, z, 32) - 0.5) * 0.2, x, y, z, 32));
+      for (let z = -3; z <= 3; z++) P.set(0, 8, z, z & 1 ? C.hood[3] : C.hood[1]); // stitched crown seam
+      const iron = ['#24262c', '#3a3e48', '#5a606c', '#8a92a0', '#b4bcc8'];
+      for (let y = 1; y <= 7; y++) for (let x = -3; x <= 3; x++) {
+        if ((y === 1 || y === 7) && Math.abs(x) === 3) continue;
+        P.set(x, y, 5, ramp(iron, 0.36 + y * 0.04 - x * 0.02 + (x === 0 && y < 4 ? 0.16 : 0), x, y, 5, 33));
       }
-    });
+      for (let x = -3; x <= 3; x++) P.set(x, 6, 5, ramp(iron, 0.8 - x * 0.03, x, 6, 5, 35)); // brow ridge
+      for (let x = -2; x <= 2; x++) for (let y = 4; y <= 5; y++) {
+        P.set(x, y, 5, null);
+        P.set(x, y, 4, y === 5 ? (x === -2 ? C.lens[3] : C.lens[2]) : x === 2 ? C.lens[0] : C.lens[1]);
+      }
+      at(P, [[-3, 2, 5], [3, 2, 5], [-3, 6, 5], [3, 6, 5]], (x) => C.brass[x < 0 ? 3 : 2]);
+      for (const sx of [-1, 1]) { P.set(sx * 5, 5, 1, C.brass[2]); P.set(sx * 5, 5, 0, C.brass[1]); } // hinge bolts
+      // auburn hair bursting out of the crown, and a lock at the back
+      at(P, [[-1, 9, -1], [0, 9, 0], [1, 9, -1], [0, 9, -2], [-1, 9, 1], [1, 9, 1], [-2, 9, -2]], (x, y, z) => ramp(C.hair, 0.3 + hash(x, z, 38) * 0.3, x, y, z, 38));
+      at(P, [[0, 10, -1], [-1, 10, 0], [1, 10, -2]], (x, y, z) => ramp(C.hair, 0.65, x, y, z, 38));
+      P.set(0, 11, -2, C.hair[3]);
+      at(P, [[-1, 6, -5], [0, 5, -5], [1, 6, -5], [0, 4, -5]], (x, y, z) => ramp(C.hair, 0.45, x, y, z, 39));
+    }, NATIVE);
     const sleeve = fabric(C.shirt, 41);
     for (const side of ['L', 'R']) {
       const sx = side === 'L' ? 1 : -1;
@@ -835,7 +854,7 @@ const BUILD = {
       });
       c.part(R['ft' + side], (P) => boot(P, C.boot, C.sole, { toe: metal(['#3a3e48', '#6a707e', '#9aa2ae'], 56), laces: '#c8a06a' }));
     }
-    c.backItem = c.backWeapon(R.spine, { bp: 'hammer', ids: ['iron', 'iron', 'coal'], grade: 2 }, c.v(3.5, 3, -4.5), [0.12, 0, 0.62], 1.15);
+    c.backItem = c.backWeapon(R.spine, { bp: 'hammer', ids: ['iron', 'iron', 'coal'], grade: 2 }, c.v(3.5, 3, -4.5), [0.12, 0, 0.62]);
     c.headTop = 11 * VS;
   },
 
@@ -877,15 +896,16 @@ const BUILD = {
     });
     // the hood: deep, gold-edged, nothing inside but dark and two faint glints
     c.part(R.head, (P) => {
-      P.ell(0, 4.8, -0.4, 5.3, 6.1, 5.5, (x, y, z) => robe(x, y, z));
-      const open = (x, y, z) => z > 0.5 && Math.abs(x + 0.5) < 3.3 - Math.max(0, y - 6) * 0.45 && y > 0 && y < 8.5;
+      const robeV = (x, y, z) => ramp(C.robe, 0.3 + (y + 1) * 0.04 + (hash(x >> 1, y >> 1, z >> 1, 71) - 0.5) * 0.16, x, y, z, 71);
+      block(P, -4, -1, -5, 4, 9, 4, robeV);
+      // a brow jutting over the opening, gold along its lip
+      for (let x = -3; x <= 3; x++) { P.set(x, 8, 5, robeV(x, 8, 5)); P.set(x, 7, 5, ramp(C.trim, 0.55 + (x < 0 ? 0.15 : 0), x, 7, 5, 72)); }
+      const open = (x, y, z) => Math.abs(x) <= 2 && y >= 1 && y <= 6 && z >= 1;
       P.carve(open);
-      P.paint((x, y, z) => (open(x, y, z - 1) || open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) ? ramp(C.trim, 0.65, x, y, z, 71) : undefined));
-      P.ell(0, 4.3, 0, 3.6, 4.3, 2.6, C.void);
-      P.carve((x, y, z) => z > 1.6 && open(x, y, z));
-      P.set(-2, 4, 2, { glow: true, c: C.glint }); P.set(1, 4, 2, { glow: true, c: C.glint });
-      P.ell(0, -0.5, 0.6, 4.6, 1.8, 4.2, fabric(C.robe, 72));
-    }, { glow: 1.3 });
+      P.paint((x, y, z) => (open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) || open(x, y - 1, z) || open(x, y, z + 1)
+        ? (z === 4 ? ramp(C.trim, 0.6 + (x < 0 ? 0.15 : 0), x, y, z, 73) : C.void) : undefined));
+      P.set(-1, 4, 0, { glow: true, c: C.glint }); P.set(1, 4, 0, { glow: true, c: C.glint });
+    }, { ...NATIVE, glow: 1.3 });
     const tip = c.joint(R.head, ...c.v(0, 9.2, -3.6));
     c.part(tip, (P) => {
       P.cap([0, 0, 0], [0, 2.6, -3.6], 2.0, 0.7, robe);
@@ -909,7 +929,7 @@ const BUILD = {
       c.part(R['ft' + side], (P) => { boot(P, C.slipper, '#120c14', { w: 1.9, len: 3.4 }); P.ell(0, 0.4, 3.6, 0.8, 0.8, 0.8, C.trim[2]); });
       void sx;
     }
-    c.backItem = c.backWeapon(R.spine, { bp: 'staff', ids: ['quartz', 'iron'], el: { ice: 1 }, grade: 2 }, c.v(-2.4, -2.4, -4.4), [0.12, 0, -0.45], 1.05);
+    c.backItem = c.backWeapon(R.spine, { bp: 'staff', ids: ['quartz', 'iron'], el: { ice: 1 }, grade: 2 }, c.v(-2.4, -2.4, -4.4), [0.12, 0, -0.45]);
     // book prop for reading
     const book = c.joint(R.handL, ...c.v(-2.4, -1.6, 2));
     c.part(book, (P) => {
@@ -963,28 +983,37 @@ const BUILD = {
         P.ell(Math.sin(t) * (r - 1), 10.2 + hash(a, 2, 88) * 1.2, Math.cos(t) * (r - 2.1), 2.0, 1.8, 1.9, fur(C.fur, 89));
       }
     });
-    // helm: closed visor with an eye slit, brow band, crest and great curling horns
+    // helm, voxel by voxel: a closed visor whose eye slit is split by a bronze nose guard, a brow
+    // band and crest, horns curling up from bronze bosses, and a great beard spilling out beneath
     c.part(R.head, (P) => {
-      P.ell(0, 5.6, 0, 5.3, 5.8, 5.3, metal(C.steel, 91));
-      P.carve((x, y) => y < 1.4);
-      P.loft(1.4, 3, () => [5.4, 5.4], metal(C.steel, 92));
-      P.paint((x, y, z) => (y >= 7 && y <= 8 ? ramp(C.bronze, 0.6 + ((x + z) & 1) * 0.2, x, y, z, 93) : undefined));
-      P.paint((x, y, z) => (Math.abs(x + 0.5) < 1 && y > 7 && z > -4 ? ramp(C.bronze, 0.75, x, y, z, 94) : undefined));
-      // visor: raised plate, a dark slit and breathing holes
-      P.loft(1.5, 7, (y) => [3.9, 5.6 - Math.max(0, y - 5) * 0.3], metal(C.steel, 95), { front: true });
-      for (let x = -4; x < 4; x++) { P.set(x, 5, 6, null); P.set(x, 5, 5, C.slit); P.set(x, 5, 4, C.slit); }
-      for (let y = 1; y < 5; y++) { P.set(-1, y, 6, ramp(C.bronze, 0.7, -1, y, 6, 90)); P.set(0, y, 6, ramp(C.bronze, 0.55, 0, y, 6, 90)); } // nose guard
-      rivets(P, 6, 5.4, 18, C.bronze[3], 5.4);
+      const steel = (x, y, z) => ramp(C.steel, 0.36 + (y - 2) * 0.05 + (x < 0 ? 0.06 : 0) + (hash(x, y, z, 91) - 0.5) * 0.08, x, y, z, 91);
+      block(P, -4, 2, -4, 4, 9, 4, steel);
+      for (const sx of [-1, 1]) for (let y = 1; y <= 2; y++) for (let z = 0; z <= 3; z++) P.set(sx * 4, y, z, steel(sx * 4, y, z)); // cheek guards
+      P.paint((x, y, z) => (y === 7 ? ramp(C.bronze, 0.55 + ((x + z) & 1) * 0.2, x, y, z, 93) : undefined));
+      for (let z = -3; z <= 3; z++) { P.set(0, 10, z, ramp(C.bronze, 0.72, 0, 10, z, 94)); P.set(0, 9, z, ramp(C.bronze, 0.5, 0, 9, z, 94)); }
+      for (let x = -3; x <= 3; x++) for (let y = 2; y <= 6; y++) P.set(x, y, 5, steel(x, y, 5));
+      for (let x = -3; x <= 3; x++) if (x !== 0) { P.set(x, 5, 5, null); P.set(x, 5, 4, C.slit); }
+      for (let y = 2; y <= 6; y++) P.set(0, y, 5, ramp(C.bronze, 0.45 + y * 0.07, 0, y, 5, 90));
+      at(P, [[-3, 3, 5], [3, 3, 5], [-3, 6, 5], [3, 6, 5]], C.bronze[3]);
       for (const sx of [-1, 1]) {
-        P.cap([sx * 4.6, 6.4, 0], [sx * 7.6, 8.8, -0.4], 1.7, 1.2, (x, y, z, t) => ramp(C.horn, 0.35 + t * 0.4 + (Math.floor(t * 6) % 2 ? 0.12 : 0), x, y, z, 96));
-        P.cap([sx * 7.6, 8.8, -0.4], [sx * 8.0, 12.8, -1.6], 1.2, 0.35, (x, y, z, t) => ramp(C.horn, 0.6 + t * 0.35 + (Math.floor(t * 5) % 2 ? 0.1 : 0), x, y, z, 97));
-        P.ell(sx * 4.8, 6.4, 0, 1.6, 1.6, 1.6, metal(C.bronze, 98));
+        at(P, [[5, 6, 0], [5, 7, 0], [5, 6, -1], [5, 7, -1]].map(([x, y, z]) => [sx * x, y, z]), (x, y, z) => ramp(C.bronze, 0.62, x, y, z, 98));
+        // a horn swept out and up along a curve, thick at the root, ridged, tapering to a pale point
+        for (let i = 0; i <= 24; i++) {
+          const t = i / 24, u = 1 - t, r = 1.45 - t * 0.95;
+          const hx = u * u * 4.8 + 2 * u * t * 9.8 + t * t * 8.9, hy = u * u * 6.6 + 2 * u * t * 6.4 + t * t * 11.9;
+          for (let x = Math.floor(hx - r); x <= hx + r; x++) for (let y = Math.floor(hy - r); y <= hy + r; y++) {
+            if ((x + 0.5 - hx) ** 2 + (y + 0.5 - hy) ** 2 > r * r || x < 5) continue;
+            const col = ramp(C.horn, 0.22 + t * 0.72 + ((i >> 2) & 1 ? 0.07 : 0), x, y, 0, 96);
+            for (let z = r > 0.95 ? -1 : 0; z <= 0; z++) P.set(sx * x, y, z, col);
+          }
+        }
       }
-      // beard spilling out from under the visor
-      P.ell(0, 0.6, 3.4, 4.6, 2.8, 2.2, fur(C.beard, 99));
-      P.ell(0, -1.4, 4.0, 3.4, 2.2, 1.7, fur(C.beard, 100));
-      for (const sx of [-1, 1]) P.ell(sx * 4.2, 2.3, 3.6, 1.3, 1.6, 1.4, fur(C.beard, 101));
-    });
+      const beard = (x, y, z) => ramp(C.beard, 0.35 + (y + 3) * 0.06 + ((x + y) & 1 ? 0.1 : 0), x, y, z, 99);
+      for (const [y, w, z0, z1] of [[1, 4, 2, 5], [0, 4, 2, 5], [-1, 4, 2, 5], [-2, 3, 3, 5], [-3, 2, 3, 4]]) for (let x = -w; x <= w; x++) for (let z = z0; z <= z1; z++) {
+        if (Math.abs(x) === w && (z === z0 || z === z1)) continue;
+        P.set(x, y, z, beard(x, y, z));
+      }
+    }, NATIVE);
     c.braids = [];
     for (const sx of [-1, 1]) {
       const bj = c.joint(R.head, ...c.v(sx * 1.8, -2.4, 4.4));
@@ -1014,7 +1043,7 @@ const BUILD = {
       c.part(R['kn' + side], (P) => { limb(P, 5, 2.7, 2.6, leather(C.boot, 111)); band(P, -1, 0, leather(C.fur, 112)); });
       c.part(R['ft' + side], (P) => boot(P, C.boot, C.sole, { w: 2.7, len: 3.8, toe: metal(C.steel, 113) }));
     }
-    c.backItem = c.backWeapon(R.spine, { bp: 'axe', ids: ['iron', 'iron', 'coal', 'bat_fang'], grade: 2 }, c.v(-3.5, 0, -5.8), [0.15, 0, -0.8], 1.1);
+    c.backItem = c.backWeapon(R.spine, { bp: 'axe', ids: ['iron', 'iron', 'coal', 'bat_fang'], grade: 2 }, c.v(-3.5, 0, -5.8), [0.15, 0, -0.8]);
     c.extraUpdate = () => {
       // the helm settles a touch after each bob (a heavy head)
       c.rig.head.rotation.x += Math.sin(c.time * 2.1) * 0.01;
@@ -1062,26 +1091,23 @@ const BUILD = {
     c.addSpring(tails, 'x', { base: 0, src: 'vz', gain: 0.5, k: 35, d: 4, wobble: 0.06, min: -0.4, max: 1.2 });
     c.addSpring(tails, 'z', { base: 0, src: 'vx', gain: -0.3, k: 35, d: 4, min: -0.5, max: 0.5 });
     // hood with the scarf pulled up over the face: only shadow shows
+    // the hood, voxel by voxel: a shadowed opening rimmed in pale lining, the scarf pulled up to the nose
+    const hoodV = (x, y, z) => ramp(C.hood, 0.35 + y * 0.05 + (hash(x >> 1, y >> 1, z, 133) - 0.5) * 0.16, x, y, z, 133);
     c.part(R.head, (P) => {
-      P.ell(0, 4.3, 0, 4.5, 4.9, 4.6, fabric(C.hood, 133));
-      const open = (x, y, z) => z > 1 && Math.abs(x + 0.5) < 2.7 && y > 1 && y < 6.8;
+      block(P, -3, 0, -4, 3, 7, 3, hoodV);
+      const open = (x, y, z) => Math.abs(x) <= 1 && y >= 3 && y <= 5 && z >= 1;
       P.carve(open);
-      P.paint((x, y, z) => (open(x, y, z - 1) || open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) ? ramp(C.lining, 0.6, x, y, z, 134) : undefined));
-      P.ell(0, 4.2, 0.2, 3.1, 3.3, 2.6, C.shadow);
-      P.carve((x, y, z) => z > 1.8 && open(x, y, z));
-      // scarf up to the nose
-      P.ell(0, 1.6, 1.2, 3.9, 1.9, 3.5, fabric(C.scarf, 135));
-      P.paint((x, y, z) => (y === 2 && P.surface(x, y, z) && z > 0 && (x & 1) ? C.scarf[3] : undefined));
-    });
+      P.paint((x, y, z) => (open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) || open(x, y - 1, z) || open(x, y, z + 1)
+        ? (z === 3 ? ramp(C.lining, 0.5 + (x < 0 ? 0.25 : 0), x, y, z, 134) : C.shadow) : undefined));
+      block(P, -4, -1, -4, 4, 2, 4, (x, y, z) => ramp(C.scarf, 0.4 + (y === 2 ? 0.3 : 0) + ((x + z) & 1 ? 0.08 : 0), x, y, z, 135));
+    }, NATIVE);
     const earJ = [];
-    const earCol = (x, y, z) => (z > -0.2 && Math.abs(x + 0.5) < 1.1 && y > 0.5 ? ramp(C.inner, 0.5, x, y, z, 136) : fur(C.ear, 137)(x, y, z));
+    const earCol = (x, y, z) => (y === 0 ? hoodV(x, 7, z) : z === 0 && x === 0 && y < 5 ? ramp(C.inner, 0.25 + y * 0.15, x, y, z, 136) : ramp(C.ear, 0.35 + y * 0.07 + (x < 0 ? 0.12 : 0) + (hash(x, y, z, 137) - 0.5) * 0.12, x, y, z, 137));
+    const ear = (P, top) => { for (let y = 0; y <= top; y++) for (let x = -1; x <= 1; x++) for (let z = -1; z <= 0; z++) if (y < top || x === 0) P.set(x, y, z, earCol(x, y, z)); };
     for (const sx of [-1, 1]) {
       const ej = c.joint(R.head, ...c.v(sx * 1.8, 8.0, -0.6));
       const floppy = sx < 0;
-      c.part(ej, (P) => {
-        P.ell(0, floppy ? 2.2 : 4.2, 0, 1.9, floppy ? 2.6 : 4.6, 0.95, earCol);
-        P.ell(0, 0.4, 0, 1.8, 1.3, 1.5, fabric(C.hood, 138));
-      });
+      c.part(ej, (P) => ear(P, floppy ? 3 : 6), NATIVE);
       ej.rotation.z = floppy ? 0.35 : -0.12;
       earJ.push(ej);
       c.addSpring(ej, 'x', { base: -0.12, src: 'vy', gain: 0.35, k: 70, d: 6, wobble: 0.02, phase: sx, extra: (ch) => -ch.pose.ears * 0.25 });
@@ -1089,7 +1115,7 @@ const BUILD = {
       if (floppy) {
         // the tip flops over and bounces
         const tip = c.joint(ej, ...c.v(0, 4.4, 0));
-        c.part(tip, (P) => P.ell(0, 2.2, 0, 1.7, 2.6, 0.9, earCol));
+        c.part(tip, (P) => { for (let y = 0; y <= 3; y++) for (let x = -1; x <= 1; x++) for (let z = -1; z <= 0; z++) if (y < 3 || x === 0) P.set(x, y, z, earCol(x, y + 1, z)); }, NATIVE);
         tip.rotation.z = 1.7;
         c.addSpring(tip, 'z', { base: 1.7, src: 'vy', gain: -0.7, k: 30, d: 3.5, wobble: 0.08, phase: 2, extra: (ch) => -ch.pose.ears * 0.6 });
       }
@@ -1109,7 +1135,7 @@ const BUILD = {
       });
       c.part(R['ft' + side], (P) => boot(P, C.boot, C.sole, { w: 1.9, len: 3.3 }));
     }
-    c.backItem = c.backWeapon(R.hips, { bp: 'dagger', ids: ['silver', 'spider_silk'], grade: 2 }, c.v(-4.2, 0.5, -1), [0.4, 0, 0.35], 0.95);
+    c.backItem = c.backWeapon(R.hips, { bp: 'dagger', ids: ['silver', 'spider_silk'], grade: 2 }, c.v(-4.2, 0.5, -1), [0.4, 0, 0.35]);
     c.ears = earJ;
     c.headTop = 16 * VS;
   },

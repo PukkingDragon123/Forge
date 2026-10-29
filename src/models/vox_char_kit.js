@@ -135,7 +135,8 @@ export class VPart {
    * Re-voxelise onto a coarser grid (k output voxels per voxel, k < 1) so a part painted in fine
    * design units lands on the shared world grid. Every voxel maps to the output cell holding its
    * centre; where several share a cell the one that matters most wins: glowing, then exposed, then
-   * the one that stands out from its neighbours (seams, slits, rivets, glints survive the downsample).
+   * one that stands out sharply from its neighbours (seams, slits, rivets survive the downsample),
+   * then the one nearest the cell centre.
    */
   resample(k) {
     if (k === 1) return this;
@@ -150,7 +151,9 @@ export class VPart {
         if (!ne) { open = true; continue; }
         diff += Math.abs(((e.v >> 16) & 255) - ((ne.v >> 16) & 255)) + Math.abs(((e.v >> 8) & 255) - ((ne.v >> 8) & 255)) + Math.abs((e.v & 255) - (ne.v & 255));
       }
-      s += (open ? 1e4 : 0) + diff / 6;
+      // a real feature (seam, slit, rivet) beats mere colour noise; otherwise the voxel nearest the cell centre wins
+      const fx = (e.x + 0.5) * k - ox - 0.5, fy = (e.y + 0.5) * k - oy - 0.5, fz = (e.z + 0.5) * k - oz - 0.5;
+      s += (open ? 1e4 : 0) + (diff / 6 > 60 ? 100 + diff / 6 : 0) + (1 - (fx * fx + fy * fy + fz * fz)) * 20;
       const b = best.get(key);
       if (!b || s > b.s) best.set(key, { s, x: ox, y: oy, z: oz, v: e.v });
     }

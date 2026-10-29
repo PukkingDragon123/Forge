@@ -87,6 +87,7 @@ export class CharPreview extends Scene {
     if (idx >= 0 && cmode === 'body') { const x = -1.95 + idx * 1.3; const h = HEAD[cid] * 0.55; this.rig.cut([x + 0.4, h + 0.25, 2.6], [x, h, 0], 34); }
     else if (idx >= 0) { const ch = this.chars.find((c) => c.id === cid) || this.chars[0]; const hp = ch.headPos(); const h = hp.y - (ch.headTop || 0.3) * 0.55; const x = ch.group.position.x; this.rig.cut([x + 0.25, h + 0.12, 1.9], [x, h - 0.02, 0], 28); }
     else if (cam === 'faces') this.rig.cut([0, 1.0, 3.2], [0, 0.95, 0], 34);
+    else if (q.get('weapons') && q.get('wcam')) { const x = -2.6 + +q.get('wcam') * 0.65; this.rig.cut([x, 0.75, 1.5], [x, 0.72, 0], 34); }
     else if (q.get('weapons')) this.rig.cut([0, 0.75, 3.4], [0, 0.72, 0], 40);
     else if (cam === 'wide') this.rig.cut([0, 1.1, 6.2], [0, 0.85, 0], 34);
     this.ff = +(q.get('t') || 0);
@@ -96,7 +97,7 @@ export class CharPreview extends Scene {
     this.fire.tick(this.time);
     if (this.q.get('walk')) this.chars.forEach((c, i) => { c.group.position.x += dt * 0.8; if (c.group.position.x > 3) c.group.position.x -= 5.6; });
     if (!this.q.get('freeze')) this.chars.forEach((c) => c.update(dt));
-    if (this.weapons) this.weapons.forEach((w, i) => { w.rotation.y = this.time * 0.6 + i; });
+    if (this.weapons) this.weapons.forEach((w, i) => { w.rotation.y = this.q.get('spin') === '0' ? 0.45 : this.time * 0.6 + i; });
     this.rig.update(dt);
   }
   draw(ui) {
