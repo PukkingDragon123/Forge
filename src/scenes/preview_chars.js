@@ -85,7 +85,7 @@ export class CharPreview extends Scene {
     const idx = ids.indexOf(cid);
     const HEAD = { bran: 1.53, elio: 1.21, durgan: 0.9, clover: 1.12 };
     if (idx >= 0 && cmode === 'body') { const x = -1.95 + idx * 1.3; const h = HEAD[cid] * 0.55; this.rig.cut([x + 0.4, h + 0.25, 2.6], [x, h, 0], 34); }
-    else if (idx >= 0) { const x = -1.95 + idx * 1.3; const h = HEAD[cid]; this.rig.cut([x, h + 0.04, 1.05], [x, h, 0], 24); }
+    else if (idx >= 0) { const ch = this.chars.find((c) => c.id === cid) || this.chars[0]; const hp = ch.headPos(); const h = hp.y - (ch.headTop || 0.3) * 0.55; const x = ch.group.position.x; this.rig.cut([x + 0.25, h + 0.12, 1.9], [x, h - 0.02, 0], 28); }
     else if (cam === 'faces') this.rig.cut([0, 1.0, 3.2], [0, 0.95, 0], 34);
     else if (q.get('weapons')) this.rig.cut([0, 0.75, 3.4], [0, 0.72, 0], 40);
     else if (cam === 'wide') this.rig.cut([0, 1.1, 6.2], [0, 0.85, 0], 34);

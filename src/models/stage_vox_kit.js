@@ -32,7 +32,8 @@ export const bayer = (a, b) => B4[(a & 3) + ((b & 3) << 2)] / 16;
 export function ramp(pal, v, a, b) {
   const t = Math.max(0, Math.min(0.9999, v)) * (pal.length - 1);
   const i = Math.floor(t);
-  return t - i > bayer(a, b) ? pal[Math.min(i + 1, pal.length - 1)] : pal[i];
+  // dither only in a narrow band around each palette step: flat colour regions with crisp seams
+  return t - i > 0.5 + (bayer(a, b) - 0.5) * 0.4 ? pal[Math.min(i + 1, pal.length - 1)] : pal[i];
 }
 export const P = (arr) => arr.map(C);
 
@@ -236,9 +237,9 @@ export function meshWorld(w, opts = {}) {
           else {
             lightAt(R, lamps, (x + 0.5 + nX * 0.5) * S, (y + 0.5 + nY * 0.5) * S, (z + 0.5 + nZ * 0.5) * S, nX, nY, nZ, L);
             const dth = bayer(a === 0 ? z : x, a === 1 ? z : y) - 0.5;
-            const qr = Math.max(0, Math.floor(L[0] * tint * bands + 0.5 + dth * 0.9) / bands);
-            const qg = Math.max(0, Math.floor(L[1] * tint * bands + 0.5 + dth * 0.9) / bands);
-            const qb = Math.max(0, Math.floor(L[2] * tint * bands + 0.5 + dth * 0.9) / bands);
+            const qr = Math.max(0, Math.floor(L[0] * tint * bands + 0.5 + dth * 0.5) / bands);
+            const qg = Math.max(0, Math.floor(L[1] * tint * bands + 0.5 + dth * 0.5) / bands);
+            const qb = Math.max(0, Math.floor(L[2] * tint * bands + 0.5 + dth * 0.5) / bands);
             cR[mi] = LIN[r8] * qr; cG[mi] = LIN[g8] * qg; cB[mi] = LIN[b8] * qb;
             kGlow[mi] = 0;
             if (v & NOAO) kAo[mi] = 3;

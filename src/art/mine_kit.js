@@ -159,7 +159,7 @@ export function shaftCanvas(w, w2, h, col = '#fff0c8') {
         const u = Math.abs(x - W / 2) / half;
         if (u >= 1) continue;
         const a = (1 - u * u) * (1 - t) ** 1.2 * (0.6 + 0.4 * Math.sin(x * 0.7 + y * 0.05) ** 2);
-        if (a > 0.02) p.set(x, y, c, Math.round(a * 90));
+        if (a > 0.02) p.set(x, y, c, Math.round(a * 150));
       }
     }
     return p.toCanvas();

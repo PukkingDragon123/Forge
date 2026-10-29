@@ -12,7 +12,7 @@ import { ParticleSystem } from '../gfx/particles.js';
 import { LAYER_FX } from '../gfx/renderer.js';
 import { noise2, clamp, smoothstep, hexToRgb } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
-import { S, VWorld, vx, C, glowC, mixC, ramp, bayer, box, ell, cyl, seg, sag, makeLightRig, meshWorld, worldMeshes, h3, NOAO } from './stage_vox_kit.js';
+import { S, VWorld, vx, C, glowC, mixC, ramp, bayer, box, ell, cyl, cylX, seg, sag, makeLightRig, meshWorld, worldMeshes, h3, NOAO } from './stage_vox_kit.js';
 import * as PR from './stage_vox_props.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -24,42 +24,42 @@ const REG = [
     rock: pal(['#3a2a3a', '#5a3c48', '#7e5258', '#a86e66', '#d49a80']), strata: pal(['#c8784e', '#8a6a9a', '#d8a86a']),
     stone: pal(['#4e3c46', '#6e5458', '#94706a', '#bc9480']), dirt: pal(['#3e2c32', '#5a4040', '#7a5850']),
     moss: pal(['#4a6a4e', '#6a9058', '#9ab86a']), ore: ['#e08a4a', '#c8c8d8', '#ffd27a'], oreGlow: false,
-    lamp: '#ffb36a', lamp2: '#ffd27a', amb: '#5a4a86', sky: '#8a90d0', key: '#ffd8b0', keyI: 0.45,
+    lamp: '#ffb36a', lamp2: '#ffd27a', amb: '#5a4a86', sky: '#8a90d0', key: '#ffd8b0', keyI: 0.26,
     fog: '#22182c', bg: '#140e1a', cloth: ['salmon', 'mustard', 'teal'], ambient: ['dust', 'motes'], drip: '#9ad0e0',
   },
   { // 1 Prism Hollows: lavender rock, cyan & pink crystal light
     rock: pal(['#241f42', '#383062', '#534888', '#7a6ab2', '#ae9ede']), strata: pal(['#6a8ad8', '#c08ae0', '#8ad0e8']),
     stone: pal(['#2e2a50', '#443e70', '#5e5690', '#8278b4']), dirt: pal(['#2a2646', '#3e3862', '#564e80']),
     moss: pal(['#3a6a8a', '#5a9ac0', '#9ad8f0']), ore: ['#6ae8ff', '#ff8ae0', '#c0a8ff'], oreGlow: true,
-    lamp: '#9ae8ff', lamp2: '#ff9ae0', amb: '#46467e', sky: '#a0a8ff', key: '#e8e0ff', keyI: 0.4,
+    lamp: '#9ae8ff', lamp2: '#ff9ae0', amb: '#46467e', sky: '#a0a8ff', key: '#e8e0ff', keyI: 0.24,
     fog: '#160f30', bg: '#0c0a20', cloth: ['lavender', 'teal', 'salmon'], ambient: ['dust', 'glints'], drip: '#9ae8ff',
   },
   { // 2 Sporewood: teal-green caves, salmon & mustard mushrooms, glowing gills, fireflies
     rock: pal(['#162628', '#203c3a', '#2c564c', '#46765c', '#78a06e']), strata: pal(['#3a8a6a', '#8a9a4a', '#5aa0a0']),
     stone: pal(['#1e3030', '#2c4440', '#3e5c4e', '#5a7a5e']), dirt: pal(['#1c2a24', '#2a3e32', '#3c5440']),
     moss: pal(['#2e6a4a', '#4a9a5a', '#8ac86a']), ore: ['#5af0c8', '#d8ff8a', '#ffc85a'], oreGlow: true,
-    lamp: '#9affc8', lamp2: '#ffc070', amb: '#2e4e66', sky: '#7ac8b8', key: '#e0ffd8', keyI: 0.35,
+    lamp: '#9affc8', lamp2: '#ffc070', amb: '#2e4e66', sky: '#7ac8b8', key: '#e0ffd8', keyI: 0.22,
     fog: '#0e1e1c', bg: '#08120f', cloth: ['teal', 'mustard', 'salmon'], ambient: ['dust', 'spores', 'fireflies'], drip: '#8ae8c8',
   },
   { // 3 Sunken Halls: sandstone ruins, turquoise water, gold
     rock: pal(['#40302a', '#644a36', '#8c6a42', '#b48e56', '#dcb878']), strata: pal(['#d8a058', '#a07858', '#e8c890']),
     stone: pal(['#5a4434', '#7e6044', '#a48256', '#ccaa72']), dirt: pal(['#4a382c', '#66503a', '#86684a']),
     moss: pal(['#4a6a4a', '#6a8a58', '#9aaa6a']), ore: ['#ffd25e', '#3ac8c0', '#e8e0c8'], oreGlow: false,
-    lamp: '#ffd27a', lamp2: '#5ae8d8', amb: '#4e4478', sky: '#a8a0dc', key: '#fff0c8', keyI: 0.5,
+    lamp: '#ffd27a', lamp2: '#5ae8d8', amb: '#4e4478', sky: '#a8a0dc', key: '#fff0c8', keyI: 0.3,
     fog: '#1c1418', bg: '#120c10', cloth: ['teal', 'plum', 'mustard'], ambient: ['dust', 'gold'], drip: '#5ae8d8',
   },
   { // 4 Emberdeep: plum basalt split by lava, embers and ash
     rock: pal(['#1c0e16', '#301822', '#48242e', '#683236', '#904640']), strata: pal(['#a83a2a', '#5a2a4a', '#c86a3a']),
     stone: pal(['#2a141c', '#401e24', '#5a2a2e', '#7a3a38']), dirt: pal(['#241016', '#381a1e', '#4e2626']),
     moss: pal(['#5a2a2a', '#8a3a2a', '#c8582a']), ore: ['#ff8a2a', '#ffd25e', '#ff5a1a'], oreGlow: true,
-    lamp: '#ff8a3a', lamp2: '#ffc85a', amb: '#5e2c50', sky: '#8a5a90', key: '#ffc8a0', keyI: 0.45,
+    lamp: '#ff8a3a', lamp2: '#ffc85a', amb: '#5e2c50', sky: '#8a5a90', key: '#ffc8a0', keyI: 0.24,
     fog: '#220c12', bg: '#14080a', cloth: ['plum', 'salmon', 'mustard'], ambient: ['embers', 'ash'], drip: null, lava: true,
   },
   { // 5 Forbidden Tomb: indigo stone, bone, cursed violet fire, green wisps
     rock: pal(['#16122a', '#241e40', '#352c5e', '#4c4282', '#7064aa']), strata: pal(['#5a3a8a', '#3a5a7a', '#8a6aa8']),
     stone: pal(['#1e1a32', '#2c2648', '#3e3660', '#564c80']), dirt: pal(['#1a1628', '#28223c', '#383050']),
     moss: pal(['#2a4a4a', '#3a6a5a', '#5aaa7a']), ore: ['#c86bff', '#7affb0', '#e8dcc0'], oreGlow: true,
-    lamp: '#c86bff', lamp2: '#7affb0', amb: '#3e3270', sky: '#7a6ab8', key: '#e8d8ff', keyI: 0.4,
+    lamp: '#c86bff', lamp2: '#7affb0', amb: '#3e3270', sky: '#7a6ab8', key: '#e8d8ff', keyI: 0.22,
     fog: '#100c1e', bg: '#08060f', cloth: ['plum', 'lavender', 'teal'], ambient: ['wisps', 'dust'], drip: null,
   },
 ];
@@ -113,14 +113,14 @@ function rockWall(B, x0, x1, z, y0, y1, o = {}) {
       const wet = noise2(x * 0.18, y * 0.012 + seed) > 0.72;
       for (let zz = Z - th; zz <= Z + dz; zz++) {
         const surf = zz === Z + dz;
-        let v = 0.25 + bulge * 0.45 + (s1[2] - 0.5) * 0.25 + (h3(x, y, zz, seed) - 0.5) * 0.12 + (y - Y0) * 0.0006;
+        let v = 0.3 + bulge * 0.42 + (s1[2] - 0.5) * 0.22 + (h3(x, y, zz, seed) - 0.5) * 0.06 - Math.max(0, y * S - 2.6) * 0.09;
         if (edge < 1.8) v -= 0.25;
         if (wet) v -= 0.12;
         if (!surf) v -= 0.1;
         let c = ramp(R.rock, v, x + zz, y);
         if (band % 2 === 0) c = mixC(c, tint, 0.16);
-        if (surf && h3(x, y, 7, seed) > 0.993) c = R.oreGlow && h3(x, y, 8, seed) > 0.4 ? glowC(R.ore[(x + y) % R.ore.length]) : C(R.ore[(x + y) % R.ore.length]);
-        else if (surf && o.moss !== false && bulge > 0.3 && noise2(x * 0.04 + seed, y * 0.05) > 0.62 && y < Y0 + 70) c = ramp(R.moss, 0.3 + h3(x, y, 2, seed) * 0.7, x, y);
+        if (surf && h3(x, y, 7, seed) > 0.993) c = R.oreGlow && h3(x, y, 8, seed) > 0.4 ? glowC(R.ore[Math.abs(x + y) % R.ore.length]) : C(R.ore[Math.abs(x + y) % R.ore.length]);
+        else if (surf && o.moss !== false && y - s1[1] > cell * 0.12 + (1 - bulge) * cell * 0.3 && noise2(x * 0.09 + seed, y * 0.11) > 0.5 && y < Y0 + 80) c = ramp(R.moss, 0.25 + bulge * 0.5 + h3(x, y, 2, seed) * 0.25, x, y);
         w.set(x, y, zz, c);
       }
     }
@@ -149,7 +149,7 @@ function floorField(B, x0, x1, z0, z1, yFn = () => 0, o = {}) {
         for (let y = top - 2; y <= top + (pebble ? 1 : 0); y++) {
           let c;
           if (joint) c = ramp(R.dirt, 0.3 + h3(x, z, y, seed) * 0.5, x, z);
-          else c = ramp(R.stone, 0.32 + s1[2] * 0.4 + (h3(x, z, 1, seed) - 0.5) * 0.15 + (y === top + 1 ? 0.3 : 0) + (z - Z0) * 0.001, x, z);
+          else c = ramp(R.stone, 0.34 + s1[2] * 0.34 + (h3(x, z, 1, seed) - 0.5) * 0.06 + (y === top + 1 ? 0.25 : 0) - Math.max(0, z * S - 1.6) * 0.1, x, z);
           if (!joint && Math.abs(noise2(x * 0.09 + seed, z * 0.09) - 0.5) < 0.012) c = R.dirt[0];
           w.set(x, y, z, c);
         }
@@ -423,7 +423,7 @@ function bake(st, plan, key, bounds = null, skip = null) {
     const clip = bounds ? { x0: bounds.x0 - 2, x1: bounds.x1 + 2, y0: -100000, y1: 100000, z0: -100000, z1: 100000 } : null;
     const w = new VWorld(clip);
     for (const o of plan.ops) if (!bounds || (o.x1 >= clip.x0 && o.x0 <= clip.x1)) o.fn(w);
-    const rig = makeLightRig({ amb: plan.R.amb, sky: plan.R.sky, key: plan.R.key, keyI: plan.R.keyI, lamps: plan.lamps, bands: 12 });
+    const rig = makeLightRig({ amb: plan.R.amb, ambI: 1.15, sky: plan.R.sky, skyI: 0.3, key: plan.R.key, keyI: plan.R.keyI, lamps: plan.lamps.map((l) => ({ ...l, i: l.i * 1.35 })), bands: 16 });
     res = meshWorld(w, { light: rig, bounds: bounds ? { x0: bounds.x0, x1: bounds.x1, y0: -100000, y1: 100000, z0: -100000, z1: 100000 } : null, skip: skip || new Set(['2,-1']), bottomAbove: vx(1.0) });
     for (const g of [res.solid, res.glow]) if (g) g.userData.keep = true;
     if (cacheKey) { geoCache.set(cacheKey, res); if (geoCache.size > 40) geoCache.delete(geoCache.keys().next().value); }
@@ -448,7 +448,7 @@ function lanternAt(B, x, y, z, col, r = 3.2, i = 1.1) {
 }
 function frameAt(B, x, z, span = 2.0, h = 2.4, lamp = true) {
   B.op(x - span / 2 - 0.3, x + span / 2 + 0.3, (w) => PR.timberFrame(w, vx(x), 0, vx(z), vx(span), vx(h), { seed: Math.round(x * 10) }));
-  if (lamp) lanternAt(B, x + span * 0.3, h - 0.5, z + 0.25, B.R.lamp, 3.4, 1.15);
+  if (lamp) lanternAt(B, x + span * 0.3, h - 0.5, z + 0.25, B.R.lamp, 4.0, 1.3);
 }
 function clutter(B, x, z, r, kinds = ['crate', 'barrel', 'sack']) {
   const R = B.R, k = Math.floor(r() * kinds.length), what = kinds[k];

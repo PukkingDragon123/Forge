@@ -792,7 +792,7 @@ const BUILD = {
       for (const [x, y] of [[-4, 7], [3, 7], [-4, 1], [3, 1], [-1, 8]]) P.set(x, y, 5, C.brass[2]);
       // hinge bolts at the temples, a soot smudge
       for (const sx of [-1, 1]) P.ell(sx * 4.4, 5, 0.6, 1.1, 1.1, 1.1, metal(C.brass, 36));
-      for (let k = 0; k < 5; k++) P.set(Math.floor(hash(k, 1, 39) * 6) - 3, 1 + Math.floor(hash(k, 2, 39) * 2), 5, '#1a1612');
+      for (let y = 0; y < 4; y++) P.set(-1, y, 5, ramp(['#5a606c', '#8a92a0'], 0.6, -1, y, 5, 39)); // centre ridge
       // auburn hair bursting out of the hood top and back
       for (let x = -3; x < 3; x++) for (let z = -3; z < 2; z++) {
         const h = 1 + Math.floor(hash(x, z, 37) * 3) + (z < 0 ? 1 : 0);
@@ -1038,7 +1038,7 @@ const BUILD = {
       // quilted vest, open at the front
       P.loft(0, 10, (y) => [rx(y) + 0.7, rz(y) + 0.7], (x, y, z, { u }) => {
         if (Math.abs(u) < 0.22) return undefined;
-        return (x + y) % 3 === 0 || (x - y + 30) % 3 === 0 ? mul(C.vest[1], 0.85) : ramp(C.vest, 0.6, x, y, z, 127);
+        return ((x + y + 40) % 4 === 0 || (x - y + 40) % 4 === 0) ? ramp(C.vest, 0.42, x, y, z, 127) : ramp(C.vest, 0.62, x, y, z, 127);
       }, { shell: 0.9 });
       // satchel strap from the right shoulder to the left hip, a buckle
       P.cap([-3.6, 10.5, 1.5], [3.4, 0, rz(0) + 0.6], 0.8, 0.8, leather(C.strap, 128));

@@ -499,7 +499,7 @@ export class MiningScene extends Scene {
     this.additive(ctx, () => {
       const sh = shaftCanvas(70, 230, 470, '#fff0c8');
       ctx.globalAlpha = 0.95 + Math.sin(this.time * 0.6) * 0.05;
-      ctx.translate(92, 0); ctx.rotate(0.22);
+      ctx.translate(92, 0); ctx.rotate(-0.34);
       ctx.drawImage(sh, -sh.width / 2, 0);
     });
 

@@ -123,16 +123,19 @@ export function stoneCanvas(geom, tile, pal, flags = {}, region = 0) {
       if (flags.dim) base = mixHex(base, '#5a4a7a', 0.25);
       const rmp = rampOf(base);
       // crisp rim light on the edges that face the lamp; deeper shade on the far side
-      const facing = c.nx[k] * dx + c.ny[k] * dy;
-      if (d < 2.2 && facing > 0.25 && !flags.dim) { p.set(xx, yy, grade(rmp[6], L, cool)); continue; }
+      // key light: the lamp direction leaned toward a fixed top-left sun, so every stone reads as a pillow
+      const kx = dx * 0.55 - 0.3, ky = dy * 0.55 - 0.75, kl = Math.hypot(kx, ky) || 1;
+      const facing = c.nx[k] * dx + c.ny[k] * dy, key = (c.nx[k] * kx + c.ny[k] * ky) / kl;
+      if (d < 2.2 && facing > 0.25 && key > 0 && !flags.dim) { p.set(xx, yy, grade(rmp[L > 0.45 ? 6 : 5], L, cool)); continue; }
+      if (d < 2.6 && c.ny[k] > 0.55) { p.set(xx, yy, grade(rmp[0], L * 0.4, cool)); continue; } // under-lip shadow
       let bf = c.facets[0], bd = 1e9;
       for (const f of c.facets) { const e = (gx - f.x) ** 2 + (gy - f.y) ** 2; if (e < bd) { bd = e; bf = f; } }
-      let v = 0.46 + (bf.tx * dx + bf.ty * dy) * 0.3 + Math.sqrt(d / c.maxD) * 0.14;
-      if (d < 6) { const b = 1 - d / 6; v += facing * b * 0.45 - b * 0.1; }
-      v += (fbm2(gx * 0.1, gy * 0.1, 2, s) - 0.5) * 0.26 + (hash2(gx, gy, s) - 0.5) * 0.08;
+      let v = 0.5 + ((bf.tx * kx + bf.ty * ky) / kl) * 0.34 + Math.sqrt(d / c.maxD) * 0.12 - 0.06;
+      if (d < 8) { const b = 1 - d / 8; v += key * b * 0.6 - b * 0.08; }
+      v += (fbm2(gx * 0.1, gy * 0.1, 2, s) - 0.5) * 0.22 + (hash2(gx, gy, s) - 0.5) * 0.06;
       if (hard) v += Math.sin((gx + gy * 0.4) * 0.35 + fbm2(gx * 0.05, gy * 0.05, 2, s) * 6) * 0.05;
       if (wet) v -= 0.06;
-      v = v * 0.86 + Math.min(L, 0.85) * 0.34 - 0.1 - dim + (flags.hover ? 0.12 : 0);
+      v = v * 0.92 + (Math.min(L, 0.9) - 0.45) * 0.3 + 0.02 - dim + (flags.hover ? 0.12 : 0);
       p.set(xx, yy, grade(pk(rmp, v, gx, gy), L, cool));
     }
     const inside = (x, y) => { const k = y * c.bw + x; return x >= 0 && y >= 0 && x < c.bw && y < c.bh && c.dist[k] > 1.6; };

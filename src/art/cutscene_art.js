@@ -252,26 +252,40 @@ function lordFigure(p, x, y, h, L, awake = 1) {
 
 /** Ornate sword (for the shatter panel); crack: 0..1. */
 function swordArt(p, x, y, len, ang, crack, seed) {
-  const s = new Painter(Math.ceil(len * 0.5) + 8, len + 8);
-  const cx = s.w / 2;
-  const bw = len * 0.075;
-  s.poly([[cx - bw, len * 0.28], [cx + bw, len * 0.28], [cx + bw * 0.8, len * 0.94], [cx, len], [cx - bw * 0.8, len * 0.94]].map(([a, b]) => [a, len - b + 4]), (px) => (px < cx - 1 ? [236, 240, 250] : px < cx + 1 ? [180, 200, 230] : [120, 140, 180]));
-  line(s, [[cx, len * 0.7], [cx, 4 + len * 0.06]], [255, 255, 255], 1);
-  s.poly([[cx - len * 0.22, len * 0.72], [cx + len * 0.22, len * 0.72], [cx + len * 0.18, len * 0.77], [cx - len * 0.18, len * 0.77]], [214, 170, 80]);
-  s.poly([[cx - bw * 0.6, len * 0.77], [cx + bw * 0.6, len * 0.77], [cx + bw * 0.6, len * 0.95], [cx - bw * 0.6, len * 0.95]], [90, 50, 40]);
-  s.ellipse(cx, len * 0.97, bw, bw, [255, 120, 200]);
-  for (let i = 0; i < crack * 14; i++) {
-    let px = cx + (hash2(i, 1, seed) - 0.5) * bw * 2, py = len * (0.1 + hash2(i, 2, seed) * 0.55);
-    for (let k = 0; k < 6; k++) { if (s.alpha(Math.round(px), Math.round(py))) s.set(px, py, [255, 140, 255]); px += (hash2(k, i, seed) - 0.5) * 3; py += 1.5; }
+  const s = new Painter(Math.ceil(len * 0.62) + 8, len + 8);
+  const cx = s.w / 2, bw = len * 0.07, Y = (v) => len - v + 4;
+  const steel = [[255, 255, 255], [214, 226, 244], [168, 186, 220], [120, 136, 178], [74, 82, 120]];
+  // blade: bevelled edges, a fuller groove, a tapered point
+  s.poly([[cx - bw, Y(len * 0.3)], [cx + bw, Y(len * 0.3)], [cx + bw * 0.85, Y(len * 0.9)], [cx, Y(len)], [cx - bw * 0.85, Y(len * 0.9)]], (px, py) => {
+    const u = (px - cx) / bw;
+    return steel[u < -0.7 ? 0 : u < -0.2 ? 1 : u < 0.25 ? 2 : u < 0.7 ? 3 : 4];
+  });
+  line(s, [[cx, Y(len * 0.33)], [cx, Y(len * 0.82)]], [90, 100, 150], 1);
+  for (let r = 0; r < 6; r++) rune(s, Math.round(cx - 1), Math.round(Y(len * 0.38 + r * len * 0.065)), r + seed, [255, 150, 240]);
+  // crossguard: swept quillons curling up, with a jewel in the middle
+  for (const d of [-1, 1]) {
+    const pts = [];
+    for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push([cx + d * (bw + t * len * 0.26), Y(len * 0.285 + Math.sin(t * Math.PI * 0.9) * len * 0.05 - t * t * len * 0.03)]); }
+    line(s, pts, [230, 190, 90], 3);
+    line(s, pts.map(([a, b]) => [a, b - 1]), [255, 236, 160], 1);
+    s.ellipse(pts[10][0], pts[10][1] - 2, 2.5, 2.5, [255, 140, 220]);
+  }
+  s.ellipse(cx, Y(len * 0.28), bw * 0.9, bw * 0.9, (px, py, nx, ny) => (nx < -0.2 && ny < -0.2 ? [255, 230, 255] : [220, 80, 200]));
+  // grip with wrapped leather and a pommel
+  s.poly([[cx - bw * 0.5, Y(len * 0.26)], [cx + bw * 0.5, Y(len * 0.26)], [cx + bw * 0.5, Y(len * 0.06)], [cx - bw * 0.5, Y(len * 0.06)]], [90, 50, 40]);
+  for (let k = 0; k < 6; k++) line(s, [[cx - bw * 0.5, Y(len * (0.24 - k * 0.033))], [cx + bw * 0.5, Y(len * (0.23 - k * 0.033))]], [150, 96, 66]);
+  s.ellipse(cx, Y(len * 0.035), bw * 0.85, bw * 0.85, (px, py, nx, ny) => (nx < -0.2 && ny < -0.2 ? [255, 240, 190] : [214, 160, 70]));
+  for (let i = 0; i < crack * 16; i++) {
+    let px = cx + (hash2(i, 1, seed) - 0.5) * bw * 1.6, py = Y(len * (0.35 + hash2(i, 2, seed) * 0.6));
+    for (let k = 0; k < 8; k++) { if (s.alpha(Math.round(px), Math.round(py))) s.set(px, py, k % 3 ? [255, 140, 255] : [255, 255, 255]); px += (hash2(k, i, seed) - 0.5) * 3; py += 1.4; }
   }
   s.outline(INK);
-  // rotate onto the layer
   const ca = Math.cos(ang), sa = Math.sin(ang);
   for (let yy = 0; yy < s.h; yy++) for (let xx = 0; xx < s.w; xx++) {
     const c = s.get(xx, yy);
     if (!c || c[3] < 128) continue;
     const dx = xx - cx, dy = yy - s.h / 2;
-    p.set(Math.round(x + dx * ca - dy * sa), Math.round(y + dx * sa + dy * ca), [c[0], c[1], c[2]]);
+    for (const [ox, oy] of [[0, 0], [0.5, 0.5]]) p.set(Math.round(x + (dx + ox) * ca - (dy + oy) * sa), Math.round(y + (dx + ox) * sa + (dy + oy) * ca), [c[0], c[1], c[2]]);
   }
 }
 
@@ -316,15 +330,26 @@ function scatter(p, y0, y1, L, seed, n = 60, tint = '#8a7a6a') {
 function rune(p, x, y, seed, col) {
   for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) if (hash2(r * 3 + c, seed, 77) > 0.52 || (c === 1 && r % 2 === 0)) { p.set(x + c * 2, y + r * 2, col); p.set(x + c * 2 + 1, y + r * 2, col); }
 }
+/** Organic spire outline: lumpy sides tapering to a crooked tip (never a plain triangle). */
+function spirePts(x, base, w, h, seed, dir = -1) {
+  const L = [], R = [], n = 9;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, ww = w * Math.pow(1 - t, 0.75) * (1 + (hash2(i, seed, 1) - 0.5) * 0.35) + (i === n ? 0 : 1);
+    const lean = Math.sin(t * 2.2 + seed) * w * 0.25 * t;
+    L.push([x - ww + lean, base + dir * h * t]);
+    R.unshift([x + ww * (0.9 + hash2(i, seed, 2) * 0.2) + lean, base + dir * h * t + (hash2(i, seed, 3) - 0.5) * 2]);
+  }
+  return [...L, ...R];
+}
 function stalactites(p, pal, L, seed, n = 14, len = 60, fromTop = true) {
-  const col = stops(pal.rock[0], pal.rock[2], pal.rock[3]);
+  const col = stops(mixHex(pal.rock[0], '#1a1028', 0.4), pal.rock[2], pal.rock[3], mixHex(pal.rock[4], '#e0c8d8', 0.3));
+  const T0 = -(p.dy || 0), B0 = p.h - (p.dy || 0);
   for (let k = 0; k < n; k++) {
-    const x = hash2(k, 1, seed) * p.w, l = len * (0.35 + hash2(k, 2, seed) * 0.8), w = 5 + hash2(k, 3, seed) * 12;
-    const pts = [[x - w, 0], [x + w, 0], [x + w * 0.2, l], [x - w * 0.15, l * 0.92]];
-    const T0 = -(p.dy || 0), B0 = p.h - (p.dy || 0);
-    const ptsY = fromTop ? pts.map(([a, b]) => [a, T0 + b]) : pts.map(([a, b]) => [a, B0 - b]);
-    p.poly(ptsY, (px, py) => lit(ramp(col, 0.25 + (px < x ? 0.35 : 0) + hash2(px, py, seed) * 0.15), px, py, L));
-    line(p, [ptsY[1], ptsY[2], ptsY[3], ptsY[0]], INK);
+    const x = hash2(k, 1, seed) * p.w, l = len * (0.35 + hash2(k, 2, seed) * 0.8), w = 4 + hash2(k, 3, seed) * 11;
+    const pts = spirePts(x, fromTop ? T0 : B0, w, l, seed + k * 13, fromTop ? 1 : -1);
+    p.poly(pts, (px, py) => lit(ramp(col, 0.2 + (px < x ? 0.4 : 0.05) + fbm2(px * 0.2, py * 0.1, 2, seed + k) * 0.3), px, py, L));
+    line(p, [...pts, pts[0]], INK);
+    if (fromTop && hash2(k, 9, seed) > 0.5) p.set(Math.round(pts[9][0]), Math.round(pts[9][1]) + 2, [200, 230, 255]);
   }
 }
 function lantern(p, x, y, L) {
@@ -344,14 +369,25 @@ function rails(p, x0, x1, y, L) {
   for (let x = x0; x < x1; x++) { p.set(x, y - 1, lit([170, 170, 186], x, y, L, 0.3)); p.set(x, y + 3, lit([150, 150, 166], x, y, L)); }
 }
 function crystals(p, x, y, h, col, seed, L) {
-  const c = rgb(col);
-  for (let k = 0; k < 4; k++) {
-    const bx = x + (k - 1.5) * h * 0.22, hh = h * (0.5 + hash2(k, seed, 2) * 0.6), lean = (hash2(k, seed, 3) - 0.5) * 0.6, w = h * 0.1 + 2;
-    const pts = [[bx - w, y], [bx + lean * hh - 1, y - hh], [bx + lean * hh + 1, y - hh - 2], [bx + w, y]];
-    p.poly(pts, (px, py) => (px < bx + lean * (y - py) ? [Math.min(255, c[0] + 70), Math.min(255, c[1] + 70), Math.min(255, c[2] + 70)] : lit(c, px, py, L, 0.3)));
-    line(p, [...pts, pts[0]], INK);
+  const c = rgb(col), hi = c.map((v) => Math.min(255, v + 90)), mid = c, lo = c.map((v) => v * 0.55), deep = c.map((v) => v * 0.32);
+  // rock socket
+  p.ellipse(x, y, h * 0.55, h * 0.16, (px, py, nx, ny) => lit(ny < -0.2 ? [110, 96, 120] : [60, 50, 70], px, py, L));
+  const n = 5;
+  for (let k = 0; k < n; k++) {
+    const t = k / (n - 1) - 0.5;
+    const bx = x + t * h * 0.7, hh = h * (0.45 + (1 - Math.abs(t) * 1.4) * 0.55 + hash2(k, seed, 2) * 0.2), lean = t * 0.7 + (hash2(k, seed, 3) - 0.5) * 0.25, w = h * 0.09 + 2;
+    const tipx = bx + lean * hh, tipy = y - hh;
+    const sh = [[bx - w, y], [bx - w * 0.9 + lean * hh * 0.82, tipy + hh * 0.18], [tipx, tipy], [bx + w * 0.9 + lean * hh * 0.82, tipy + hh * 0.18], [bx + w, y]];
+    // three facets: lit left face, mid front, dark right face
+    p.poly(sh, (px, py) => {
+      const u = (px - (bx + lean * (y - py))) / w;
+      return u < -0.35 ? hi : u < 0.25 ? lit(mid, px, py, L, 0.5) : u < 0.7 ? lo : deep;
+    });
+    line(p, [[tipx, tipy + 1], [bx + lean * hh * 0.1, y - 2]], hi);
+    line(p, [...sh, sh[0]], INK);
+    p.set(Math.round(tipx), Math.round(tipy) + 1, [255, 255, 255]);
   }
-  glowBake(p, Math.round(x), Math.round(y - h * 0.4), Math.round(h * 0.9), col, 0.35);
+  glowBake(p, Math.round(x), Math.round(y - h * 0.45), Math.round(h * 0.95), col, 0.32);
 }
 function mushroom(p, x, y, h, col, L) {
   const c = rgb(col);
@@ -478,7 +514,7 @@ const PROLOGUE = () => {
       grade: { sat: 0.55 },
     }),
     P({
-      dy: -18, caption: 'Now one of them must descend, forging, fighting and breaking weapon after weapon, to end the curse forever.',
+      dy: 12, caption: 'Now one of them must descend, forging, fighting and breaking weapon after weapon, to end the curse forever.',
       rig: L5, cam: [[0, -20], [0, 18]], dur: 7, music: 'mine',
       layers: [
         { depth: 0.25, paint: function* (p) {
@@ -523,12 +559,13 @@ function vista(ri) {
   const L = rig(mixHex(pal.glow, '#7a6aa0', 0.6), [{ x: 268, y: 170, r: 300, col: pal.glow, k: 1.1 }, { x: 80, y: 300, r: 200, col: pal.glow2, k: 0.7 }, { x: 460, y: 120, r: 180, col: pal.accent[1] || pal.glow2, k: 0.6 }]);
   const deco = function* (p) {
     yield* floorBand(p, 262, pal, L, 30 + ri, mixHex(pal.dirt[2], pal.glow, 0.25));
+    scatter(p, 266, 340, L, 30 + ri, 80, mixHex(pal.rock[3], pal.glow, 0.2));
     for (let k = 0; k < 9; k++) {
       const x = 30 + k * 60 + hash2(k, ri, 3) * 20, y = 270 + hash2(k, ri, 4) * 40;
       if (ri === 1 || ri === 5) crystals(p, x, y, 26 + hash2(k, 5, ri) * 30, pal.accent[k % 2], k + ri, L);
       else if (ri === 2) mushroom(p, x, y, 14 + hash2(k, 5, ri) * 22, pal.accent[k % 3], L);
       else if (ri === 4) { glowBake(p, Math.round(x), Math.round(y), 16, '#ff6a1a', 0.5); p.ellipse(x, y, 14, 4, [255, 160, 60]); }
-      else if (ri === 3) { yield* rockMass(p, [[x - 9, y], [x - 8, y - 70], [x + 8, y - 70], [x + 9, y]], stops('#4a3a2a', '#8a7a5a', '#d8b860'), L, 300 + k, { scale: 0.1, top: 0 }); }
+      else if (ri === 3) { yield* rockMass(p, [[x - 10, y], [x - 9, y - 64], [x - 12, y - 70], [x + 12, y - 70], [x + 9, y - 64], [x + 10, y]], stops('#4a3a2a', '#8a7a5a', '#d8b860', '#fff0b0'), L, 300 + k, { scale: 0.1, top: 0 }); for (let r = 0; r < 4; r++) rune(p, x - 3, y - 58 + r * 13, k * 4 + r, [74, 255, 224]); }
       else { crate(p, x - 10, y - 14, 20, 14, L); lantern(p, x + 12, y - 30, L); }
     }
     if (ri === 0) rails(p, 0, p.w, 300, L);
@@ -540,7 +577,7 @@ function vista(ri) {
     layers: [
       { depth: 0.3, paint: function* (p) { yield* caveBack(p, pal, L, 200 + ri, { lift: 0.05 }); stalactites(p, pal, L, 7 + ri, 16, 90); } },
       { depth: 0.75, paint: function* (p) {
-        for (let k = 0; k < 4; k++) { const x = 40 + k * 150 + hash2(k, ri, 1) * 40; yield* rockMass(p, [[x - 50, 300], [x - 20, 150 + hash2(k, 2, ri) * 60], [x + 30, 140 + hash2(k, 3, ri) * 70], [x + 60, 300]], stops(pal.rock[0], pal.rock[2], pal.rock[3], pal.rock[4]), L, 220 + k + ri * 9); }
+        for (let k = 0; k < 5; k++) { const x = 30 + k * 120 + hash2(k, ri, 1) * 40; yield* rockMass(p, spirePts(x, 310, 34 + hash2(k, 4, ri) * 26, 110 + hash2(k, 2, ri) * 90, 220 + k + ri * 9), stops(mixHex(pal.rock[0], '#1a1028', 0.3), pal.rock[2], pal.rock[3], mixHex(pal.rock[4], pal.glow, 0.25)), L, 220 + k + ri * 9, { scale: 0.07 }); }
       } },
       { depth: 1.1, paint: deco },
       { depth: 1.5, paint: function* (p) { stalactites(p, pal, L, 77 + ri, 5, 120, false); } },
