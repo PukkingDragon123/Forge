@@ -72,7 +72,7 @@ const gremlin = {
     // long, wide ears with a brass ring
     for (const s of SIDES) {
       const n = s > 0 ? 'earL' : 'earR';
-      m.bone(n, [0.04, 0.1, s * 0.14], 'head', { rot: [s * -(PI / 2 - 0.45), 0, 0] });
+      m.bone(n, [0.04, 0.1, s * 0.14], 'head', { rot: [s * (PI / 2 - 0.45), 0, 0] });
       m.plate(n, [0, 0, 0], [[-0.07, -0.04], [0.08, -0.04], [0.18, 0.12], [0.26, 0.3], [0.04, 0.12], [-0.06, 0.06]], 0.018, 0.012, skin, { k: 0.02 });
       m.ell(n, [0.06, 0.07, 0], [0.05, 0.09, 0.04], pink, { op: 'paint' });
       m.tor(n, [0.05, -0.05, 0], 0.03, 0.013, m.mat('metal', '#e8b84a', { acc: '#fff0a0' }), { rot: [PI / 2, 0, 0], k: 0.003 });
@@ -171,7 +171,7 @@ const lanternwing = {
       m.sph('head', [-0.12, 0.07, s * 0.06], 0.042, null, { op: 'sub', k: 0.006 });
       m.ell('head', [-0.115, 0.07, s * 0.06], [0.03, 0.032, 0.04], glowMat(m, md.eye, 3, 'eye'), { k: 0.003, rot: [s * 0.4, 0, 0] });
       m.tube('head', hornPath([0.0, 0.14, s * 0.07], [0.2, 1, s * 0.45], [1, 0, 0], 0.22, 1.1, 4), (t) => 0.04 * (1 - t) + 0.016, hornM, { k: 0.01 });
-      m.plate('head', [0.01, 0.05, s * 0.12], [[-0.04, -0.03], [0.06, -0.03], [0.18, 0.04], [0.02, 0.07]], 0.014, 0.01, skin, { rot: [s * -(PI / 2 - 0.4), 0, 0], k: 0.012 });
+      m.plate('head', [0.01, 0.05, s * 0.12], [[-0.04, -0.03], [0.06, -0.03], [0.18, 0.04], [0.02, 0.07]], 0.014, 0.01, skin, { rot: [s * (PI / 2 - 0.4), 0, 0], k: 0.012 });
     }
     // little dangling imp legs + hooked tail
     for (const s of SIDES) {
@@ -286,7 +286,7 @@ const drilltroll = {
   build(m, md) {
     const skin = m.mat('hide', md.body, { acc: md.accent });
     const belly = m.mat('hide', md.belly, { acc: md.body });
-    const ore = m.mat('crystal', '#4c5266', { acc: '#9eb0d0' });
+    const ore = m.mat('crystal', '#6a7490', { acc: '#c4d4f0' });
     const hot = glowMat(m, '#ffb04a', 2.2);
     const steel = m.mat('metal', '#9ca4b0', { acc: '#f0f4fa' });
     const dark = m.mat('metal', '#3c3a44', { acc: '#8a8698' });
@@ -307,24 +307,25 @@ const drilltroll = {
     m.ell('body', [-0.12, -0.12, -0.3], [0.08, 0.09, 0.07], cloth, { k: 0.01 });
     // iron ore growing out of its back like a geode crust (+ a couple of hot veins)
     for (const [c, d, l, r, mm] of [[[0.15, 0.72, 0], [0.4, 1, 0], 0.42, 0.1, ore], [[0.28, 0.58, -0.2], [0.8, 0.8, -0.5], 0.32, 0.08, ore], [[0.28, 0.6, 0.2], [0.7, 0.8, 0.6], 0.34, 0.085, ore], [[0.0, 0.76, -0.16], [0, 1, -0.5], 0.28, 0.07, ore], [[0.02, 0.74, 0.18], [0.1, 1, 0.5], 0.24, 0.07, hot], [[0.38, 0.4, 0.06], [1, 0.4, 0.2], 0.26, 0.07, ore], [[-0.1, 0.72, 0.36], [-0.1, 1, 0.6], 0.2, 0.06, ore], [[-0.1, 0.72, -0.36], [-0.2, 1, -0.6], 0.22, 0.065, hot]]) m.cry('body', c, l, r, mm, { dir: d });
-    // head: low-slung, underbite with tusks, big nose, beady glowing eyes, strapped-on headlamp
-    m.bone('head', [-0.42, 0.62, 0], 'body');
-    m.ell('head', [-0.02, 0.03, 0], [0.19, 0.16, 0.18], skin, { k: 0.05 });
-    m.ell('head', [-0.1, -0.1, 0], [0.16, 0.1, 0.19], skin, { k: 0.05 });
-    m.ell('head', [-0.2, -0.09, 0], [0.04, 0.02, 0.13], m.mat('flesh', '#3a1018'), { op: 'sub', k: 0.01 });
-    m.tube('head', [[-0.16, 0.06, 0], [-0.26, 0.02, 0], [-0.28, -0.04, 0]], [0.06, 0.055, 0.045], skin, { k: 0.04 });
-    m.box('head', [-0.16, 0.12, 0], [0.05, 0.035, 0.17], 0.03, skin, { k: 0.03, rot: [0, 0, -0.2] });
+    // head: broad flat face, jutting underbite with tusks, bulbous nose, small glowing eyes, strapped-on headlamp
+    m.bone('head', [-0.4, 0.66, 0], 'body', { rot: [0, 0, -0.25] });
+    m.ell('head', [0.0, 0.05, 0], [0.18, 0.17, 0.18], skin, { k: 0.05 });
+    m.ell('head', [-0.11, -0.03, 0], [0.12, 0.13, 0.17], skin, { k: 0.05 });
+    m.box('head', [-0.12, -0.15, 0], [0.1, 0.05, 0.15], 0.045, skin, { k: 0.04 });
+    m.box('head', [-0.21, -0.1, 0], [0.02, 0.022, 0.11], 0.01, m.mat('smooth', '#2a0c14'), { op: 'sub', k: 0.006 });
+    m.ell('head', [-0.25, 0.02, 0], [0.065, 0.075, 0.065], skin, { k: 0.03 });
+    m.box('head', [-0.17, 0.13, 0], [0.05, 0.04, 0.18], 0.03, skin, { k: 0.03, rot: [0, 0, -0.15] });
     for (const s of SIDES) {
-      m.cap('head', [-0.21, -0.1, s * 0.1], [-0.25, 0.04, s * 0.14], 0.035, 0.016, tusk, { k: 0.008 });
-      m.sph('head', [-0.19, 0.06, s * 0.085], 0.035, null, { op: 'sub', k: 0.008 });
-      m.sph('head', [-0.18, 0.06, s * 0.085], 0.026, glowMat(m, md.eye, 3, 'eye'), { k: 0.003 });
-      m.cap('head', [0.02, 0.0, s * 0.17], [0.1, -0.08, s * 0.26], 0.05, 0.03, skin, { k: 0.03 });
+      m.cap('head', [-0.19, -0.13, s * 0.1], [-0.23, 0.02, s * 0.13], 0.038, 0.016, tusk, { k: 0.008 });
+      m.sph('head', [-0.21, 0.07, s * 0.085], 0.04, null, { op: 'sub', k: 0.008 });
+      m.sph('head', [-0.195, 0.07, s * 0.085], 0.032, glowMat(m, md.eye, 3, 'eye'), { k: 0.003 });
+      m.plate('head', [0.02, 0.04, s * 0.17], [[-0.06, -0.05], [0.06, -0.05], [0.18, 0.06], [0.03, 0.08]], 0.02, 0.012, skin, { rot: [s * (PI / 2 - 0.15), 0, -0.3], k: 0.02 });
     }
-    m.tor('head', [0.0, 0.12, 0], 0.18, 0.022, cloth, { rot: [0, 0, 0.25], k: 0.006 });
-    m.box('head', [-0.17, 0.18, 0], [0.04, 0.045, 0.055], 0.015, dark, { k: 0.008 });
-    m.sph('head', [-0.21, 0.18, 0], 0.036, glowMat(m, '#fff0b0', 3.2, 'smooth'), { k: 0.003 });
+    m.tor('head', [0.0, 0.15, 0], 0.18, 0.024, cloth, { rot: [0, 0, 0.2], k: 0.006 });
+    m.box('head', [-0.18, 0.2, 0], [0.04, 0.05, 0.06], 0.015, dark, { k: 0.008 });
+    m.sph('head', [-0.22, 0.2, 0], 0.04, glowMat(m, '#fff0b0', 3.2, 'smooth'), { k: 0.003 });
     // drill arm (F): shoulder → arm → riveted drill housing → spinning fluted bit
-    m.bone('armF', [-0.08, 0.5, -0.5], 'body');
+    m.bone('armF', [-0.08, 0.5, -0.5], 'body', { rot: [0, 0, -0.45] });
     m.ell('armF', [0, 0, 0], [0.18, 0.17, 0.17], skin, { k: 0.04 });
     m.cap('armF', [0, -0.04, 0], [-0.02, -0.3, 0], 0.14, 0.12, skin, { k: 0.04 });
     m.cap('armF', [-0.02, -0.3, 0], [-0.06, -0.62, 0], 0.16, 0.15, rust, { k: 0.02 });

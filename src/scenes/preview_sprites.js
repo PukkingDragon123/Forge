@@ -1,7 +1,7 @@
-// Preview bench for 2D pixel art (UI kit, sprites, cards, portraits, logo). ?page=1..6
+// Preview bench for 2D art (UI kit, voxel-rendered sprites, cards, icons, logo). ?page=1..7
 import { Scene } from '../core/game.js';
 import { MATERIALS } from '../data/materials.js';
-import { materialSprite, itemSprite, weaponSprite, portrait, logo, nodeBadge } from '../art/sprites.js';
+import { materialSprite, itemSprite, weaponSprite, logo, nodeBadge } from '../art/sprites.js';
 import { materialCard, weaponCard, cardBack, drawCard } from '../ui/cards.js';
 import { scaleCanvas } from '../art/pixel.js';
 import { NODE_TYPES } from '../data/regions.js';
@@ -45,8 +45,10 @@ export class SpritePreview extends Scene {
       });
       ui.img(logo(1), 600, 320);
     } else if (this.page === 4) {
-      ['bran', 'elio', 'durgan', 'clover'].forEach((c, j) => ['neutral', 'happy', 'angry', 'surprised', 'sad', 'smug', 'hurt'].forEach((e, i) => ui.img(scaleCanvas(portrait(c, e), 2), 6 + i * 104, 6 + j * 104)));
-      ui.img(portrait('elio', 'happy'), 760, 6);
+      // voxel renders at the sizes the game uses: cards 48, bag 32, inline 10-16
+      ids.forEach((id, i) => ui.img(materialSprite(id, 48), 4 + (i % 19) * 50, 4 + Math.floor(i / 19) * 50));
+      ids.slice(0, 40).forEach((id, i) => { ui.img(materialSprite(id, 16), 4 + i * 20, 262); ui.img(materialSprite(id, 12), 4 + i * 20, 282); });
+      ui.img(logo(1), 4, 300); ui.img(logo(2), 250, 300);
     } else if (this.page === 5) {
       const items = ['iron', 'junk', 'quartz', 'ruby', 'amethyst', 'storm', 'spider_silk', 'golem_core', 'bat_fang', 'golden_key', 'rune_echo', 'blast', 'stariron', 'queen_heart', 'salamander_scale', 'recipe_scroll'];
       items.forEach((id, i) => drawCard(ui, materialCard({ id, q: i % 5 }, { selected: i === 3, dim: i === 5 }), 8 + (i % 12) * 78, 8 + Math.floor(i / 12) * 108, { hover: i === 2, tilt: i === 4 ? 1 : 0 }));

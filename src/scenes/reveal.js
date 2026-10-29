@@ -5,8 +5,7 @@ import * as THREE from 'three';
 import { Scene } from '../core/game.js';
 import { buildOreModel } from '../models/ore_voxel.js';
 import { materialCard, weaponCard, cardBack } from '../ui/cards.js';
-import { weaponSprite } from '../art/sprites.js';
-import { pixelTexture } from '../gfx/materials.js';
+import { buildWeaponMesh } from '../models/weapons3d.js';
 import { MATERIALS, RARITY } from '../data/materials.js';
 import { clamp, ease } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
@@ -72,13 +71,18 @@ export class RevealOverlay extends Scene {
     // the find itself
     let model;
     if (this.isWeapon) {
-      const tex = pixelTexture(weaponSprite(this.item, 128));
+      // the forged voxel weapon itself, balanced on its centre and tilted like a raised blade
+      const w = buildWeaponMesh(this.item);
+      const tip = w.userData.tip || 1;
+      w.position.y = -tip / 2;
+      const tilt = new THREE.Group();
+      tilt.add(w);
+      tilt.rotation.z = -0.55;
+      tilt.scale.setScalar(1.5 / Math.max(0.6, tip));
       model = new THREE.Group();
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }));
-      plane.rotation.z = Math.PI / 4;
-      model.add(plane);
+      model.add(tilt);
       model.userData.spin = (dt) => { model.rotation.y += dt * 1.1; };
-    } else model = buildOreModel(this.item.id, { size: 1.25, res: 30, glow: 1.15 });
+    } else model = buildOreModel(this.item.id, { res: 34, glow: 1.3 });
     model.position.set(-0.6, 0.1, 0);
     model.scale.setScalar(0.001);
     scene.add(model);

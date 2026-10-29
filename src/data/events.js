@@ -110,10 +110,10 @@ export const EVENTS = [
   },
   {
     id: 'bat_swarm', title: 'The Swarm', regions: [0, 1, 4], props: ['stalactite'],
-    text: 'The ceiling is moving. Thousands of bats, all waking up at once.',
+    text: 'The ceiling is flickering. Hundreds of Lanternwings, all waking up at once.',
     choices: [
       { label: 'Duck and run', hint: 'Mash STRIKE', out: () => ({ qte: { kind: 'mash', label: 'RUN!', win: { text: 'You sprint through untouched — and snag a few fangs that fell.', gain: [['bat_fang', 2], ['bat_wing', 2]] }, lose: { text: 'You get nibbled. A lot.', hp: -9, gain: [['bat_fang', 2]] } } }) },
-      { label: 'Hold still', out: (run, rng) => (rng.chance(0.5) ? { text: 'They pass you by like a black river.' } : { text: 'One lands on your head and steals something shiny.', coins: -8 }) },
+      { label: 'Hold still', out: (run, rng) => (rng.chance(0.5) ? { text: 'They pass you by like a river of sparks.' } : { text: 'One lands on your head and steals something shiny.', coins: -8 }) },
     ],
   },
   {
@@ -126,10 +126,10 @@ export const EVENTS = [
   },
   {
     id: 'spider_nest', title: 'The Nest', regions: [1, 2], props: ['silk'],
-    text: 'White silk curtains the tunnel, heavy with dew. Something big is asleep in the middle.',
+    text: 'Spore-sticky silk curtains the tunnel, heavy with dew. A goblin shaman snores in the middle of it, staff across its lap.',
     choices: [
       { label: 'Burn it (Ember Crystal)', req: (run) => hasItem(run, (i) => i.id === 'ember') || 'Needs an Ember Crystal', out: (run) => { run.removeItem(firstItem(run, (i) => i.id === 'ember')); return { text: 'The nest goes up like paper. You collect the fireproof threads.', gain: [['spider_silk', 3], ['spider_silk', 3], ['venom_sac', 2]] }; } },
-      { label: 'Steal the silk quietly', hint: 'Timing', out: () => ({ qte: { kind: 'timing', label: 'SNIP!', win: { text: 'Snip, snip… got it.', gain: [['spider_silk', 2], ['spider_silk', 2]] }, lose: { text: 'Eight eyes open.', fight: 'silk_spider' } } }) },
+      { label: 'Steal the silk quietly', hint: 'Timing', out: () => ({ qte: { kind: 'timing', label: 'SNIP!', win: { text: 'Snip, snip… got it.', gain: [['spider_silk', 2], ['spider_silk', 2]] }, lose: { text: 'The shaman\'s eyes snap open.', fight: 'silk_spider' } } }) },
       { label: 'Go around', out: () => ({ text: 'Discretion is the better part of not being eaten.' }) },
     ],
   },

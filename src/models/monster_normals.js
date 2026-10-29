@@ -197,12 +197,11 @@ const slime = {
       for (const p of [[-0.2, 0.3, 0.38], [0.2, 0.55, -0.12], [-0.3, 0.15, -0.36]]) m.sph('body', p, 0.09, sunk, { op: 'paint' });
     }
     if (md.inside === 'gem') {
-      const pink = glowMat(m, '#ff9af0', 1.7), cyan = glowMat(m, '#9ae8ff', 1.7);
-      m.cry('body', [0.18, 0.45, 0.18], 0.24, 0.05, pink, { dir: [0.4, 1, 0.4] });
-      m.cry('body', [0.2, 0.3, -0.25], 0.18, 0.045, cyan, { dir: [0.6, 0.6, -0.6] });
-      m.cry('body', [-0.12, 0.55, -0.1], 0.15, 0.04, pink, { dir: [-0.3, 1, -0.4] });
-      m.cry('body', [0.3, 0.1, 0.3], 0.14, 0.04, cyan, { dir: [0.7, 0.3, 0.6] });
-      for (const p of [[-0.25, 0.3, 0.35], [0.1, 0.6, 0.15]]) m.sph('body', p, 0.08, m.mat('slime', mix(md.body, '#ff9af0', 0.5)), { op: 'paint' });
+      // a hoard of gems: big faceted crystals breaking out of the jelly, cut stones suspended inside
+      const pink = glowMat(m, '#ff8ae8', 1.8), cyan = glowMat(m, '#8ae8ff', 1.8), gold = glowMat(m, '#ffd860', 1.8);
+      for (const [c, d, l, r, mm] of [[[0.12, 0.42, 0.1], [0.3, 1, 0.25], 0.36, 0.075, pink], [[0.22, 0.3, -0.22], [0.6, 0.7, -0.6], 0.3, 0.065, cyan], [[-0.08, 0.5, -0.1], [-0.25, 1, -0.4], 0.24, 0.055, pink], [[0.32, 0.12, 0.28], [0.7, 0.4, 0.6], 0.22, 0.055, cyan], [[0.0, 0.5, 0.18], [0.0, 1, 0.6], 0.2, 0.05, gold], [[0.34, 0.36, 0.0], [1, 0.8, 0], 0.22, 0.05, gold]]) m.cry('body', c, l, r, mm, { dir: d });
+      for (const [p, col] of [[[-0.25, 0.3, 0.37], '#ff4a6a'], [[0.05, 0.26, -0.42], '#4aff8a'], [[-0.3, 0.12, -0.3], '#ffd84a'], [[0.3, 0.5, -0.12], '#8a6aff']]) m.ell('body', p, [0.05, 0.04, 0.05], glowMat(m, col, 1.8), { k: 0.004, rot: [p[0] * 4, p[2] * 4, 0.6] });
+      for (const p of [[-0.25, 0.3, 0.35], [0.1, 0.6, 0.15]]) m.sph('body', p, 0.09, m.mat('slime', mix(md.body, '#ff9af0', 0.5)), { op: 'paint' });
     }
     if (hot) {
       const bub = glowMat(m, '#ffd04a', 2.2, 'lava');
@@ -762,7 +761,7 @@ const toad = {
     m.ell('jaw', [-0.18, -0.07, 0], [0.24, 0.1, 0.34], null, { op: 'bind' });
     m.ell('jaw', [-0.18, -0.02, 0], [0.18, 0.03, 0.26], mouthM, { k: 0.01 });
     m.bone('tongue', [-0.12, 0.0, 0], 'jaw');
-    m.tube('tongue', [[0.06, 0, 0], [-0.1, 0.01, 0], [-0.24, 0.01, 0]], [0.035, 0.04, 0.055], m.mat('flesh', md.accent), { k: 0.01 });
+    m.tube('tongue', [[0.06, 0, 0], [-0.1, 0.01, 0], [-0.24, 0.01, 0]], [0.035, 0.04, 0.055], m.mat('flesh', md.tongue || md.accent), { k: 0.01 });
     for (const s of SIDES) {
       const n = s < 0 ? 'legF' : 'legB';
       m.bone(n, [0.32, 0.16, s * 0.36], 'body');

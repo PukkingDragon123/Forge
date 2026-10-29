@@ -113,15 +113,17 @@ STYLES.chunk = (S, m, r) => {
     const base = rockPaint(R, main);
     S.parts[0].paint = (x, y, z, n, h) => (n3(x, y, z, 0.22, 8) > 0.64 ? tone(M2, lit(n) * 0.8, 1, 4, h) : base(x, y, z, n, h));
   } else if (id === 'lodestone') {
-    // iron filings standing up along the field lines, glowing red poles
+    // iron filings bristling along the field lines between two glowing poles
+    const Fi = ramp('#9aa4b8', 7, 1.1), P = [[-9, 13, 4], [9, 14, 1]];
     const rr = rng(7);
-    for (let i = 0; i < 22; i++) {
-      const a = (i / 22) * Math.PI * 2, rad = 3 + rr() * 6;
-      const bx = Math.cos(a) * rad, bz = Math.sin(a) * rad * 0.9, by = 15.5 + rr() * 2.5;
-      const tip = [bx * 1.25, by + 3 + rr() * 3.5, bz * 1.25];
-      S.add(cap([bx, by - 1, bz], tip, 0.55, 0.12), (x, y, z, n, h) => (y > tip[1] - 1 ? M2[5] : metal(ramp('#5a5c74'), n, h)));
+    for (let i = 0; i < 26; i++) {
+      const t = (i + 0.5) / 26, side = i % 2 ? 1 : -1, arc = 0.15 + rr() * 0.7;
+      const x0 = -9 + 18 * t, y0 = 16 + Math.sin(t * Math.PI) * 3.5 + rr() * 1.5, z0 = (rr() - 0.5) * 9;
+      const dir = norm([-(t - 0.5) * 1.6 * side * 0.3 + (rr() - 0.5) * 0.5, 1, (rr() - 0.5) * 0.4]);
+      const L = 2.2 + arc * 3.4;
+      S.add(cap([x0, y0 - 1.5, z0], add3([x0, y0, z0], dir, L), 0.62, 0.16), (x, y, z, n, h) => (spec(n, 10) > 0.5 ? Fi[6] : tone(Fi, lit(n) * 0.9, 1, 5, h)));
     }
-    for (const p of [[-10, 8, 4], [10, 8, -2]]) S.add(sphere(p, 2.2), glow(M2[4]));
+    for (const p of P) S.add(sphere(p, 2.4), (x, y, z, n, h) => glow(tone(M2, lit(n) * 0.5 + 0.4, 3, 6, h)));
   } else if (id === 'magmasteel') {
     // black crust split by glowing magma, a molten pool on top
     const G = ramp('#ff6a2a', 7, 1.2);
@@ -182,28 +184,29 @@ STYLES.crystal = (S, m) => {
 
 // ---- cut gems & eggs
 const GEM_CUT = { ruby: 'oval', sapphire: 'pear', emerald: 'step', topaz: 'kite', diamond: 'brilliant', moonstone: 'cabochon', amber: 'blob', soulstone: 'egg' };
-function gemPaint(R, F, o = {}) {
+/** 9-tone gem ramp: deep shadows, saturated body (3-5), pale glints (7-8). */
+const gemRamp = (hex) => ramp(hex, 9, 1.35);
+function gemPaint(R, F, up) {
   return (x, y, z, n, h) => {
     const f = F.facet(x, y, z);
-    const L = lit(f.n);
+    const L = lit(f.n), ny = dot(f.n, up);
+    const alt = ((f.i * 7) % 5) / 4 - 0.5;
     let c;
-    if (f.gap < vu() * 0.8) c = L > 0 ? R[5] : R[2];
+    const ny2 = dot(f.n2, up);
+    if (f.gap < vu() * 0.55 && f.i !== 0 && (f.i2 === 0 || (ny > 0.15) !== (ny2 > 0.15))) c = R[L > 0 ? 7 : 4]; // table rim & girdle line
     else if (f.i === 0) {
-      // the table: a soft diagonal gradient with a hot corner
-      const g = (f.q[0] - f.q[2]) / 10;
-      c = g < -0.55 ? R[5] : tone(R, -g * 0.9 + 0.1, 1, 4, h, 0.1);
-    } else if (spec(f.n, 12) > 0.85) c = R[6];
-    else {
-      // facets alternate light/dark like real refraction
-      const alt = ((f.i * 7) % 5) / 4 - 0.5;
-      c = tone(R, L * 0.8 + alt * 0.9 + (o.bias || 0), 0, 4, h, 0.06);
-    }
+      // the table: bright window, a diagonal reflection band and a hot corner
+      const g = (f.q[0] - f.q[2]) / 9;
+      c = g < -0.62 ? R[8] : Math.abs(g - 0.1) < 0.13 ? R[4] : R[g > 0.45 ? 5 : 6];
+    } else if (ny > 0.15) c = tone(R, L * 0.7 + alt * 0.9, 2, 5, h, 0.04); // crown
+    else if (ny > -0.2) c = R[2]; // girdle
+    else c = spec(f.n, 5) > 0.55 ? R[6] : tone(R, L * 0.6 + alt * 1.2, 1, 5, h, 0.04); // pavilion: deep, with refractions
     return glow(c);
   };
 }
 STYLES.gem = (S, m) => {
   const cut = GEM_CUT[m.id] || 'oval';
-  const R = ramp(m.color, 7, 1.3);
+  const R = ['oval', 'pear', 'step', 'kite', 'brilliant'].includes(cut) ? gemRamp(m.id === 'diamond' ? '#b8e8ff' : m.color) : ramp(m.color, 7, 1.3);
   const B = frameY([0.05, 1, 0.22], 0.4);
   if (cut === 'cabochon') {
     const E = ell([0, 2, 0], [12, 10, 9.5], B);
@@ -223,11 +226,15 @@ STYLES.gem = (S, m) => {
     const D = ramp('#7a3a0a', 7, 1.1);
     S.add(f, (x, y, z, n, h) => {
       if (spec(n, 16) > 0.7) return glow(R[6]);
-      // a trapped beetle seen through the resin
-      const u = x - 1, v = y - 10;
-      const bug = (u * u) / 9 + (v * v) / 4 < 1 || (Math.abs(v) < 2.6 && Math.abs(Math.abs(u) - 4) < 0.6 && ((u * 3 + v * 2) % 2.5) < 1.2);
-      if (bug && dot(n, [0.5, 0.45, 0.74]) > 0.3) return glow(D[1]);
-      return glow(tone(R, lit(n) * 0.6 - (1 - clamp01(dot(n, [0.5, 0.45, 0.74]))) * 0.4, 1, 5, h));
+      // a trapped beetle seen through the resin: shell, head, six legs
+      const fv = dot(n, [0.5, 0.45, 0.74]);
+      if (fv > 0.45) {
+        const u = x * 0.85 - z * 0.5 + 1.5, v = y - 10.5;
+        const body = (u * u) / 7 + (v * v) / 3.2 < 1, head = (u - 3.4) ** 2 + v * v < 1.4;
+        const leg = [-1.4, 0, 1.4].some((k) => Math.abs(u - k) < 0.45 && Math.abs(v) > 1.4 && Math.abs(v) < 3.2);
+        if (body || head || leg) return glow(body && Math.abs(v) < 0.3 ? D[3] : D[2]);
+      }
+      return glow(tone(R, lit(n) * 0.6 - (1 - clamp01(fv)) * 0.5, 1, 5, h));
     });
     return;
   }
@@ -267,7 +274,7 @@ STYLES.gem = (S, m) => {
     const base = poly([0, 9, 0], gemPlanes(8, { table: 0.4 }), [12, 8.5, 10], B);
     F = Object.assign((x, y, z) => { const q = [x, y - 9, z]; const u = dot(q, B[0]); const k = 1 + Math.max(0, u / 12) * 0.9; return base(x - B[2][0] * dot(q, B[2]) * (1 - 1 / k), y - B[2][1] * dot(q, B[2]) * (1 - 1 / k), z - B[2][2] * dot(q, B[2]) * (1 - 1 / k)); }, { bb: base.bb, facet: (x, y, z) => { const q = [x, y - 9, z]; const u = dot(q, B[0]); const k = 1 + Math.max(0, u / 12) * 0.9; const w = dot(q, B[2]) * (1 - 1 / k); return base.facet(x - B[2][0] * w, y - B[2][1] * w, z - B[2][2] * w); } });
   }
-  S.add(F, gemPaint(R, F));
+  S.add(F, gemPaint(R, F, B[1]));
 };
 
 // ---- nugget piles
@@ -283,12 +290,20 @@ STYLES.nuggets = (S, m) => {
     return;
   }
   if (id === 'brimstone') {
-    pile.forEach(([x, y, z, a, b, c], i) => nugget(S, [x, y, z], [a, b, c], i * 5, (x2, y2, z2, n, h) => tone(M, lit(n) + (n3(x2, y2, z2, 0.6, 2) - 0.5) * 0.8, 1, 5, h)));
+    const Br = ramp('#c87a1a', 7, 1.1);
+    pile.forEach(([x, y, z, a, b, c], i) => {
+      const F = poly([x, y, z], rockPlanes(10, rng(i + 11), 0.2, 0.55), [a, b, c], null, 0.3, 0.5, i);
+      S.add(F, (x2, y2, z2, n, h) => { const f = F.facet(x2, y2, z2); if (f.gap < vu() * 0.8 && lit(f.n) > 0) return M[5]; if (n3(x2, y2, z2, 0.5, 2) > 0.66) return tone(Br, lit(f.n), 1, 4, h); return tone(M, lit(f.n) * 0.95, 1, 5, h, 0.1); });
+    });
     const rr = rng(9);
     for (let i = 0; i < 9; i++) { const p = pile[i % pile.length]; const d = norm([rr() - 0.5, 0.8, rr() - 0.3]); prism(S, add3([p[0], p[1], p[2]], d, p[3] * 0.6), d, 0.9, 2.6 + rr() * 2, M, { sides: 4, glow: false, streak: false }); }
     return;
   }
-  pile.forEach(([x, y, z, a, b, c], i) => nugget(S, [x, y, z], [a, b, c], i * 13 + id.length, (x2, y2, z2, n, h) => (n3(x2, y2, z2, 0.5, 4) > 0.74 ? M[2] : metal(M, n, h, { bias: 1 }))));
+  const Mx = id === 'silver' ? ramp('#a8b8d0', 7, 1.2) : id === 'tin' ? ramp('#9aa2ae', 7, 1.0) : id === 'gold' ? ramp('#f8b830', 7, 1.25) : M;
+  pile.forEach(([x, y, z, a, b, c], i) => {
+    const f = noisy(ell([x, y, z], [a * 0.92, b * 0.92, c * 0.92]), Math.min(a, b) * 0.13, 0.36, i * 13 + id.length);
+    S.add(f, (x2, y2, z2, n, h) => (n3(x2, y2, z2, 0.55, 4) > 0.75 ? Mx[1] : metal(Mx, n, h, { p: 14, st: 0.5 })));
+  });
 };
 
 // ---- cast ingots, stacked, bevelled and stamped
@@ -307,8 +322,8 @@ function ingot(S, c, B, M, o = {}) {
   S.add(F, (x, y, z, n, h) => {
     const f = F.facet(x, y, z);
     if (f.gap < vu() * 0.85 && lit(f.n) > -0.2) return o.edge ?? M[6];
-    if (o.patina && n3(x, y, z, 0.35, 6) > 0.6) return tone(o.patina, lit(f.n), 1, 4, h);
-    return metal(M, f.n, h, { st: 0.62, bias: 1 });
+    if (o.patina && n3(x, y, z, 0.6, 6) > 0.66) return tone(o.patina, lit(f.n), 2, 5, h);
+    return metal(M, f.n, h, { st: 0.62, bias: o.bias ?? 1 });
   });
   // the maker's stamp, sunk into the top face
   const top = add3(c, B[1], hy);
@@ -317,13 +332,13 @@ function ingot(S, c, B, M, o = {}) {
   return F;
 }
 STYLES.ingot = (S, m) => {
-  const M = ramp(m.color, 7, 1.15);
+  const M = ramp(m.id === 'mithril' ? '#3a98d8' : m.color, 7, 1.2);
   const patina = m.id === 'bronze_ancient' ? ramp(m.color2, 7, 1.1) : null;
   const rune = (u, v) => Math.min(Math.hypot(u, v) - 1.5 > 0 ? Math.abs(Math.hypot(u, v) - 1.6) - 0.45 : 9, Math.max(Math.abs(u) - 0.45, Math.abs(v) - 1.6));
-  const o = { patina, mark: m.id === 'mithril' ? rune : null, markGlow: m.id === 'mithril', edge: m.id === 'mithril' ? glow(M[6]) : undefined };
-  ingot(S, [0, 2.6, -4.7], rotB(0, 0.05, 0), M, o);
-  ingot(S, [0.5, 2.6, 4.7], rotB(0, -0.04, 0), M, o);
-  ingot(S, [0, 7.9, 0], rotB(0, Math.PI / 2 + 0.12, 0), M, o);
+  const o = { patina, mark: m.id === 'mithril' ? rune : null, markGlow: m.id === 'mithril', edge: m.id === 'mithril' ? glow(M[5]) : undefined, bias: m.id === 'mithril' ? 0 : 1 };
+  ingot(S, [-0.4, 2.6, -4.8], rotB(0, 0.04, 0), M, o);
+  ingot(S, [0.6, 2.6, 4.8], rotB(0, -0.03, 0), M, o);
+  ingot(S, [0, 7.9, 0.2], rotB(0, 0.08, 0), M, o);
 };
 
 // ---- meteorite star-iron: pitted, scorched, with trapped stars and burning seams
@@ -435,20 +450,20 @@ STYLES.rune = (S, m) => {
 // ---- geode (2×2): a split stone egg lined with glowing crystal
 STYLES.geode = (S, m) => {
   const R = ramp(ROCK.geode, 7, 1.0), A = ramp(m.color2, 7, 1.3), W = ramp('#f0e8f8', 7, 0.7), Ag = ramp('#9a7ab8', 7, 1.1);
-  const c = [0, 12, 0], cutDir = norm([0.42, 0.3, 0.86]), P0 = 1.2;
+  const c = [0, 12, 0], cutDir = norm([0.82, 0.5, 0.28]), P0 = 2.6;
   const shell = noisy(ell(c, [13, 12, 12]), 0.8, 0.3, 3);
   const cav = noisy(ell(c, [8.6, 8, 8]), 0.9, 0.5, 9);
   const body = Object.assign((x, y, z) => Math.max(shell(x, y, z), -cav(x, y, z), dot([x - c[0], y - c[1], z - c[2]], cutDir) - P0), { bb: shell.bb });
   S.add(body, (x, y, z, n, h) => {
-    const dp = dot([x - c[0], y - c[1], z - c[2]], cutDir) - P0, dc = cav(x, y, z);
-    if (dc > -1.2 && -dc <= -dp + 0.6) {
+    const dp = dot([x - c[0], y - c[1], z - c[2]], cutDir) - P0, dc = cav(x, y, z), ds = shell(x, y, z);
+    if (-dc >= dp && -dc >= ds) {
       // crystal lining: little glowing points
       const cell = hash3(Math.floor(x / 1.7), Math.floor(y / 1.7), Math.floor(z / 1.7), 3);
       return glow(tone(A, lit(n) * 0.3 + cell * 1.2 - 0.5, 1, 5, h, 0.05));
     }
-    if (dp > -1.1) {
+    if (dp >= ds) {
       // the cut face: agate bands from the crust in to the cavity
-      const depth = -shell(x, y, z), toCav = dc;
+      const depth = -ds, toCav = dc;
       if (depth < 1.4) return tone(R, 0.1, 1, 4, h);
       if (toCav < 1.1) return A[4];
       const band = Math.sin(toCav * 2.4 + n3(x, y, z, 0.4, 2) * 2);
@@ -457,36 +472,50 @@ STYLES.geode = (S, m) => {
     return tone(R, lit(n) * 0.8 + (n3(x, y, z, 0.5, 6) - 0.5) * 0.5, 1, 4, h);
   });
   // a few big points reaching out of the hollow
-  [[[-0.5, -0.3, -0.8], 1.7, 5.5], [[0.3, -0.6, -0.7], 1.4, 4.6], [[-0.2, 0.5, -0.8], 1.3, 4.2], [[0.6, 0.3, -0.7], 1.2, 3.8], [[-0.8, 0.1, -0.5], 1.1, 3.6]].forEach(([d, r, L], i) => {
-    const dir = norm(d);
-    prism(S, add3(c, dir, 7.6), dir.map((v) => -v), r, L, A, { rot: i, sides: 6 });
+  // a few big points reaching out of the hollow toward the opening
+  const back = cutDir.map((v) => -v), [, bu, bw] = basis(back);
+  [[0, 0, 1.8, 6], [0.5, 0.3, 1.4, 4.8], [-0.45, 0.35, 1.3, 4.4], [0.3, -0.5, 1.2, 4], [-0.4, -0.45, 1.1, 3.6]].forEach(([a, b, r, L], i) => {
+    const dir = norm(add3(add3(back, bu, a), bw, b));
+    prism(S, add3(c, dir, 7.4), dir.map((v) => -v), r, L, A, { rot: i, sides: 6 });
   });
 };
 
 // ---- monster fangs
-STYLES.fang = (S, m) => {
-  const id = m.id;
-  const I = ramp(m.color, 7, 1.0), G = ramp(id === 'bat_fang' ? '#d84a5a' : id === 'hound_fang' ? '#5a3a6a' : '#d88a8a', 7, 1.1);
-  const len = id === 'rat_tooth' ? 20 : 26, bend = id === 'rat_tooth' ? 5 : 7;
-  const pts = curve((t) => [-4 + t * bend + Math.sin(t * 2) * 2.5, 3 + t * len, Math.sin(t * 2.5) * 1.2], 12);
-  const radii = pts.map((_, i) => { const t = i / (pts.length - 1); return id === 'rat_tooth' ? 3.6 - t * 1.5 : 4.4 * Math.pow(1 - t, 0.85) + 0.3; });
-  const T = tube(pts, radii);
-  const enamel = id === 'rat_tooth' ? ramp('#ffb84a', 7, 1.15) : I;
+function fangTube(S, base, dir, side, len, r0, I, G, o = {}) {
+  const pts = curve((t) => add3(add3(base, dir, t * len), side, Math.sin(t * 1.6) * len * (o.curl ?? 0.22)), 10);
+  const T = tube(pts, pts.map((_, i) => { const t = i / 10; return r0 * Math.pow(1 - t, o.pow ?? 0.8) + 0.25; }));
   S.add(T, (x, y, z, n, h) => {
     const t = T.param(x, y, z);
-    if (t < 0.16) return tone(G, lit(n) * 0.8, 1, 4, h); // gum
-    if (spec(n, 20) > 0.55) return I[6];
-    if (id === 'rat_tooth' && dot(n, [0.4, 0, 0.9]) > 0.35 && t > 0.3) return tone(enamel, lit(n), 2, 5, h); // orange enamel face
-    if (t > 0.88) return I[5];
-    return tone(I, lit(n) * 0.9 + (t - 0.45) * 0.5, 1, 5, h);
+    if (spec(n, 18) > 0.5) return I[6];
+    if (o.enamel && t > 0.3 && dot(n, o.face) > 0.72) return tone(o.enamel, lit(n), 2, 5, h);
+    if (o.tipGlow && t > 0.55 && Math.abs(n3(x, y, z, 0.6, 3) - 0.5) < 0.06) return glow(o.tipGlow[4]);
+    return tone(I, lit(n) * 0.9 + (t - 0.4) * 0.5 - (t < 0.12 ? 0.4 : 0), 1, 5, h);
   });
-  if (id === 'rat_tooth') { // chisel tip
-    S.cut(box(add3(pts[12], [1.2, 0.5, 1.4]), [1.6, 3, 1.2], 0, rotB(0, 0, 0.6)), I[5]);
+  return pts;
+}
+STYLES.fang = (S, m) => {
+  const id = m.id;
+  const I = ramp(m.color, 7, 1.0), G = ramp(id === 'bat_fang' ? '#c84a5a' : id === 'hound_fang' ? '#6a4a7a' : '#d88a8a', 7, 1.1);
+  const gum = (x, y, z, n, h) => tone(G, lit(n) * 0.8 + (n3(x, y, z, 0.9, 2) - 0.5) * 0.5, 1, 5, h);
+  if (id === 'rat_tooth') {
+    // a long curved incisor, orange enamel on the front, chisel tip, pink root
+    fangTube(S, [0, 3, 0], norm([0.2, 1, 0.05]), [1, 0, 0], 22, 3.0, I, G, { curl: 0.3, pow: 0.25, enamel: ramp('#ffa030', 7, 1.2), face: norm([0.6, 0.1, 0.8]) });
+    S.cut(box([7.5, 25.5, 0], [3, 2, 4], 0, rotB(0, 0, 0.75)), I[5]);
+    S.add(noisy(ell([0, 3, 0], [4.6, 3.4, 4]), 0.5, 0.6, 2), gum);
+    return;
   }
-  // gum mound and forked roots
-  S.add(noisy(ell([-4, 3.2, 0], [5.4, 3, 4.6]), 0.6, 0.6, 2), (x, y, z, n, h) => tone(G, lit(n) * 0.8 + (h - 0.5) * 0.4, 1, 5, h));
-  if (id === 'hound_fang') S.add(tube(curve((t) => [-3 + t * 6.5, 7 + t * 14, 3.4 - t * 2.2], 6), [0.75, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2]), glow(ramp(m.color2, 7, 1.3)[4]));
-  if (id === 'bat_fang') for (const [x, y] of [[-1.5, 13], [0.6, 18.5]]) S.add(ell([x, y, 2.8], [0.9, 1.4, 0.7]), ramp('#e83a4a', 7, 1.2)[3]); // blood drops
+  if (id === 'bat_fang') {
+    // a pair of needle fangs in a scrap of gum, beaded with blood
+    S.add(noisy(ell([0, 20, 0], [11, 3.6, 4.4]), 0.5, 0.6, 2), gum);
+    for (const s2 of [-1, 1]) fangTube(S, [s2 * 5.5, 18, 0.5], norm([s2 * 0.12, -1, 0.15]), [-s2, 0, 0], 17, 2.5, I, G, { curl: 0.12, pow: 0.9 });
+    for (const [x, y, z] of [[-6.4, 7, 2.4], [5.2, 4.5, 2.2]]) S.add(ell([x, y, z], [0.9, 1.4, 0.8]), (x2, y2, z2, n, h) => (spec(n, 10) > 0.5 ? C('#ffd0d8') : ramp('#e0283a', 7, 1.2)[3]));
+    for (let i = -2; i <= 2; i++) S.add(cap([i * 1.8, 18, 2.6], [i * 1.8 + 0.3, 15.5, 2.8], 0.8, 0.2), I[4]); // little teeth between
+    return;
+  }
+  // hound fang: a big curved canine with a cursed violet seam
+  fangTube(S, [-3, 3, 0], norm([0.25, 1, 0.1]), [1, 0, 0], 26, 4.6, I, G, { curl: 0.28, tipGlow: ramp(m.color2, 7, 1.3) });
+  S.add(noisy(ell([-3, 3.2, 0], [5.6, 3.4, 5]), 0.6, 0.6, 2), gum);
+  S.add(tube(curve((t) => [-1.5 + t * 7, 7 + t * 14, 3.6 - t * 1.8], 6), [0.7, 0.65, 0.55, 0.45, 0.35, 0.25, 0.2]), glow(ramp(m.color2, 7, 1.3)[4]));
 };
 
 // ---- rat tail (2×1): ringed, tapering, with a furry stump
@@ -511,7 +540,7 @@ STYLES.wing = (S, m) => {
   for (let i = 0; i < ring.length - 1; i++) {
     const [ax, ay] = ring[i], [bx, by] = ring[i + 1];
     const mx = (ax + bx) / 2, my = (ay + by) / 2, dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy);
-    scal.push(d2circle(mx + (dy / l) * l * 0.62, my - (dx / l) * l * 0.62, l * 0.72)); // bite out between fingers
+    scal.push(d2circle(mx - dy * 0.62, my + dx * 0.62, l * 0.7)); // bite out between fingers
   }
   const memb = (u, v) => { let d = d2poly(outline)(u, v); for (const f of scal) d = Math.max(d, -f(u, v)); return d; };
   S.add(slab(O, B, memb, 0.6, 0, 32), (x, y, z, n, h) => {
@@ -552,16 +581,17 @@ STYLES.shell = (S, m) => {
   const R = ramp(m.color, 7, 1.2), Q = ramp(m.color2, 7, 1.15);
   if (m.id === 'snail_shell') {
     // a fat spiral whorl
-    const turns = 3.1 * Math.PI, b = Math.log(9) / turns;
-    const pts = curve((t) => { const a = t * turns, r = 1.3 * Math.exp(b * a); return [Math.cos(a) * r, 12 + Math.sin(a) * r, -t * 3]; }, 40);
-    const T = tube(pts, pts.map((_, i) => 0.9 + Math.pow(i / 40, 1.1) * 6.4));
+    const turns = 3.4 * Math.PI, b = Math.log(9) / turns;
+    const rr = (t) => 1.25 * Math.exp(b * t * turns);
+    const pts = curve((t) => { const a = t * turns, r = rr(t); return [Math.cos(a) * r, 12 + Math.sin(a) * r, (1 - t) * 6]; }, 48);
+    const T = tube(pts, pts.map((_, i) => rr(i / 48) * 0.5 + 0.35));
     S.add(T, (x, y, z, n, h) => {
       const t = T.param(x, y, z);
       if (spec(n, 18) > 0.6) return R[6];
       const band = Math.sin(t * 34) > 0.25, growth = Math.sin(t * 260) > 0.75;
       return tone(band ? Q : R, lit(n) * 0.85 + (growth ? -0.3 : 0), 1, 5, h);
     });
-    S.cut(sphere(add3(pts[40], [3.5, -1, 3]), 4.2), (x, y, z, n, h) => tone(ramp('#f0c8b0'), lit(n) * 0.6 - 0.2, 1, 4, h)); // aperture
+    S.cut(ell(add3(pts[48], [0, 0, 3.5]), [4, 4.6, 3]), (x, y, z, n, h) => tone(ramp('#f0c8b0'), lit(n) * 0.6 - 0.2, 1, 4, h)); // aperture
     return;
   }
   if (m.id === 'crab_shell') {
@@ -572,28 +602,34 @@ STYLES.shell = (S, m) => {
     });
     for (let i = 0; i < 5; i++) { const a = -0.9 + i * 0.45, p = [Math.sin(a) * 13.5, 3.2, Math.cos(a) * 9.6]; S.add(cap(p, add3(p, norm([Math.sin(a), 0.4, Math.cos(a)]), 3.4), 1.4, 0.2), (x, y, z, n, h) => tone(R, lit(n), 2, 5, h)); } // rim spikes
     for (const s of [-1, 1]) {
-      // pincers
-      const a = [s * 8, 2.5, 9], b = [s * 12, 4, 15];
-      S.add(tube([a, b], [1.8, 2.4]), smooth(R));
-      S.add(cap(b, [s * 10, 5.5, 20], 1.9, 0.4), smooth(R, 2, 5));
-      S.add(cap(add3(b, [s * 0.8, -1.2, 0]), [s * 13.5, 3, 19], 1.4, 0.3), smooth(R, 1, 4));
+      // big raised pincers and spindly legs
+      S.add(tube([[s * 8, 2.5, 8], [s * 13, 6, 12], [s * 13.5, 8, 15]], [1.8, 1.9, 2.2]), smooth(R));
+      S.add(ell([s * 13.5, 9, 17.5], [3.4, 3, 4.4]), (x, y, z, n, h) => (spec(n, 14) > 0.5 ? R[6] : tone(R, lit(n) * 0.9, 1, 5, h)));
+      S.add(cap([s * 13, 11, 19.5], [s * 11, 13, 24], 1.6, 0.35), smooth(R, 2, 5));
+      S.add(cap([s * 14.5, 8.5, 20.5], [s * 13.5, 9.5, 24.5], 1.3, 0.3), smooth(R, 1, 4));
+      for (let k = 0; k < 3; k++) S.add(tube([[s * 11, 1.5, 3 - k * 4], [s * 16, 4, 4 - k * 5], [s * 19, 0, 4.5 - k * 6]], [0.9, 0.8, 0.4]), smooth(R, 1, 4));
     }
     for (const s of [-1, 1]) S.add(tube([[s * 3, 6, 8], [s * 3.6, 9, 10]], [0.7, 0.9]), (x, y, z, n, h) => (y > 9.2 ? C('#1a1424') : R[3])); // eye stalks
     return;
   }
-  // beetle elytra: twin domes, a seam, ridges and an oil-slick sheen
+  // beetle elytra: an oil-slick dome split down the seam, pronotum and head pointing right
   const flat = (f) => Object.assign((x, y, z) => Math.max(f(x, y, z), 0.6 - y), { bb: f.bb });
+  const P2 = ramp('#8a5ad0', 7, 1.2);
   const sheen = (x, y, z, n, h) => {
-    if (spec(n, 16) > 0.5) return R[6];
-    const t = dot(n, [0.5, 0.45, 0.74]);
-    const ridge = Math.abs(((Math.abs(x) * 0.75) % 2) - 1) < 0.25;
-    return tone(t > 0.6 ? Q : R, lit(n) * 0.8 + (ridge ? -0.4 : 0.05), 1, 5, h);
+    if (spec(n, 14) > 0.5) return C('#f0f8ff');
+    const t = dot(n, [0.5, 0.45, 0.74]), ridge = Math.abs(((Math.abs(z) * 0.8) % 2) - 1) < 0.22;
+    const Rr = t > 0.72 ? Q : t > 0.45 ? R : P2;
+    return tone(Rr, lit(n) * 0.7 + (ridge ? -0.45 : 0.1), 1, 5, h);
   };
-  for (const s of [-1, 1]) S.add(flat(ell([s * 5.2, 1, -2], [5.8, 6.8, 13])), sheen);
-  S.cut(box([0, 6, -2], [0.35, 4, 14]), R[1]);
-  S.add(flat(ell([0, 1, 11.5], [7.8, 5, 4.8])), (x, y, z, n, h) => tone(R, lit(n) * 0.9, 1, 5, h)); // pronotum
-  S.add(flat(ell([0, 1, 16], [3.6, 3, 2.6])), (x, y, z, n, h) => tone(R, lit(n) * 0.8 - 0.2, 0, 4, h)); // head
-  for (const s of [-1, 1]) S.add(tube([[s * 2.4, 2.6, 17.6], [s * 4, 4, 20], [s * 6, 4.4, 21.5]], [0.5, 0.4, 0.3]), R[2]); // antennae
+  S.add(flat(ell([-3, 1, 0], [13.5, 7.5, 10])), sheen);
+  S.cut(box([-3, 7, 0], [14, 4, 0.35]), R[0]);
+  S.cut(box([-15.5, 6, 0], [1.2, 6, 0.9]), R[0]); // the split at the tail
+  S.add(flat(ell([11, 1, 0], [4.6, 5.4, 7.6])), (x, y, z, n, h) => (spec(n, 14) > 0.5 ? C('#f0f8ff') : tone(R, lit(n) * 0.9, 1, 5, h))); // pronotum
+  S.add(flat(ell([16, 1, 0], [2.8, 3.2, 3.8])), (x, y, z, n, h) => tone(R, lit(n) * 0.8 - 0.2, 0, 4, h)); // head
+  for (const s2 of [-1, 1]) {
+    S.add(tube([[17.5, 2.6, s2 * 2.2], [20, 4.5, s2 * 3.6], [22, 5, s2 * 5.5]], [0.5, 0.4, 0.3]), R[1]); // antennae
+    for (let k = 0; k < 3; k++) S.add(tube([[6 - k * 7, 1.6, s2 * 8], [7 - k * 7, 1, s2 * 12], [8.5 - k * 7.5, 0.3, s2 * 13.5]], [0.7, 0.6, 0.4]), R[1]); // legs
+  }
 };
 
 // ---- claws: insect mandible, crystal talon, mole digger
@@ -631,14 +667,15 @@ STYLES.claw = (S, m) => {
 
 // ---- spider silk: a wound cocoon on a twig, loose strands
 STYLES.silk = (S, m) => {
-  const R = ramp(m.color, 7, 0.9), Q = ramp(m.color2, 7, 1);
+  const R = ramp('#f4f0ff', 7, 0.8), Q = ramp('#c8c4e0', 7, 0.9);
   S.add(tube([[-14, 22, -1], [0, 21, 0], [13, 23.5, 1]], [1.4, 1.5, 1.1]), (x, y, z, n, h) => tone(ramp('#7a5a3a', 7, 1), lit(n) + (h - 0.5) * 0.4, 1, 5, h)); // twig
   S.add(noisy(ell([0, 11.5, 0], [8, 10.5, 7.5]), 0.5, 0.6, 2), (x, y, z, n, h) => {
     const a = Math.sin(x * 1.1 + y * 0.8) > 0.6, b = Math.sin(-x * 0.9 + y * 1.2 + z * 0.4) > 0.65;
     if (spec(n, 14) > 0.6) return R[6];
     return tone(a || b ? R : Q, lit(n) * 0.8 + (a && b ? 0.3 : 0), 1, 5, h);
   });
-  for (const [a, b] of [[[5, 15, 4], [12, 6, 6]], [[-6, 9, 3], [-13, 2, 5]], [[3, 3, 5], [6, -3, 2]]]) S.add(tube([a, add3(a, [(b[0] - a[0]) * 0.5, (b[1] - a[1]) * 0.5 - 1.5, 1]), b], [0.45, 0.4, 0.3]), R[4]);
+  S.add(tube([[-9, 21.5, -0.5], [-6, 17, 1], [-4, 14, 3]], [0.4, 0.35, 0.3]), R[5]); // a stray strand
+  S.add(tube([[2, 1.5, 3], [3, -1.5, 3.5], [2.6, -4, 3]], [0.5, 0.4, 0.3]), R[4]); // dangling thread
 };
 
 // ---- sacs and glands: veined skin over glowing fluid
@@ -685,7 +722,7 @@ STYLES.core = (S, m) => {
   for (const ax of [0, 1, 2]) S.cut(cyl(c, Bc[ax], 5.2, 12), (x, y, z, n, h) => tone(St, lit(n) * 0.6 - 0.3, 0, 3, h));
   // carved glowing runes around the windows
   for (const ax of [0, 1, 2]) for (const sg of [1, -1]) S.cut(torus(add3(c, Bc[ax], sg * 9.6), Bc[ax], 6.8, 0.55), (x, y, z, n, h) => glow(G[4]));
-  S.add(sphere(c, 6.2), (x, y, z, n, h) => glow(tone(G, lit(n) * 0.4 + dot(n, [0.5, 0.45, 0.74]) * 0.8 - 0.1, 2, 6, h)));
+  S.add(sphere(c, 6.4), (x, y, z, n, h) => glow(tone(G, lit(n) * 0.4 + dot(n, [0.5, 0.45, 0.74]) * 0.8 - 0.1, 2, 6, h)), { top: true });
 };
 
 // ---- wisp essence: a stoppered flask of living light
@@ -706,11 +743,13 @@ STYLES.essence = (S, m) => {
 // ---- moth dust: a cinched pouch spilling glittering powder
 STYLES.dust = (S, m) => {
   const R = ramp(m.color2, 7, 1.1), D = ramp(m.color, 7, 1.1);
-  S.add(noisy(ell([-2, 8, -1], [8, 8, 7.5]), 0.7, 0.4, 3), (x, y, z, n, h) => (Math.abs(Math.sin(Math.atan2(z + 1, x + 2) * 7)) < 0.12 ? R[1] : tone(R, lit(n) * 0.85, 1, 5, h)));
-  S.add(cap([-2, 14, -1], [-1.5, 19, -0.5], 3.4, 2), (x, y, z, n, h) => tone(R, lit(n), 1, 4, h), { k: 2 });
-  S.add(cap([-1.5, 19, -0.5], [0, 22, 0.5], 2, 3.4), (x, y, z, n, h) => tone(R, lit(n), 2, 5, h)); // frilled mouth
-  S.add(torus([-1.7, 17.2, -0.7], [0, 1, 0], 2.7, 0.7), ramp('#d8b06a')[3]); // drawstring
-  const pile = Object.assign((x, y, z) => Math.max(Math.hypot(x - 5, z - 7) * 0.45 + y - 3.4, -y), { bb: [-5, 0, -3, 15, 4, 17] });
+  const sack = (x, y, z, n, h) => (Math.abs(Math.sin(Math.atan2(z + 1, x + 2) * 6 + y * 0.3)) < 0.14 && y > 3 ? R[1] : tone(R, lit(n) * 0.85 + (n3(x, y, z, 0.5, 4) - 0.5) * 0.4, 1, 5, h));
+  S.add(noisy(Object.assign((x, y, z) => Math.max(ell([-2, 6.5, -1], [9.5, 7, 8.5])(x, y, z), 0.3 - y), { bb: [-12, 0, -10, 8, 14, 8] }), 0.6, 0.45, 3), sack);
+  S.add(cap([-2, 12, -1], [-1, 15.5, 0], 3.6, 1.8), sack, { k: 2.5 });
+  S.add(noisy(ell([1.2, 17, 1.2], [3.6, 2, 3.2]), 0.6, 0.9, 2), (x, y, z, n, h) => tone(R, lit(n), 2, 5, h)); // floppy frilled mouth
+  S.add(torus([-1.2, 14.6, -0.2], [0.15, 1, 0.1], 2.2, 0.7), ramp('#d8b06a')[3]); // drawstring
+  S.add(tube([[0.6, 14.4, 1.6], [2.6, 12, 3.4], [2.2, 9.5, 4.2]], [0.5, 0.45, 0.4]), ramp('#d8b06a')[3]);
+  const pile = Object.assign((x, y, z) => Math.max((Math.hypot(x - 9, z - 8) * 0.75 + y - 4.2) * 0.8, -y), { bb: [2, 0, 1, 16, 6, 15] });
   S.add(pile, (x, y, z, n, h) => (h > 0.88 ? glow(h > 0.96 ? C('#ffffff') : D[5]) : tone(D, lit(n) * 0.6 + 0.2, 2, 5, h)));
 };
 
@@ -888,15 +927,18 @@ const heartF = (c, s) => {
 STYLES.heart = (S, m) => {
   const R = ramp(m.color, 7, 1.3), Q = ramp(m.color2, 7, 1.25);
   if (m.id === 'queen_heart') {
-    const dirs = []; const N = 26, ga = Math.PI * (3 - Math.sqrt(5));
-    for (let i = 0; i < N; i++) { const y = 1 - ((i + 0.5) / N) * 2, r = Math.sqrt(1 - y * y); dirs.push([Math.cos(i * ga) * r, y, Math.sin(i * ga) * r]); }
-    S.add(heartF([0, 12, 0], 1), (x, y, z, n, h) => {
-      let best = 0, bi = 0; dirs.forEach((d, i) => { const v = dot(d, n); if (v > best) { best = v; bi = i; } });
-      const f = dirs[bi];
-      if (best < 0.93) return glow(Q[5]); // facet edges
-      return glow(tone(R, lit(f) * 0.9 + ((bi * 5) % 3) * 0.25 - 0.2, 0, 4, h, 0.05));
+    // three cut-crystal lobes: two rounded tops and a long faceted point
+    const fib = (N) => { const out = [], ga = Math.PI * (3 - Math.sqrt(5)); for (let i = 0; i < N; i++) { const y = 1 - ((i + 0.5) / N) * 2, r = Math.sqrt(1 - y * y); out.push({ n: [Math.cos(i * ga) * r, y, Math.sin(i * ga) * r], o: 1 }); } return out; };
+    const B = rotB(0.15, 0.25, 0);
+    const lobes = [poly([-4.4, 16, 0], fib(22), [6.6, 6.6, 6], B), poly([4.4, 16, 0], fib(22), [6.6, 6.6, 6], B)];
+    const point = poly([0, 15.5, 0], prismPlanes(8, 2.3, 0.62, 0.2, true), [7.4, 6.4, 6], rotB(Math.PI + 0.15, 0.25, 0));
+    for (const F of [...lobes, point]) S.add(F, (x, y, z, n, h) => {
+      const f = F.facet(x, y, z), L = lit(f.n);
+      if (f.gap < vu() * 0.6 && L > 0.1) return glow(Q[4]);
+      if (spec(f.n, 10) > 0.75) return glow(Q[5]);
+      return glow(tone(R, L * 0.6 + ((f.i * 7) % 4) * 0.33 - 0.5, 0, 5, h, 0.03));
     });
-    S.add(sphere([-3, 15, 5.5], 1.4), glow(Q[6]));
+    S.add(sphere([0, 13, 3.5], 2), glow(Q[5]), { top: true });
     return;
   }
   const D = ramp('#6a1a1e', 7, 1.2);
@@ -912,16 +954,20 @@ STYLES.heart = (S, m) => {
 // ---- mycel crown (2×1): a gold band sprouting glowing caps
 STYLES.crown = (S, m) => {
   const G = ramp(m.color, 7, 1.15), Cp = ramp(m.color2, 7, 1.25), W = ramp('#f0f0e0', 7, 0.6);
-  const c = [0, 6, 0];
-  const band = Object.assign((x, y, z) => Math.max(Math.abs(Math.hypot((x - c[0]) * 0.62, z - c[2]) - 9) - 1.3, Math.abs(y - c[1]) - 4), { bb: [-17, 1, -11, 17, 11, 11] });
-  S.add(band, (x, y, z, n, h) => (Math.abs(n3(x, y, z, 0.35, 7) - 0.5) < 0.03 ? W[4] : spec(n, 14) > 0.55 ? G[6] : metal(G, n, h, { bias: 1 })));
-  const tips = [[-12, 0.7], [-6, 0.2], [0, 0], [6, -0.2], [12, -0.7]];
-  tips.forEach(([u, lean], i) => {
-    const z0 = Math.sqrt(Math.max(0, 81 - (u * 0.62) ** 2)), b = [u, 9.5, z0 * 0.92], t = [u + lean * 4, 17 + (i === 2 ? 4 : i % 2 ? 0 : 2), z0 * 0.9];
-    S.add(cap(b, t, 1.7, 0.7), (x, y, z, n, h) => metal(G, n, h, { bias: 1 }));
-    S.add(Object.assign((x, y, z) => Math.max(Math.hypot(x - t[0], (y - t[1] - 1) * 1.6, z - t[2]) - 2.8, t[1] + 0.2 - y), { bb: [t[0] - 3, t[1], t[2] - 3, t[0] + 3, t[1] + 3, t[2] + 3] }), (x, y, z, n, h) => glow(spots(x, y, z, 1.2, 0.4, i, 0.25) ? W[5] : tone(Cp, lit(n) * 0.6 + 0.2, 2, 5, h)));
-  });
-  for (const u of [-9, 0, 9]) { const z0 = Math.sqrt(81 - (u * 0.62) ** 2); S.add(ell([u, 6, z0 + 1.2], [1.4, 1.8, 0.8]), glow(Cp[4])); }
+  const ax = 14, az = 8.5, y0 = 3, y1 = 10;
+  const ringD = (x, z) => Math.hypot(x / ax, z / az) * Math.min(ax, az) - Math.min(ax, az);
+  const band = Object.assign((x, y, z) => Math.max(Math.abs(ringD(x, z)) - 1.3, Math.abs(y - (y0 + y1) / 2) - (y1 - y0) / 2), { bb: [-16, y0 - 1, -11, 16, y1 + 1, 11] });
+  S.add(band, (x, y, z, n, h) => (Math.abs(n3(x, y, z, 0.35, 7) - 0.5) < 0.028 ? W[4] : spec(n, 14) > 0.55 ? G[6] : metal(G, n, h, { bias: 1 })));
+  for (const yy of [y0, y1]) S.add(Object.assign((x, y, z) => Math.hypot(ringD(x, z), y - yy) - 1.1, { bb: [-16, yy - 2, -11, 16, yy + 2, 11] }), (x, y, z, n, h) => metal(G, n, h, { bias: 1 }));
+  // spikes all round the band, each sprouting a glowing cap
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + Math.PI / 2, bx = Math.cos(a) * ax, bz = Math.sin(a) * az;
+    const tall = 9 + ((i * 5) % 3) * 2.5, t = [bx * 1.08, y1 + tall, bz * 1.08];
+    S.add(cap([bx, y1, bz], t, 1.9, 0.6), (x, y, z, n, h) => metal(G, n, h, { bias: 1 }));
+    const r = 2.4 + (tall > 12 ? 0.8 : 0);
+    S.add(Object.assign((x, y, z) => Math.max(Math.hypot(x - t[0], (y - t[1] - 0.6) * 1.5, z - t[2]) - r, t[1] - 0.4 - y), { bb: [t[0] - r, t[1] - 1, t[2] - r, t[0] + r, t[1] + r, t[2] + r] }), (x, y, z, n, h) => glow(spots(x, y, z, 1.1, 0.4, i, 0.25) ? W[5] : tone(Cp, lit(n) * 0.6 + 0.2, 2, 5, h)));
+  }
+  for (const a of [Math.PI / 2, Math.PI / 2 - 0.6, Math.PI / 2 + 0.6]) S.add(ell([Math.cos(a) * (ax + 1.1), (y0 + y1) / 2, Math.sin(a) * (az + 1.1)], [1.5, 1.9, 1.1]), (x, y, z, n, h) => glow(tone(Cp, lit(n), 3, 6, h)));
 };
 
 // ---- keys
@@ -946,22 +992,23 @@ STYLES.key = (S, m) => {
 
 // ---- rune scrolls (1×2): a hanging scroll with a glowing glyph
 const GLYPH = {
-  rune_haste: d2union(d2seg(-4, 6, 2, 0, 0.7), d2seg(2, 0, -4, -6, 0.7), d2seg(1, 6, 7, 0, 0.7), d2seg(7, 0, 1, -6, 0.7)),
-  rune_echo: d2union((u, v) => Math.abs(Math.hypot(u, v) - 2) - 0.6, (u, v) => Math.max(Math.abs(Math.hypot(u, v) - 5) - 0.6, -u - 1), (u, v) => Math.max(Math.abs(Math.hypot(u, v) - 7.4) - 0.6, -u - 2.5)),
-  rune_mastery: (u, v) => { let d = 1e9; for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i / 5) * Math.PI * 2, b = -Math.PI / 2 + (((i + 2) % 5) / 5) * Math.PI * 2; d = Math.min(d, d2seg(Math.cos(a) * 6.5, -Math.sin(a) * 6.5, Math.cos(b) * 6.5, -Math.sin(b) * 6.5, 0.6)(u, v)); } return d; },
-  rune_fury: d2union(d2seg(-4, 7, 1, 1, 0.75), d2seg(1, 1, -2, 0, 0.75), d2seg(-2, 0, 3, -7, 0.75), d2seg(3, 7, 5, 3, 0.6), d2seg(-5, -3, -3, -7, 0.6)),
-  rune_plenty: d2union((u, v) => Math.abs(Math.hypot(u, v) - 5.6) - 0.7, d2seg(0, -3.5, 0, 3.5, 0.65), d2seg(-2.5, 1.5, 2.5, 1.5, 0.6), d2seg(-2.5, -1.5, 2.5, -1.5, 0.6)),
+  rune_haste: d2union(d2seg(-5, 6, 1, 0, 0.9), d2seg(1, 0, -5, -6, 0.9), d2seg(0, 6, 6, 0, 0.9), d2seg(6, 0, 0, -6, 0.9)),
+  rune_echo: d2union((u, v) => Math.hypot(u + 2, v) - 1.8, (u, v) => Math.max(Math.abs(Math.hypot(u + 2, v) - 4.6) - 0.95, -u - 1), (u, v) => Math.max(Math.abs(Math.hypot(u + 2, v) - 8) - 0.95, -u - 2)),
+  rune_mastery: (u, v) => { let d = 1e9; for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i / 5) * Math.PI * 2, b = -Math.PI / 2 + (((i + 2) % 5) / 5) * Math.PI * 2; d = Math.min(d, d2seg(Math.cos(a) * 7, -Math.sin(a) * 7, Math.cos(b) * 7, -Math.sin(b) * 7, 0.9)(u, v)); } return d; },
+  rune_fury: d2union(d2seg(-3, 8, 1.5, 1, 0.95), d2seg(1.5, 1, -2, 0, 0.95), d2seg(-2, 0, 3, -8, 0.95), d2seg(4, 7, 5.5, 3, 0.75), d2seg(-5.5, -3, -4, -7, 0.75)),
+  rune_plenty: d2union((u, v) => Math.abs(Math.hypot(u, v) - 6) - 0.95, d2seg(0, -3.6, 0, 3.6, 0.9), d2seg(-2.6, 1.6, 2.6, 1.6, 0.85), d2seg(-2.6, -1.6, 2.6, -1.6, 0.85)),
 };
 function hangingScroll(S, R, sheetPaint, cut) {
   const P = ramp('#e8d3a3', 7, 1.0), W = ramp('#8a5a33', 7, 1.1), Kn = ramp('#d8a040', 7, 1.15);
   const B = rotB(-0.08, 0.25, 0);
   const P3 = (u, v, w = 0) => add3(add3(add3([0, 0, 0], B[0], u), B[1], v), B[2], w);
-  const sheet = Object.assign((x, y, z) => { const q = [x, y, z], u = dot(q, B[0]), v = dot(q, B[1]), w = dot(q, B[2]) - Math.sin(v * 0.35) * 0.8; return Math.max(Math.abs(u) - 9.5, Math.abs(v - 27) - 19, Math.abs(w) - 0.55); }, { bb: [-12, 6, -6, 12, 48, 6] });
+  const sheet = Object.assign((x, y, z) => { const q = [x, y, z], u = dot(q, B[0]), v = dot(q, B[1]), w = dot(q, B[2]) - Math.sin(v * 0.3) * 0.35; return Math.max(Math.abs(u) - 9.5, Math.abs(v - 27) - 19, Math.abs(w) - 0.55); }, { bb: [-12, 6, -6, 12, 48, 6] });
   S.add(sheet, (x, y, z, n, h) => {
     const q = [x, y, z], u = dot(q, B[0]), v = dot(q, B[1]);
     if (Math.abs(u) > 8.4) return P[2];
     if (n3(x, y, z, 0.3, 4) > 0.68) return P[3]; // foxing stains
     if (Math.abs(Math.abs(u) - 7) < 0.35 && v > 10 && v < 44) return R ? R[2] : P[1]; // ruled border
+    if (cut) { const g = cut(u, v - 27); if (g < 0) return glow(R[g < -0.45 ? 5 : 4]); if (g < 0.55) return P[1]; } // glowing inlaid glyph, scorched halo
     return sheetPaint ? sheetPaint(u, v - 27, n, h) : tone(P, lit(n) * 0.5 + 0.3, 2, 5, h);
   });
   for (const v of [47, 7.5]) {
@@ -969,7 +1016,6 @@ function hangingScroll(S, R, sheetPaint, cut) {
     for (const s of [-1, 1]) S.add(sphere(P3(s * 12.8, v, 0.3), 2.2), (x, y, z, n, h) => (spec(n, 14) > 0.55 ? Kn[6] : metal(Kn, n, h, { bias: 1 })));
   }
   S.add(tube([P3(-6, 49, 0), P3(0, 53.5, 0.2), P3(6, 49, 0)], [0.5, 0.5, 0.5]), C('#7a3a2a')); // hanging cord
-  if (cut) S.cut(slab(P3(0, 27, 0.6), B, cut, 0.55, 0, 12), (x, y, z, n, h) => glow(R[dot(n, B[2]) > 0.5 ? 4 : 3]));
 }
 STYLES.scroll = (S, m) => {
   const R = ramp(m.color, 7, 1.3);
@@ -1065,9 +1111,11 @@ STYLES.flare = (S, m) => {
   const a = [-9, 3, 0], b = [6, 18, 2];
   S.add(cap(a, b, 2.6), (x, y, z, n, h) => { const t = dot([x - a[0], y - a[1], z - a[2]], norm([15, 15, 2])) / 21.3; return Math.abs(t - 0.25) < 0.04 || Math.abs(t - 0.62) < 0.04 ? C('#f0e6d0') : tone(R, lit(n) * 0.9, 1, 5, h); });
   S.add(cyl(add3(a, norm([15, 15, 2]), -0.5), norm([15, 15, 2]), 2.9, 1.6, 0.4), (x, y, z, n, h) => metal(ramp('#8a8a92'), n, h));
-  S.add(sphere([7, 19.4, 2.2], 3.4), glow(F[6]));
-  S.add(Object.assign((x, y, z) => { const q = [x - 7.5, y - 21.5, z - 2.2]; return Math.hypot(q[0], q[1] * (q[1] > 0 ? 0.5 : 1), q[2]) - 4.6; }, { bb: [2, 16, -3, 13, 32, 7] }), (x, y, z, n, h) => glow(y > 26 ? O[3] : y > 23 ? O[4] : F[5]));
-  for (const [x, y, z, r] of [[12, 24, 3, 0.8], [3, 26, 4, 0.7], [11, 29, 0, 0.6], [5, 30, 2, 0.5], [13, 19, 4, 0.6]]) S.add(sphere([x, y, z], r), glow(F[5]));
+  // the burn: a white-hot head, a licking flame and flying sparks
+  S.add(sphere([6.6, 18.8, 2.1], 3), glow(C('#fff8e8')));
+  const flame = Object.assign((x, y, z) => { const q = [x - 7.4 - (y - 19) * 0.15, y - 21, z - 2.2]; const k = q[1] > 0 ? 1 - q[1] / 11 : 1; return Math.hypot(q[0], q[2]) - 3.6 * Math.max(0.05, k) + (q[1] < 0 ? -q[1] * 0.2 : 0) + (q[1] < -2 ? 9 : 0); }, { bb: [1, 16, -3, 14, 33, 7] });
+  S.add(flame, (x, y, z, n, h) => { const k = (y - 19) / 11; return glow(k > 0.75 ? O[2] : k > 0.45 ? O[4] : k > 0.15 ? F[4] : F[6]); });
+  for (const [x, y, z, r] of [[12, 24, 3, 0.8], [3, 26, 4, 0.7], [11, 29, 0, 0.6], [5, 31, 2, 0.5], [13, 19, 4, 0.6], [2, 21, 1, 0.5]]) S.add(sphere([x, y, z], r), glow(F[5]));
 };
 
 // ------------------------------------------------------------------ build + cache
@@ -1096,14 +1144,22 @@ export function oreGrid(id, res = 30, roll = 0) {
   return g;
 }
 
+// Sprite renders use the painted light only (plus the mesher's per-face shade and AO), so every
+// pixel keeps its hand-picked ramp colour instead of washing out under the 3D key light.
+let FLAT = null;
+export function flatVoxelMaterial() {
+  if (!FLAT) { FLAT = new THREE.MeshBasicMaterial({ vertexColors: true }); FLAT.userData.shared = true; }
+  return FLAT;
+}
+
 /**
  * A voxel model of material `id`, centred on the origin, 0.04 world units per voxel.
- * opts: { res (voxels across, default 30), glow (emissive intensity), spinSpeed, roll }.
- * userData.spin(dt) turns it slowly for showcases.
+ * opts: { res (voxels across, default 30), glow (emissive intensity), spinSpeed, roll, flat (unlit,
+ * for sprite renders) }. userData.spin(dt) turns it slowly for showcases.
  */
 export function buildOreModel(id, opts = {}) {
   const g = oreGrid(id, opts.res || 30, opts.roll || 0);
-  const mesh = meshVoxels(g, { size: opts.vs ?? ORE_VS, origin: [g.nx / 2, g.ny / 2, g.nz / 2], jitter: 0.025, seed: 5, glowIntensity: opts.glow ?? 1.5 });
+  const mesh = meshVoxels(g, { size: opts.vs ?? ORE_VS, origin: [g.nx / 2, g.ny / 2, g.nz / 2], jitter: opts.flat ? 0.012 : 0.025, seed: 5, glowIntensity: opts.glow ?? 1.5, material: opts.flat ? flatVoxelMaterial() : undefined });
   const group = new THREE.Group();
   group.add(mesh);
   group.userData.grid = g;

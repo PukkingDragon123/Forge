@@ -1,16 +1,17 @@
-// The four explorers as detailed voxel figures on the game's one voxel grid (0.04 world units, the
-// same for weapons and monsters): each limb is painted in fine design units, then re-voxelised onto
-// that grid so a grown explorer stands about 44 voxels tall, with baked ambient occlusion, a soft
-// bevel and per-voxel colour variation, hung on a skeleton of joints. Faces are never shown: Bran
-// hides behind a leather hood and iron welding mask, Elio's deep hood holds only darkness and two
-// faint glints, Durgan's horned helm is closed, Clover's hood and scarf leave nothing but shadow.
-// Animation is pose-blended with anticipation and follow-through, body-language "expressions",
-// breathing, squash and spring bones (apron, robe, hood tip, braids, ears, scarf, tail, the held weapon).
+// The four explorers: heroic voxel figures on the party's fine grid (0.02 world units, so Bran
+// stands about 88 voxels tall), each a bold silhouette with oversized signature gear and one accent
+// colour, faces always hidden. Every limb is its own cached, greedy-meshed voxel part hung on a
+// skeleton of joints. Animation works like a 2D rig: snappy key poses (wind-up, a fast lunge with a
+// smear stretch, an impact hold, a recovery), springs for secondary motion (cloth, scarves, ears,
+// braids, charms, the held weapon), breathing, squash, and body language in place of faces.
+// The designs themselves live in vox_char_party.js.
 import * as THREE from 'three';
-import { LAYER_FX } from '../gfx/renderer.js';
 import { CHARACTERS } from '../data/characters.js';
-import { VPart, VOX, rgb, mix, mul, hash, ramp, voxToon, voxGlow } from './vox_char_kit.js';
-import { buildWeaponMesh } from './weapons3d.js';
+import { VPart, VOX_PARTY, voxToon, voxGlow } from './vox_char_kit.js';
+import { Kindle } from './vox_char_kindle.js';
+import { BUILD } from './vox_char_party.js';
+
+export { Kindle };
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -18,26 +19,17 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const sm = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 const seg = (k, a, b) => clamp((k - a) / (b - a), 0, 1);
 const outQ = (t) => 1 - (1 - t) * (1 - t);
+const outC = (t) => 1 - Math.pow(1 - t, 3);
 const inQ = (t) => t * t;
+const lin = (t) => t;
+const hold = () => 0;
 const outBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
-/** World size of one design unit: parts are painted in these, then re-voxelised onto the VOX grid. */
-export const VS = 0.034;
-const RES = VS / VOX;
-
-// ------------------------------------------------------------------ surface recipes (voxel space)
-const fabric = (cols, s = 1) => (x, y, z) => ramp(cols, 0.55 + (hash(x >> 2, y >> 2, z >> 2, s) - 0.5) * 0.1, x, y, z, s);
-const leather = (cols, s = 2) => (x, y, z) => {
-  const scuff = hash(x + y * 3, z - y * 2, x, s) > 0.975;
-  return ramp(cols, scuff ? 0.8 : 0.5 + (hash(x >> 2, y >> 2, z >> 2, s) - 0.5) * 0.12, x, y, z, s);
-};
-const metal = (cols, s = 3) => (x, y, z) => ramp(cols, 0.5 + (((y + (x >> 1)) & 3) === 0 ? 0.18 : 0) + (hash(x, y, z, s) - 0.5) * 0.1, x, y, z, s);
-const fur = (cols, s = 4) => (x, y, z) => ramp(cols, 0.4 + hash(x >> 1, y >> 1, z >> 1, s) * 0.3, x, y, z, s);
-const mail = (cols, s = 5) => (x, y, z) => ramp(cols, ((x + y) & 1) ^ (z & 1) ? 0.72 : 0.28, x, y, z, s);
-const flat = (c) => () => c;
+/** World size of one party voxel. */
+export const VS = VOX_PARTY;
 
 // ------------------------------------------------------------------ springs for secondary motion
-class Spring {
+export class Spring {
   constructor(k = 90, d = 9) { this.x = 0; this.v = 0; this.k = k; this.d = d; }
   step(target, dt) {
     const a = (target - this.x) * this.k - this.v * this.d;
@@ -51,98 +43,30 @@ class Spring {
 /** Mesh cache: voxel geometry per explorer part, shared between builds of the same explorer. */
 const GEO_CACHE = new Map();
 
-// ------------------------------------------------------------------ Kindle, Elio's elemental buddy
-const KINDLE_COLORS = {
-  fire: ['#ff5a1a', '#ffb43a', '#fff0a0', 0xff8a3a],
-  ice: ['#2a9ad8', '#7fe3ff', '#e6fbff', 0x7fe3ff],
-  shock: ['#d8a010', '#ffe74a', '#fffbd8', 0xffe74a],
-  poison: ['#3a9a2a', '#8fe04a', '#e6ffc0', 0x8fe04a],
-};
-function kindleGeo(el) {
-  const key = 'kindle|' + el;
-  if (GEO_CACHE.has(key)) return GEO_CACHE.get(key);
-  const [a, b, c] = KINDLE_COLORS[el];
-  // a pixel flame on the shared grid: a round 3×3 belly, white-hot at the heart, licking up to a
-  // leaning tip, with two ember-dark eyes set into its front
-  const P = new VPart();
-  for (let y = 0; y < 3; y++) for (let x = -1; x < 2; x++) for (let z = -1; z < 2; z++) {
-    if ((y !== 1) && x !== 0 && z !== 0) continue;
-    const core = x === 0 && z >= 0 && y < 2;
-    P.set(x, y, z, { glow: true, c: core ? c : y === 2 || Math.abs(x) + Math.abs(z) > 1 ? a : b });
-  }
-  for (const [x, y, z, col] of [[0, 3, 0, b], [-1, 3, 0, a], [1, 3, -1, a], [0, 4, 0, a], [0, 5, -1, a]]) P.set(x, y, z, { glow: true, c: col });
-  P.set(-1, 1, 1, '#2a0c10'); P.set(1, 1, 1, '#2a0c10');
-  const g = P.geometry(VOX, [0.5, 1.5, 0.5], { glowIntensity: 2.1, jitter: 0 });
-  const out = { glow: g.glow, eyes: g.solid };
-  GEO_CACHE.set(key, out);
-  return out;
-}
-/** A little voxel flame with ember eyes that bobs beside Elio and changes element. */
-export class Kindle {
-  constructor() {
-    this.group = new THREE.Group();
-    this.group.name = 'kindle';
-    this.body = new THREE.Group();
-    this.group.add(this.body);
-    this.mat = voxGlow();
-    this.eyeMat = voxToon();
-    this.meshes = {};
-    for (const el of Object.keys(KINDLE_COLORS)) {
-      const g = kindleGeo(el);
-      const m = new THREE.Mesh(g.glow, this.mat);
-      m.visible = el === 'fire';
-      this.body.add(m);
-      this.meshes[el] = m;
-    }
-    this.eyes = new THREE.Mesh(kindleGeo('fire').eyes, this.eyeMat);
-    this.body.add(this.eyes);
-    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff7a2a').multiplyScalar(0.6), transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
-    halo.layers.set(LAYER_FX);
-    this.halo = halo;
-    this.body.add(halo);
-    this.light = new THREE.PointLight(KINDLE_COLORS.fire[3], 0.35, 1.6, 2);
-    this.group.add(this.light);
-    this.element = 'fire';
-    this.t = Math.random() * 10;
-    this.blink = 2;
-    this.excite = 0;
-    this.lightScale = 1;
-  }
-  setElement(e) {
-    if (!KINDLE_COLORS[e]) return;
-    this.element = e;
-    for (const k in this.meshes) this.meshes[k].visible = k === e;
-    this.halo.material.color.set(KINDLE_COLORS[e][0]).multiplyScalar(0.6);
-    this.light.color.setHex(KINDLE_COLORS[e][3]);
-    this.excite = 1;
-  }
-  update(dt) {
-    this.t += dt;
-    const t = this.t;
-    this.excite = Math.max(0, this.excite - dt * 1.5);
-    this.body.position.y = Math.sin(t * 2.6) * 0.03;
-    this.body.rotation.z = Math.sin(t * 1.7) * 0.12;
-    this.body.rotation.y = Math.sin(t * 0.9) * 0.35;
-    const m = this.meshes[this.element];
-    const pulse = 1 + Math.sin(t * 7) * 0.05 + this.excite * 0.25;
-    m.scale.set(pulse * (1 - Math.sin(t * 13) * 0.04), pulse * (1 + Math.sin(t * 13) * 0.08), pulse);
-    this.eyes.scale.copy(m.scale);
-    this.halo.scale.setScalar(1 + Math.sin(t * 5) * 0.1 + this.excite * 0.4);
-    this.blink -= dt;
-    if (this.blink < 0) this.blink = 2 + Math.random() * 3;
-    // eyes close by catching the flame's colour (they sit in the flame, so they cannot squash)
-    const shut = this.blink < 0.1 ? 1 : this.excite > 0.3 ? 0.45 : 0;
-    this.eyeMat.emissive.set(KINDLE_COLORS[this.element][1]).multiplyScalar(shut * 0.9);
-    this.light.intensity = (0.32 + Math.sin(t * 9) * 0.05 + this.excite * 0.5) * this.lightScale;
-  }
-}
-
 // ------------------------------------------------------------------ animation library
 // Pose channels (radians / metres). Arms: sh=forward swing, ab=abduct, tw=twist, el=elbow bend.
 // Legs: hip=forward, hab=abduct, kn=knee bend, ft=toe point. Spine: lean/twist/side. Head: nod/turn/tilt.
+// squash: impact squash (negative stretches), smear: the fast-swing stretch along the strike,
+// flare: signature glow (runes, gauntlet coals, ore studs, charms).
 const CH = ['dy', 'bx', 'by', 'bz', 'hrx', 'hry', 'hrz', 'lean', 'twist', 'side', 'nod', 'turn', 'tilt',
-  'lSh', 'lAb', 'lTw', 'lEl', 'rSh', 'rAb', 'rTw', 'rEl', 'lHip', 'lHab', 'lKn', 'lFt', 'rHip', 'rHab', 'rKn', 'rFt', 'ears', 'squash'];
+  'lSh', 'lAb', 'lTw', 'lEl', 'rSh', 'rAb', 'rTw', 'rEl', 'lHip', 'lHab', 'lKn', 'lFt', 'rHip', 'rHab', 'rKn', 'rFt', 'ears', 'squash', 'smear', 'flare'];
 const REST = { lAb: 0.14, rAb: 0.14, lEl: 0.18, rEl: 0.18 };
+
+/**
+ * Key poses, like a 2D rig's timeline: K = [[k, pose, ease], ...] with k in 0..1. The ease on a key
+ * shapes the move INTO it. Channels a pose leaves out sit at rest.
+ */
+function keys(k, K) {
+  let i = 0;
+  while (i < K.length - 2 && k >= K[i + 1][0]) i++;
+  const [ka, pa] = K[i], [kb, pb, ease = sm] = K[i + 1];
+  const t = ease(seg(k, ka, kb));
+  const out = {};
+  for (const n in pa) out[n] = pa[n] + ((pb[n] ?? REST[n] ?? 0) - pa[n]) * t;
+  for (const n in pb) if (!(n in pa)) out[n] = (REST[n] ?? 0) + (pb[n] - (REST[n] ?? 0)) * t;
+  return out;
+}
+const over = (base, o) => Object.assign({}, base, o);
 
 /** Seated leg pose (merged when character.seated is true). */
 function sitLegs(c) {
@@ -152,25 +76,36 @@ function sitLegs(c) {
   return { dy: drop, lHip: hip, rHip: hip, lKn: hip - phi, rKn: hip - phi, lHab: 0.12, rHab: 0.12, lFt: phi, rFt: phi };
 }
 
+/** Fighting stance, the base every swing starts from and returns to. */
+function stance(c) {
+  const s = { dy: -0.05, lean: 0.14, twist: 0.25, lHip: 0.3, rHip: -0.25, lKn: 0.45, rKn: 0.3, lHab: 0.1, rHab: 0.12, rSh: 0.8, rEl: 0.95, rAb: 0.28, lSh: 0.6, lEl: 1.3, lAb: 0.22, nod: 0.06, turn: -0.15 };
+  if (c.id === 'durgan') Object.assign(s, { dy: -0.04, lean: 0.18, lSh: 0.55, lEl: 0.5, lAb: 0.05, lTw: 0.1, rSh: 0.7, rEl: 1.1, lHab: 0.2, rHab: 0.2 }); // shield up front
+  if (c.id === 'clover') Object.assign(s, { dy: -0.09, lean: 0.3, lKn: 0.8, rKn: 0.6, lHip: 0.5, rHip: -0.1, lSh: 0.9, lEl: 1.5, rSh: 0.5, rEl: 1.2, nod: 0.1 }); // low and coiled
+  if (c.id === 'elio') Object.assign(s, { lean: 0.06, lSh: 1.2, lEl: 0.7, lAb: 0.3, lTw: 0.5, rSh: 0.5, rEl: 1.0, flare: 0.25 }); // a hand open, ready to cast
+  return s;
+}
+
 const ANIMS = {
   idle: {
-    loop: true, f: (t, c) => {
-      const b = Math.sin(t * 2.1);
-      const p = { dy: b * 0.006, lean: 0.02, lAb: 0.15 + b * 0.02, rAb: 0.15 + b * 0.02, lEl: 0.2, rEl: 0.2, nod: Math.sin(t * 0.7) * 0.04, turn: Math.sin(t * 0.37) * 0.15, tilt: Math.sin(t * 0.5) * 0.04 };
-      if (c.id === 'bran') Object.assign(p, { lAb: 0.72, rAb: 0.72, lEl: 1.75, rEl: 1.75, lTw: -2.0, rTw: -2.0, lean: -0.05, nod: -0.04 + Math.sin(t * 0.7) * 0.03 }); // hands on hips, proud
-      if (c.id === 'elio') Object.assign(p, { lSh: 0.3, rSh: 0.3, lEl: 0.55, rEl: 0.55, lAb: -0.02, rAb: -0.02, lTw: 0.3, rTw: 0.3, nod: 0.05 + Math.sin(t * 0.7) * 0.04, tilt: Math.sin(t * 0.5) * 0.08 }); // sleeves together
-      if (c.id === 'durgan') Object.assign(p, { lSh: 0.7, rSh: 0.62, lEl: 1.95, rEl: 1.95, lAb: 0.1, rAb: 0.1, lTw: -1.35, rTw: -1.35, lean: -0.08, lHab: 0.14, rHab: 0.14, nod: -0.05 }); // arms crossed
+    // a breathing loop with personality: weight shifts, shoulders rise with each breath
+    loop: true, lambda: 10, f: (t, c) => {
+      const b = Math.sin(t * 2.2), w = Math.sin(t * 0.8);
+      const p = { dy: b * 0.006, lean: 0.02, lAb: 0.15 + b * 0.025, rAb: 0.15 + b * 0.025, lEl: 0.22, rEl: 0.22, nod: Math.sin(t * 0.7) * 0.04 - b * 0.015, turn: Math.sin(t * 0.37) * 0.15, tilt: Math.sin(t * 0.5) * 0.04, side: w * 0.02, hrz: -w * 0.03 };
+      if (c.id === 'bran') Object.assign(p, { lAb: 0.74 + b * 0.02, rAb: 0.74 + b * 0.02, lEl: 1.75, rEl: 1.75, lTw: -2.0, rTw: -2.0, lean: -0.07, nod: -0.06 + Math.sin(t * 0.7) * 0.03, lHab: 0.08, rHab: 0.08 }); // fists on hips, chest out
+      if (c.id === 'elio') Object.assign(p, { lSh: 1.05 + b * 0.04, lEl: 1.25, lAb: 0.15, lTw: 0.7, rSh: 0.25, rEl: 0.6, rAb: 0.05, nod: 0.06 + Math.sin(t * 0.7) * 0.04, tilt: Math.sin(t * 0.5) * 0.08, flare: 0.15 + Math.max(0, Math.sin(t * 1.3)) * 0.1 }); // a palm up, conjuring
+      if (c.id === 'durgan') Object.assign(p, { lSh: 0.08, lAb: 0.12, lEl: 0.3, rAb: 0.62, rEl: 1.65, rTw: -1.9, lean: -0.06, lHab: 0.16, rHab: 0.16, nod: -0.05 + Math.sin(t * 0.7) * 0.03 }); // shield grounded, fist on belt
       if (c.id === 'clover') {
-        const hop = Math.max(0, Math.sin(t * 3.4));
-        Object.assign(p, { dy: hop * 0.015, lHip: Math.sin(t * 1.7) * 0.06, rHip: -Math.sin(t * 1.7) * 0.06, side: Math.sin(t * 1.7) * 0.05, rAb: 0.62, rEl: 1.75, rTw: -2.0, tilt: 0.12 + Math.sin(t * 0.8) * 0.05, ears: Math.sin(t * 5) > 0.95 ? 1 : 0 });
+        const hop = Math.max(0, Math.sin(t * 4.2));
+        Object.assign(p, { dy: hop * hop * 0.016, squash: (1 - hop) > 0.92 ? 0.25 : 0, lHip: Math.sin(t * 2.1) * 0.06, rHip: -Math.sin(t * 2.1) * 0.06, lKn: 0.1, rKn: 0.1, side: Math.sin(t * 2.1) * 0.05, rAb: 0.62, rEl: 1.75, rTw: -2.0, lSh: 0.85, lEl: 1.7, lAb: 0.1, tilt: 0.12 + Math.sin(t * 0.8) * 0.05, ears: Math.sin(t * 5) > 0.95 ? 1 : 0 }); // springing on the toes, flipping a coin
       }
       return p;
     },
   },
   idleCombat: {
-    loop: true, expr: 'determined', f: (t, c) => {
+    loop: true, lambda: 18, expr: 'determined', f: (t, c) => {
       const b = Math.sin(t * (c.id === 'clover' ? 7 : 4));
-      return { dy: -0.04 + b * 0.01, lean: 0.12, twist: 0.25, lHip: 0.25, rHip: -0.2, lKn: 0.35, rKn: 0.25, lHab: 0.08, rHab: 0.1, rSh: 0.75, rEl: 0.8, rAb: 0.25, lSh: 0.6, lEl: 1.3, lAb: 0.15, nod: 0.05, turn: -0.15 };
+      const s = stance(c);
+      return over(s, { dy: s.dy + b * 0.01, rSh: s.rSh + b * 0.04, lSh: s.lSh - b * 0.03, squash: c.id === 'clover' ? Math.max(0, -b) * 0.15 : 0 });
     },
   },
   sit: { loop: true, f: (t, c) => ({ ...sitLegs(c), lean: 0.08, lSh: 0.45, rSh: 0.45, lEl: 0.7, rEl: 0.7, lAb: 0.05, rAb: 0.05, nod: Math.sin(t * 0.6) * 0.05, dy: sitLegs(c).dy + Math.sin(t * 2) * 0.004, turn: Math.sin(t * 0.3) * 0.2 }) },
@@ -181,51 +116,59 @@ const ANIMS = {
     },
   },
   walk: {
-    loop: true, f: (t, c) => {
-      const per = c.id === 'durgan' ? 0.42 : c.id === 'bran' ? 0.6 : 0.52;
-      const p = (t / per) * Math.PI;
-      const s = Math.sin(p), co = Math.cos(p);
-      const amp = c.id === 'durgan' ? 0.7 : 0.55;
+    // bouncy and characterful: high on the passing pose, a squash on each contact, arms trailing
+    loop: true, lambda: 20, f: (t, c) => {
+      const id = c.id, per = { bran: 0.52, elio: 0.58, durgan: 0.36, clover: 0.4 }[id] || 0.5;
+      const p = (t / per) * Math.PI, s = Math.sin(p), co = Math.cos(p), ac = Math.abs(co);
+      const B = { bran: 0.024, elio: 0.012, durgan: 0.026, clover: 0.05 }[id] || 0.02;
+      const amp = { durgan: 0.62, clover: 0.62, elio: 0.42 }[id] || 0.55;
       const r = {
-        dy: -Math.abs(s) * 0.03 + 0.012, lean: 0.07, lHip: s * amp, rHip: -s * amp,
-        lKn: 0.12 + Math.max(0, co) * 0.85, rKn: 0.12 + Math.max(0, -co) * 0.85,
-        lSh: -s * 0.5, rSh: s * 0.5, lEl: 0.35, rEl: 0.35, lAb: 0.15, rAb: 0.15, hry: s * 0.08, twist: -s * 0.1, nod: 0.02, side: s * 0.03,
+        dy: (ac - 0.5) * B, squash: Math.pow(1 - ac, 6) * 0.35, lean: 0.07, lHip: s * amp, rHip: -s * amp,
+        lKn: 0.12 + Math.max(0, co) * 0.9, rKn: 0.12 + Math.max(0, -co) * 0.9, lFt: Math.max(0, -s) * 0.3, rFt: Math.max(0, s) * 0.3,
+        lSh: -s * 0.55, rSh: s * 0.55, lEl: 0.35 + Math.max(0, s) * 0.35, rEl: 0.35 + Math.max(0, -s) * 0.35, lAb: 0.15, rAb: 0.15,
+        hry: s * 0.12, twist: -s * 0.15, nod: 0.02 - (ac - 0.5) * 0.06, side: s * 0.03,
       };
-      if (c.id === 'durgan') { r.side = s * 0.09; r.hrz = s * 0.06; } // waddle
-      if (c.id === 'clover') { r.dy += Math.abs(s) * 0.02; r.rAb = 0.5; r.rEl = 1.5; r.rSh = 0.2; }
-      if (c.id === 'elio') { r.lSh = 0.5 - s * 0.2; r.rSh = 0.5 + s * 0.2; r.lEl = 1.0; r.rEl = 1.0; r.lAb = -0.1; r.rAb = -0.1; }
+      if (id === 'bran') Object.assign(r, { twist: -s * 0.2, lAb: 0.22, rAb: 0.22 }); // shoulders rolling
+      if (id === 'durgan') Object.assign(r, { side: s * 0.12, hrz: s * 0.09, lSh: 0.15 - s * 0.15, lEl: 0.3, lAb: 0.1, rAb: 0.3 }); // stomping waddle behind the shield
+      if (id === 'clover') Object.assign(r, { dy: ac * ac * B - 0.01, rAb: 0.5, rEl: 1.4, rSh: 0.25 - s * 0.2, tilt: s * 0.06 }); // a springy skip
+      if (id === 'elio') Object.assign(r, { lSh: 0.5 - s * 0.15, rSh: 0.5 + s * 0.15, lEl: 1.05, rEl: 1.05, lAb: -0.05, rAb: -0.05 }); // gliding, hands in sleeves
       return r;
     },
   },
   run: {
-    loop: true, lambda: 22, f: (t, c) => {
-      const per = c.id === 'durgan' ? 0.26 : 0.32;
+    loop: true, lambda: 24, f: (t, c) => {
+      const per = c.id === 'durgan' ? 0.24 : c.id === 'clover' ? 0.27 : 0.3;
       const p = (t / per) * Math.PI;
-      const s = Math.sin(p), co = Math.cos(p);
-      return {
-        dy: Math.abs(co) * 0.05 - 0.02, lean: 0.3, lHip: s * 0.9, rHip: -s * 0.9,
-        lKn: 0.3 + Math.max(0, co) * 1.4, rKn: 0.3 + Math.max(0, -co) * 1.4,
-        lSh: -s * 0.95, rSh: s * 0.95, lEl: 1.3, rEl: 1.3, lAb: 0.2, rAb: 0.2, nod: -0.1, twist: -s * 0.15,
+      const s = Math.sin(p), co = Math.cos(p), ac = Math.abs(co);
+      const r = {
+        dy: ac * 0.06 - 0.025, squash: Math.pow(1 - ac, 6) * 0.45, lean: 0.32, lHip: s * 0.95, rHip: -s * 0.95,
+        lKn: 0.3 + Math.max(0, co) * 1.5, rKn: 0.3 + Math.max(0, -co) * 1.5, lFt: Math.max(0, -s) * 0.4, rFt: Math.max(0, s) * 0.4,
+        lSh: -s * 1.0, rSh: s * 1.0, lEl: 1.35, rEl: 1.35, lAb: 0.22, rAb: 0.22, nod: -0.1, twist: -s * 0.18,
       };
+      if (c.id === 'clover') Object.assign(r, { lean: 0.48, dy: ac * 0.08 - 0.04 });
+      if (c.id === 'durgan') Object.assign(r, { lSh: 0.7, lEl: 0.7, lAb: 0.05, side: s * 0.08, lean: 0.38 }); // shield charge
+      return r;
     },
   },
   jump: {
-    dur: 0.9, lambda: 26, expr: 'surprised', f: (t, c, k) => {
-      const crouch = seg(k, 0, 0.22) * (1 - seg(k, 0.22, 0.32));
-      const air = seg(k, 0.25, 0.8);
-      const h = Math.sin(air * Math.PI) * 0.5;
-      const land = seg(k, 0.8, 0.88) * (1 - seg(k, 0.88, 1));
-      return { squash: crouch * 0.9 + land * 1.2 - (air > 0 && air < 0.5 ? 0.5 : 0), by: h, dy: -crouch * 0.14 - land * 0.1, lKn: crouch * 1.3 + (air > 0 && air < 1 ? 0.9 : 0) + land, rKn: crouch * 1.3 + (air > 0 && air < 1 ? 0.6 : 0) + land, lHip: crouch * 0.8 + air * 0.4, rHip: crouch * 0.8 + air * 0.2, lSh: air > 0 && air < 1 ? 2.6 : -crouch * 0.6, rSh: air > 0 && air < 1 ? 2.6 : -crouch * 0.6, lAb: 0.4, rAb: 0.4, lean: crouch * 0.4 - air * 0.1, nod: -air * 0.2 };
-    },
+    dur: 0.9, lambda: 30, expr: 'surprised', f: (t, c, k) => keys(k, [
+      [0, {}],
+      [0.22, { squash: 0.9, dy: -0.14, lKn: 1.3, rKn: 1.3, lHip: 0.8, rHip: 0.8, lSh: -0.6, rSh: -0.6, lAb: 0.4, rAb: 0.4, lean: 0.4 }],
+      [0.32, { squash: -0.6, by: 0.18, lKn: 0.4, rKn: 0.3, lHip: 0.3, rHip: 0.1, lSh: 2.6, rSh: 2.6, lAb: 0.4, rAb: 0.4, lean: -0.1, nod: -0.2 }, outQ],
+      [0.55, { squash: -0.2, by: 0.5, lKn: 0.9, rKn: 0.6, lHip: 0.5, rHip: 0.3, lSh: 2.5, rSh: 2.5, lAb: 0.5, rAb: 0.5, nod: -0.2 }, outQ],
+      [0.8, { squash: -0.1, by: 0.02, lKn: 0.5, rKn: 0.4, lHip: 0.4, rHip: 0.3, lSh: 1.2, rSh: 1.2, lAb: 0.6, rAb: 0.6 }, inQ],
+      [0.88, { squash: 1.2, dy: -0.1, lKn: 1.0, rKn: 1.0, lHip: 0.7, rHip: 0.7, lAb: 0.5, rAb: 0.5, lean: 0.3 }, outQ],
+      [1, {}],
+    ]),
   },
   fall: {
     loop: true, lambda: 20, expr: 'surprised', f: (t) => {
       const w = Math.sin(t * 18), w2 = Math.cos(t * 15);
-      return { lSh: 2.6 + w * 0.4, rSh: 2.6 - w * 0.4, lAb: 0.6 + w2 * 0.3, rAb: 0.6 - w2 * 0.3, lEl: 0.5, rEl: 0.5, lHip: 0.6 + w * 0.5, rHip: 0.6 - w * 0.5, lKn: 0.9, rKn: 0.9, lean: -0.2, nod: -0.3 };
+      return { lSh: 2.6 + w * 0.4, rSh: 2.6 - w * 0.4, lAb: 0.6 + w2 * 0.3, rAb: 0.6 - w2 * 0.3, lEl: 0.5, rEl: 0.5, lHip: 0.6 + w * 0.5, rHip: 0.6 - w * 0.5, lKn: 0.9, rKn: 0.9, lean: -0.2, nod: -0.3, squash: -0.3 };
     },
   },
   hammer: {
-    loop: true, lambda: 30, period: 1.05, impact: 0.66, f: (t, c) => {
+    loop: true, lambda: 32, period: 1.05, impact: 0.66, f: (t, c) => {
       const k = (t % 1.05) / 1.05;
       const up = sm(seg(k, 0.02, 0.55));
       const down = inQ(seg(k, 0.55, 0.66));
@@ -234,11 +177,12 @@ const ANIMS = {
       return {
         rSh: 0.95 + v * 1.95 + bounce, rEl: 0.35 + v * 0.9, rAb: 0.15, lSh: 0.95, lEl: 0.75, lAb: -0.05,
         lean: 0.22 - v * 0.28 + down * 0.05, twist: -0.15 + v * 0.1, nod: 0.3 - v * 0.2, dy: -0.02 - (1 - v) * 0.02, lHip: 0.2, rHip: -0.15, lKn: 0.2, rKn: 0.15,
+        squash: k > 0.66 && k < 0.74 ? 0.35 : 0, smear: k > 0.58 && k < 0.66 ? 1 : 0, flare: k > 0.64 && k < 0.8 ? 1 : 0.2,
       };
     },
   },
   mine: {
-    loop: true, lambda: 30, period: 1.1, impact: 0.62, f: (t) => {
+    loop: true, lambda: 32, period: 1.1, impact: 0.62, f: (t) => {
       const k = (t % 1.1) / 1.1;
       const up = sm(seg(k, 0.02, 0.5));
       const down = inQ(seg(k, 0.5, 0.62));
@@ -246,6 +190,7 @@ const ANIMS = {
       return {
         rSh: 0.6 + v * 2.3, lSh: 0.5 + v * 2.2, rEl: 0.3 + v * 0.7, lEl: 0.5 + v * 0.7, rAb: -0.1, lAb: -0.25,
         lean: 0.28 - v * 0.38, dy: -0.04 + v * 0.02, lHip: 0.3, rHip: -0.2, lKn: 0.35, rKn: 0.25, nod: 0.2 - v * 0.25,
+        squash: k > 0.62 && k < 0.7 ? 0.3 : -v * 0.15, smear: k > 0.54 && k < 0.62 ? 0.8 : 0,
       };
     },
   },
@@ -263,9 +208,9 @@ const ANIMS = {
     },
   },
   cheer: {
-    loop: true, lambda: 22, expr: 'happy', f: (t) => {
-      const g = Math.sin(t * 9);
-      return { by: Math.max(0, Math.sin(t * 9)) * 0.12, lSh: 2.8 + g * 0.2, rSh: 2.8 - g * 0.2, lAb: 0.35, rAb: 0.35, lEl: 0.25, rEl: 0.25, lean: -0.1, nod: -0.2, lKn: Math.max(0, -g) * 0.4, rKn: Math.max(0, -g) * 0.4 };
+    loop: true, lambda: 24, expr: 'happy', f: (t) => {
+      const g = Math.sin(t * 9), up = Math.max(0, g);
+      return { by: up * 0.12, squash: g < -0.8 ? 0.5 : -up * 0.25, lSh: 2.8 + g * 0.2, rSh: 2.8 - g * 0.2, lAb: 0.35, rAb: 0.35, lEl: 0.25, rEl: 0.25, lean: -0.1, nod: -0.2, lKn: Math.max(0, -g) * 0.4, rKn: Math.max(0, -g) * 0.4, flare: 0.6 };
     },
   },
   wave: {
@@ -278,7 +223,7 @@ const ANIMS = {
   laugh: {
     loop: true, lambda: 24, expr: 'happy', f: (t) => {
       const g = Math.sin(t * 22);
-      return { lean: -0.18 + g * 0.02, nod: -0.25, dy: g * 0.008, lSh: 0.7, lEl: 1.5, lAb: -0.2, rSh: 0.3, rAb: 0.3, rEl: 0.6, tilt: Math.sin(t * 3) * 0.1 };
+      return { lean: -0.18 + g * 0.02, nod: -0.25, dy: g * 0.008, lSh: 0.7, lEl: 1.5, lAb: -0.2, rSh: 0.3, rAb: 0.3, rEl: 0.6, tilt: Math.sin(t * 3) * 0.1, squash: g * 0.08 };
     },
   },
   shrug: { loop: true, expr: 'smug', f: (t) => ({ lAb: 0.45, rAb: 0.45, lEl: 1.5, rEl: 1.5, lTw: 1.4, rTw: 1.4, dy: 0.012, tilt: 0.2, nod: -0.05 }) },
@@ -288,95 +233,125 @@ const ANIMS = {
       return { lean: 0.32 + br * 0.02, nod: 0.55 + br * 0.03, tilt: 0.25, lSh: 0.25, rSh: 0.25, lEl: 0.5, rEl: 0.5, lAb: 0.05, rAb: 0.05, dy: br * 0.004 };
     },
   },
+  // ---- attacks: wind-up, a fast smear into the strike, an impact hold, recovery
   slash: {
-    dur: 0.55, impact: 0.42, lambda: 34, expr: 'determined', f: (t, c, k) => {
-      const wind = sm(seg(k, 0, 0.32));
-      const hit = outQ(seg(k, 0.32, 0.45));
-      const rec = seg(k, 0.6, 1);
-      const a = wind * (1 - hit), b = hit * (1 - rec);
-      return {
-        rSh: 0.7 + a * 1.9 + b * 0.2, rAb: 0.3 + a * 0.7 - b * 0.9, rEl: 0.8 - a * 0.2 - b * 0.6, rTw: -b * 0.6,
-        twist: -a * 0.45 + b * 0.55, lean: 0.1 + b * 0.25, lSh: 0.5, lEl: 1.2, lAb: 0.3, dy: -0.03 - b * 0.04,
-        lHip: 0.3 + b * 0.25, rHip: -0.25, lKn: 0.35 + b * 0.25, rKn: 0.25, nod: 0.05, turn: -0.15,
-      };
+    dur: 0.62, impact: 0.44, lambda: 60, expr: 'determined', f: (t, c, k) => {
+      const s = stance(c);
+      const strike = { rSh: 0.35, rAb: -0.7, rEl: 0.15, rTw: -0.5, twist: 0.75, lean: 0.42, bz: 0.24, dy: -0.09, lHip: 0.7, lKn: 0.7, rHip: -0.45, rKn: 0.35, lSh: 0.4, lAb: 0.5, lEl: 0.9, nod: 0.1, turn: -0.2 };
+      return keys(k, [
+        [0, s],
+        [0.3, over(s, { rSh: 2.5, rAb: 0.9, rEl: 0.6, rTw: 0.3, twist: -0.55, lean: -0.06, bz: -0.04, dy: -0.07, squash: 0.3, lSh: 0.9, lAb: 0.5, lEl: 1.0, nod: -0.05, lKn: 0.55 }), sm],
+        [0.38, over(strike, { rSh: 1.5, rAb: 0.15, twist: 0.25, lean: 0.25, bz: 0.15, smear: 1, squash: -0.25 }), inQ],
+        [0.44, over(strike, { smear: 0.3, squash: 0.45 }), outQ],
+        [0.6, over(strike, { squash: 0.25 }), lin],
+        [1, s, sm],
+      ]);
     },
   },
   stab: {
-    dur: 0.45, impact: 0.38, lambda: 36, expr: 'determined', f: (t, c, k) => {
-      const wind = sm(seg(k, 0, 0.28));
-      const hit = outQ(seg(k, 0.28, 0.4));
-      const rec = seg(k, 0.55, 1);
-      const a = wind * (1 - hit), b = hit * (1 - rec);
-      return {
-        rSh: 0.6 - a * 0.7 + b * 1.0, rEl: 0.9 + a * 0.9 - b * 0.9, rAb: 0.2, twist: -a * 0.3 + b * 0.35, lean: 0.1 - a * 0.05 + b * 0.35,
-        bz: b * 0.12, lHip: 0.3 + b * 0.5, lKn: 0.3 + b * 0.4, rHip: -0.3, rKn: 0.2, lSh: 0.3, lAb: 0.4, lEl: 0.8, dy: -0.03 - b * 0.06,
-      };
+    dur: 0.5, impact: 0.4, lambda: 60, expr: 'determined', f: (t, c, k) => {
+      const s = stance(c);
+      const thrust = { rSh: 1.5, rEl: 0.0, rAb: 0.15, rTw: 0.2, twist: 0.45, lean: 0.45, bz: 0.32, dy: -0.1, lHip: 0.8, lKn: 0.7, rHip: -0.45, rKn: 0.25, lSh: 0.2, lAb: 0.6, lEl: 0.7, nod: 0.12 };
+      return keys(k, [
+        [0, s],
+        [0.28, over(s, { rSh: 0.3, rEl: 1.9, rAb: 0.35, twist: -0.4, lean: 0.05, bz: -0.06, squash: 0.3, lKn: 0.6, rKn: 0.45 }), sm],
+        [0.35, over(thrust, { rSh: 1.2, rEl: 0.5, bz: 0.2, smear: 1, squash: -0.3 }), inQ],
+        [0.4, over(thrust, { smear: 0.25, squash: 0.35 }), outQ],
+        [0.56, over(thrust, { squash: 0.15 }), lin],
+        [1, s, sm],
+      ]);
     },
   },
   chop: {
-    dur: 0.65, impact: 0.52, lambda: 32, expr: 'angry', f: (t, c, k) => {
-      const wind = sm(seg(k, 0, 0.4));
-      const hit = inQ(seg(k, 0.4, 0.52));
-      const rec = seg(k, 0.68, 1);
-      const a = wind * (1 - hit), b = hit * (1 - rec);
-      return {
-        rSh: 0.7 + a * 2.2 - b * 0.1, lSh: 0.6 + a * 2.1, rEl: 0.6 + a * 0.6 - b * 0.4, lEl: 0.8 + a * 0.5, rAb: -0.05, lAb: -0.25,
-        lean: 0.1 - a * 0.3 + b * 0.45, dy: -0.03 + a * 0.02 - b * 0.07, lHip: 0.3, rHip: -0.25, lKn: 0.3 + b * 0.4, rKn: 0.2 + b * 0.3, nod: -a * 0.2 + b * 0.25,
-      };
+    dur: 0.66, impact: 0.5, lambda: 60, expr: 'angry', f: (t, c, k) => {
+      const s = stance(c);
+      const down = { rSh: 0.45, lSh: 0.5, rEl: 0.3, lEl: 0.5, rAb: -0.05, lAb: -0.25, lean: 0.55, bz: 0.18, dy: -0.11, lHip: 0.5, rHip: -0.3, lKn: 0.75, rKn: 0.5, nod: 0.3 };
+      return keys(k, [
+        [0, s],
+        [0.36, over(s, { rSh: 2.85, lSh: 2.75, rEl: 0.7, lEl: 0.9, rAb: 0.05, lAb: -0.15, lean: -0.3, by: 0.03, dy: -0.02, squash: -0.25, nod: -0.25, twist: 0 }), sm],
+        [0.44, over(down, { rSh: 1.7, lSh: 1.7, lean: 0.15, smear: 1, squash: -0.2 }), inQ],
+        [0.5, over(down, { smear: 0.3, squash: 0.65 }), outQ],
+        [0.66, over(down, { squash: 0.3 }), lin],
+        [1, s, sm],
+      ]);
     },
   },
   smash: {
-    dur: 0.8, impact: 0.6, lambda: 30, expr: 'angry', f: (t, c, k) => {
-      const wind = sm(seg(k, 0, 0.48));
-      const hit = inQ(seg(k, 0.48, 0.6));
-      const rec = seg(k, 0.75, 1);
-      const a = wind * (1 - hit), b = hit * (1 - rec);
-      return {
-        by: a * 0.08, rSh: 0.6 + a * 2.6 - b * 0.2, lSh: 0.6 + a * 2.5 - b * 0.2, rEl: 0.5 + a * 0.9 - b * 0.4, lEl: 0.6 + a * 0.9, rAb: -0.1, lAb: -0.2,
-        lean: -a * 0.35 + b * 0.6, dy: -b * 0.14, lHip: 0.3 + b * 0.4, rHip: -0.3, lKn: 0.4 + b * 0.8, rKn: 0.3 + b * 0.6, nod: -a * 0.3 + b * 0.3, squash: b,
-      };
+    dur: 0.82, impact: 0.6, lambda: 60, expr: 'angry', f: (t, c, k) => {
+      const s = stance(c);
+      const slam = { rSh: 0.25, lSh: 0.3, rEl: 0.35, lEl: 0.5, rAb: -0.1, lAb: -0.2, lean: 0.62, bz: 0.2, dy: -0.15, lHip: 0.6, rHip: -0.3, lKn: 0.95, rKn: 0.7, nod: 0.3 };
+      return keys(k, [
+        [0, s],
+        [0.22, over(s, { squash: 0.65, dy: -0.12, lKn: 1.1, rKn: 0.9, lHip: 0.7, lean: 0.35, rSh: 0.4, lSh: 0.4, rEl: 0.9 }), sm],
+        [0.42, over(s, { by: 0.2, squash: -0.4, rSh: 3.0, lSh: 2.9, rEl: 0.6, lEl: 0.8, lean: -0.32, nod: -0.3, lKn: 0.5, rKn: 0.7, rAb: 0.05, lAb: -0.1 }), outQ],
+        [0.54, over(slam, { by: 0.06, rSh: 1.5, lSh: 1.5, lean: 0.2, smear: 1, squash: -0.3 }), inQ],
+        [0.6, over(slam, { smear: 0.3, squash: 0.95 }), outQ],
+        [0.76, over(slam, { squash: 0.45 }), lin],
+        [1, s, sm],
+      ]);
     },
   },
   cast: {
-    dur: 0.7, impact: 0.5, lambda: 26, expr: 'determined', f: (t, c, k) => {
-      const ch = sm(seg(k, 0, 0.42));
-      const rel = outQ(seg(k, 0.42, 0.55));
-      const rec = seg(k, 0.7, 1);
-      const a = ch * (1 - rel), b = rel * (1 - rec);
-      return {
-        lSh: 0.6 - a * 0.4 + b * 1.1, rSh: 0.6 - a * 0.4 + b * 1.1, lEl: 1.4 * a + 0.3 * (1 - a), rEl: 1.4 * a + 0.3 * (1 - a), lAb: 0.5 * a + 0.25 * b, rAb: 0.5 * a + 0.25 * b,
-        lean: -a * 0.15 + b * 0.25, nod: -a * 0.2, by: a * 0.03, lHip: 0.2, lKn: 0.2,
-      };
+    // gather the power low, then thrust both hands out; the signature glow flares on release
+    dur: 0.78, impact: 0.5, lambda: 50, expr: 'determined', f: (t, c, k) => {
+      const s = stance(c);
+      const rel = { lSh: 1.65, rSh: 1.55, lEl: 0.1, rEl: 0.15, lAb: 0.3, rAb: 0.3, lTw: 0.4, rTw: 0.4, lean: 0.28, bz: 0.1, dy: -0.06, lHip: 0.5, lKn: 0.5, rHip: -0.3, rKn: 0.3, nod: 0.05, flare: 1 };
+      return keys(k, [
+        [0, s],
+        [0.4, over(s, { lSh: -0.2, rSh: -0.2, lEl: 1.6, rEl: 1.6, lAb: 0.55, rAb: 0.55, lTw: -0.8, rTw: -0.8, lean: -0.15, by: 0.03, squash: 0.35, nod: -0.25, flare: 0.5, bz: -0.03 }), sm],
+        [0.46, over(rel, { smear: 0.8, squash: -0.3, flare: 0.8 }), inQ],
+        [0.5, over(rel, { smear: 0.2, squash: 0.3 }), outQ],
+        [0.72, over(rel, { flare: 0.9 }), lin],
+        [1, s, sm],
+      ]);
     },
   },
   block: {
-    loop: true, lambda: 40, expr: 'determined', f: (t) => ({ rSh: 1.35, rEl: 1.3, rAb: -0.45, rTw: 0.3, lSh: 1.25, lEl: 1.4, lAb: -0.25, lean: 0.05, dy: -0.06, lHip: 0.35, rHip: -0.3, lKn: 0.45, rKn: 0.35, nod: 0.12 }),
+    // brace: crouch behind the guard, a tremble of strain
+    loop: true, lambda: 40, expr: 'determined', f: (t, c) => {
+      const q = Math.sin(t * 31) * 0.008;
+      const p = { rSh: 1.35, rEl: 1.4, rAb: -0.45, rTw: 0.3, lSh: 1.25, lEl: 1.45, lAb: -0.25, lean: 0.22 + q, dy: -0.08, lHip: 0.45, rHip: -0.35, lKn: 0.65, rKn: 0.5, nod: 0.18, squash: 0.25 };
+      if (c.id === 'durgan') Object.assign(p, { lSh: 0.95, lEl: 0.55, lAb: -0.15, lTw: 0.25, rSh: 0.55, rEl: 1.4, rAb: 0.1, lean: 0.32 + q, dy: -0.07 }); // tower shield set
+      return p;
+    },
   },
   parry: {
-    dur: 0.35, lambda: 44, expr: 'determined', f: (t, c, k) => {
+    dur: 0.35, lambda: 50, expr: 'determined', f: (t, c, k) => {
       const a = outBack(seg(k, 0, 0.35)) * (1 - seg(k, 0.6, 1));
-      return { rSh: 1.2 + a * 0.6, rAb: -0.5 + a * 1.2, rEl: 0.8 - a * 0.5, twist: 0.3 - a * 0.6, lean: -0.05, dy: -0.04, lHip: 0.3, lKn: 0.35, rKn: 0.25, lSh: 0.5, lEl: 1.2 };
+      return { rSh: 1.2 + a * 0.6, rAb: -0.5 + a * 1.2, rEl: 0.8 - a * 0.5, twist: 0.3 - a * 0.6, lean: -0.05, dy: -0.04, lHip: 0.3, lKn: 0.35, rKn: 0.25, lSh: 0.5, lEl: 1.2, smear: a > 0.6 && k < 0.2 ? 0.7 : 0 };
     },
   },
   hurt: {
-    dur: 0.42, lambda: 40, expr: 'hurt', f: (t, c, k) => {
-      const a = outQ(seg(k, 0, 0.2)) * (1 - seg(k, 0.4, 1));
-      return { squash: a * 0.7, bz: -a * 0.12, lean: -a * 0.45, nod: -a * 0.35, tilt: a * 0.2, lSh: a * 0.9, rSh: a * 0.7, lAb: 0.3 + a * 0.4, rAb: 0.3 + a * 0.5, lEl: 0.6, rEl: 0.6, dy: -a * 0.03, lKn: a * 0.2, rKn: a * 0.3 };
-    },
+    // knocked back: a snap of the head, a stagger, then settling into the stance again
+    dur: 0.5, lambda: 55, expr: 'hurt', f: (t, c, k) => keys(k, [
+      [0, {}],
+      [0.1, { bz: -0.2, lean: -0.5, nod: -0.4, tilt: 0.22, twist: -0.2, lSh: 0.9, rSh: 0.7, lAb: 0.6, rAb: 0.7, lEl: 0.5, rEl: 0.5, squash: 0.65, dy: -0.04, lKn: 0.3, rKn: 0.45, lHip: -0.2 }, outC],
+      [0.3, { bz: -0.24, lean: -0.32, nod: -0.15, tilt: 0.12, lSh: 0.5, rSh: 0.4, lAb: 0.4, rAb: 0.45, lEl: 0.6, rEl: 0.6, squash: 0.15, dy: -0.05, lKn: 0.35, rKn: 0.5 }, sm],
+      [1, { dy: -0.02 }, sm],
+    ]),
   },
   dodge: {
-    dur: 0.5, lambda: 36, expr: 'surprised', f: (t, c, k) => {
-      const a = Math.sin(seg(k, 0, 1) * Math.PI);
-      return { squash: a * 0.5, bz: -a * 0.45, by: a * 0.12, lean: a * 0.3, lKn: a * 0.9, rKn: a * 1.1, lHip: a * 0.6, rHip: a * 0.3, lSh: -a * 0.4, rSh: -a * 0.4, lAb: 0.5, rAb: 0.5, nod: a * 0.1 };
-    },
+    dur: 0.5, lambda: 50, expr: 'surprised', f: (t, c, k) => keys(k, [
+      [0, {}],
+      [0.15, { squash: 0.6, dy: -0.08, lKn: 0.9, rKn: 1.0, lHip: 0.5, rHip: 0.4, lean: 0.3, lSh: -0.3, rSh: -0.3, lAb: 0.4, rAb: 0.4 }, sm],
+      [0.45, { squash: -0.35, bz: -0.45, by: 0.14, lean: 0.2, lKn: 0.9, rKn: 1.1, lHip: 0.6, rHip: 0.3, lSh: -0.5, rSh: -0.4, lAb: 0.6, rAb: 0.6, nod: 0.1 }, outQ],
+      [0.7, { squash: 0.55, bz: -0.42, dy: -0.06, lKn: 0.7, rKn: 0.8, lHip: 0.4, rHip: 0.3, lean: 0.25, lAb: 0.5, rAb: 0.5 }, inQ],
+      [1, {}, sm],
+    ]),
   },
   victory: {
-    loop: true, lambda: 18, expr: 'happy', f: (t, c) => {
+    // a pop into the air, then the proud pose, breathing
+    loop: true, lambda: 26, expr: 'happy', f: (t, c) => {
       const b = Math.sin(t * 3);
-      const p = { rSh: 2.85, rEl: 0.15, rAb: 0.2, lAb: 0.68, lEl: 1.75, lTw: -2.0, lean: -0.12, nod: -0.15, dy: b * 0.008 };
-      if (c.id === 'clover') Object.assign(p, { by: Math.max(0, Math.sin(t * 6)) * 0.08, lSh: 2.6, lAb: 0.4, lEl: 0.3, lTw: 0 });
-      if (c.id === 'elio') Object.assign(p, { lSh: 2.7, lEl: 0.2, lAb: 0.3, lTw: 0 });
-      return p;
+      const pr = { rSh: 2.85, rEl: 0.15, rAb: 0.2, lAb: 0.7, lEl: 1.75, lTw: -2.0, lean: -0.14, nod: -0.18, dy: b * 0.008, flare: 0.7 };
+      if (c.id === 'clover') Object.assign(pr, { by: Math.max(0, Math.sin(t * 6)) * 0.08, lSh: 2.6, lAb: 0.4, lEl: 0.3, lTw: 0, rSh: 2.9, ears: 1 });
+      if (c.id === 'elio') Object.assign(pr, { lSh: 2.5, rSh: 2.5, lAb: 0.85, rAb: 0.85, lEl: 0.25, rEl: 0.25, lTw: 0, flare: 1, nod: -0.25 });
+      if (c.id === 'durgan') Object.assign(pr, { lSh: 0.1, lAb: 0.15, lEl: 0.3, lTw: 0, rSh: 0.4, rAb: 1.45, rEl: 2.1, rTw: 0.3, lean: -0.2, nod: -0.32, lHab: 0.2, rHab: 0.2 }); // shield planted, a flexed arm, a roar
+      if (t < 0.6) {
+        const k = t / 0.6;
+        return keys(k, [[0, { squash: 0.6, dy: -0.08, lKn: 0.9, rKn: 0.9, lHip: 0.6, rHip: 0.6 }], [0.35, over(pr, { by: 0.16, squash: -0.4 }), outQ], [0.75, over(pr, { by: 0, squash: 0.6, dy: -0.04 }), inQ], [1, pr, sm]]);
+      }
+      return pr;
     },
   },
   defeat: {
@@ -396,7 +371,7 @@ const ANIMS = {
     loop: true, lambda: 22, period: 0.9, f: (t) => {
       const k = (t % 0.9) / 0.9;
       const push = Math.sin(k * TAU) * 0.5 + 0.5;
-      return { lean: 0.25 + push * 0.1, lSh: 1.1 - push * 0.3, rSh: 1.1 - push * 0.3, lEl: 0.9 - push * 0.6, rEl: 0.9 - push * 0.6, lAb: -0.1, rAb: -0.1, dy: -0.03 - push * 0.03, lKn: 0.3 + push * 0.15, rKn: 0.3 + push * 0.15, lHip: 0.3, rHip: 0.2, nod: 0.2 };
+      return { lean: 0.25 + push * 0.1, lSh: 1.1 - push * 0.3, rSh: 1.1 - push * 0.3, lEl: 0.9 - push * 0.6, rEl: 0.9 - push * 0.6, lAb: -0.1, rAb: -0.1, dy: -0.03 - push * 0.03, lKn: 0.3 + push * 0.15, rKn: 0.3 + push * 0.15, lHip: 0.3, rHip: 0.2, nod: 0.2, flare: push };
     },
   },
 };
@@ -404,13 +379,12 @@ export const ANIM_INFO = Object.fromEntries(Object.entries(ANIMS).map(([k, v]) =
 export const ANIM_NAMES = Object.keys(ANIMS);
 const SEATED_OK = new Set(['sit', 'sitTalk', 'read', 'argue', 'laugh', 'sleep', 'idle', 'wave', 'point', 'shrug', 'cheer', 'hammer']);
 
-
 // Body language stands in for faces: each mood leans, tilts and settles the figure a little.
 const EXPR_POSE = {
   neutral: {},
   happy: { nod: -0.1, lean: -0.05, dy: 0.006, ears: 0.4 },
   angry: { lean: 0.12, nod: 0.1, lAb: 0.22, rAb: 0.22, ears: -0.6 },
-  surprised: { lean: -0.12, nod: -0.16, lAb: 0.3, rAb: 0.3, dy: 0.008, ears: 1 },
+  surprised: { lean: -0.12, nod: -0.16, lAb: 0.3, rAb: 0.3, dy: 0.008, ears: 1, flare: 0.5 },
   sad: { nod: 0.3, lean: 0.14, dy: -0.012, lAb: -0.05, rAb: -0.05, ears: -1 },
   smug: { tilt: 0.16, nod: -0.07, lean: -0.04 },
   determined: { lean: 0.07, nod: 0.07 },
@@ -451,6 +425,7 @@ export class Character {
     this.partN = 0;
     this._wp = new THREE.Vector3(); this._prevWp = null; this.vel = new THREE.Vector3(); this.velLocal = new THREE.Vector3();
     this._prevSh = 0; this.swing = new Spring(60, 9);
+    this._prevPose = { lean: 0, twist: 0, dy: 0 }; this.poseVel = { lean: 0, twist: 0, dy: 0 };
     BUILD[id](this);
     this.applyPose(this.pose);
     this.group.traverse((o) => { o.userData.character = this; });
@@ -489,47 +464,61 @@ export class Character {
     R.ftL = J(R.knL, 0, -d.legLo, 0);
     R.ftR = J(R.knR, 0, -d.legLo, 0);
     for (const side of ['L', 'R']) {
-      const m = J(R['hand' + side], 0, -VS * 1.6, VS * 0.4);
+      // the grip sits in the fist
+      const m = J(R['hand' + side], 0, -(v.grip ?? 4) * VS, 0.5 * VS);
       m.rotation.set(Math.PI / 2 - 0.55, 0, 0);
       R['mount' + side] = m;
     }
   }
   /**
-   * Paint a voxel part around the joint and hang it on the joint. Cached per explorer. Painted in
-   * design units (VS) unless o.native, which paints straight onto the shared VOX grid.
+   * Paint a voxel part (voxel units around its parent; a paint function or a ready VPart) and hang
+   * it on the parent. The greedy-meshed
+   * geometry is cached per explorer. o.offset shifts the origin, o.glow sets the emissive strength,
+   * o.glowMat gives the part's glowing voxels their own material (to pulse or flare them).
    */
   part(joint, paint, o = {}) {
     const key = this.id + '|' + this.partN++;
     let g = GEO_CACHE.get(key);
     if (!g) {
-      const P = new VPart();
-      paint(P);
-      // design-unit parts are re-voxelised onto the shared grid; native parts are placed on it directly
-      const k = o.native ? 1 : RES;
-      g = (o.native ? P : P.resample(RES)).geometry(VOX, (o.offset || [0, 0, 0]).map((v) => v * k), { glowIntensity: o.glow ?? 2.6 });
+      let P = paint;
+      if (!(paint instanceof VPart)) { P = new VPart(); paint(P); }
+      g = P.geometry(VS, o.offset || [0, 0, 0], { glowIntensity: o.glow ?? 2.4 });
       GEO_CACHE.set(key, g);
     }
     const grp = new THREE.Group();
-    if (g.solid) { const m = new THREE.Mesh(g.solid, this.mat); m.castShadow = true; m.receiveShadow = false; grp.add(m); } // no self-shadow acne on voxel faces
-    if (g.glow) { const m = new THREE.Mesh(g.glow, this.glowMat); m.castShadow = false; grp.add(m); }
-    joint.add(grp);
+    if (g.solid) { const m = new THREE.Mesh(g.solid, o.mat || this.mat); m.castShadow = true; m.receiveShadow = false; grp.add(m); } // no self-shadow acne on voxel faces
+    if (g.glow) { const m = new THREE.Mesh(g.glow, o.glowMat || this.glowMat); m.castShadow = false; grp.add(m); }
+    if (joint) joint.add(grp);
     return grp;
   }
   /** Voxel → world helper for joint offsets. */
   v(x, y, z) { return [x * VS, y * VS, z * VS]; }
+  /**
+   * Secondary motion: obj.rotation[axis] springs toward base + gain × source, where source is the
+   * figure's local velocity ('vx' | 'vy' | 'vz') or how fast the spine leans / twists / drops
+   * ('lean' | 'twist' | 'dy'); extra(ch) adds a driven offset, wobble a gentle sway.
+   */
   addSpring(obj, axis, opts) {
-    const s = { obj, axis, base: opts.base ?? obj.rotation[axis], gain: opts.gain ?? 0.6, src: opts.src || 'vz', sp: new Spring(opts.k ?? 80, opts.d ?? 8), wobble: opts.wobble || 0, phase: opts.phase || 0, min: opts.min ?? -2, max: opts.max ?? 2, extra: opts.extra };
+    const s = { obj, axis, base: opts.base ?? obj.rotation[axis], gain: opts.gain ?? 0.6, src: opts.src || 'vz', sp: new Spring(opts.k ?? 80, opts.d ?? 8), wobble: opts.wobble || 0, rate: opts.rate || 2.3, phase: opts.phase || 0, min: opts.min ?? -2, max: opts.max ?? 2, extra: opts.extra };
     s.sp.x = s.base;
     this.springs.push(s);
     return s;
   }
-  backWeapon(parent, w, p, r, s = 1) {
-    const j = this.joint(parent, ...p);
-    j.rotation.set(...r);
-    const m = buildWeaponMesh(w);
-    m.scale.setScalar(s);
-    j.add(m);
-    return j;
+  /** A chain of joints hanging from parent (scarf tails, braids), each lagging the one before. */
+  chain(parent, at, n, seg, paint, o = {}) {
+    const out = [];
+    let p = this.joint(parent, ...at);
+    for (let i = 0; i < n; i++) {
+      if (i) p = this.joint(out[i - 1], 0, -seg * VS, 0);
+      if (o.rot) p.rotation.set(...(i ? [0, 0, 0] : o.rot));
+      this.part(p, (P) => paint(P, i));
+      const lag = 1 + i * 0.6;
+      this.addSpring(p, 'x', { base: p.rotation.x, src: 'vz', gain: (o.gain ?? 0.5) * lag, k: (o.k ?? 60) / lag, d: (o.d ?? 6) / Math.sqrt(lag), wobble: (o.wobble ?? 0.04) * lag, phase: i * 0.7 + (o.phase || 0), extra: o.extraX ? (ch) => o.extraX(ch, i) : undefined });
+      this.addSpring(p, 'z', { base: p.rotation.z, src: 'vx', gain: -(o.gain ?? 0.5) * 0.6 * lag, k: (o.k ?? 60) / lag, d: (o.d ?? 6) / Math.sqrt(lag), wobble: (o.wobble ?? 0.04) * 0.6 * lag, rate: 1.7, phase: i * 0.9 + 1 + (o.phase || 0) });
+      if (o.twist !== false) this.addSpring(p, 'y', { base: p.rotation.y, src: 'twist', gain: -0.15 * lag, k: 40, d: 5 });
+      out.push(p);
+    }
+    return out;
   }
 
   // ---------------------------------------------------------- API
@@ -544,6 +533,7 @@ export class Character {
     if (a.expr && opts.expr !== false && this.exprLock <= 0) this.setExpression(a.expr, { auto: true });
     if (!a.expr && opts.expr === undefined && this._autoExpr) this.setExpression('neutral', { auto: true });
     for (const k in this.props) this.props[k].visible = a.prop === k;
+    if (name === 'hurt') this.flash('#ff7a5a', 0.24);
   }
   /** Seconds from start of a one-shot anim until its impact frame. */
   impactTime(name) { const a = ANIMS[name]; return a ? (a.dur || a.period || 0.5) * (a.impact ?? 0.5) / (this.animOpts.speed || 1) : 0; }
@@ -601,7 +591,7 @@ export class Character {
     // mood as posture, eased in and out
     const ex = EXPR_POSE[this.expr] || {};
     const ef = 1 - Math.exp(-6 * dt);
-    for (const k of ['nod', 'lean', 'tilt', 'dy', 'lAb', 'rAb', 'ears']) {
+    for (const k of ['nod', 'lean', 'tilt', 'dy', 'lAb', 'rAb', 'ears', 'flare']) {
       this.exprPose[k] = lerp(this.exprPose[k] || 0, ex[k] || 0, ef);
       T[k] += this.exprPose[k] * (k === 'lAb' || k === 'rAb' ? (target[k] === undefined ? 1 : 0.3) : 1);
     }
@@ -630,6 +620,7 @@ export class Character {
       this._prevSh = this.pose.rSh;
       const lag = this.swing.step(clamp(-w * 0.035, -0.5, 0.5), dt);
       if (this.rig.mountR) this.rig.mountR.rotation.x = Math.PI / 2 - 0.55 + lag;
+      for (const k in this._prevPose) { this.poseVel[k] = lerp(this.poseVel[k], (this.pose[k] - this._prevPose[k]) / dt, 1 - Math.exp(-20 * dt)); this._prevPose[k] = this.pose[k]; }
     }
 
     this.group.updateMatrixWorld(true);
@@ -643,10 +634,10 @@ export class Character {
     this.group.getWorldQuaternion(q);
     this.velLocal.copy(this.vel).applyQuaternion(q.invert());
     for (const s of this.springs) {
-      const src = s.src === 'vz' ? this.velLocal.z : s.src === 'vy' ? this.velLocal.y : s.src === 'vx' ? this.velLocal.x : 0;
+      const src = s.src === 'vz' ? this.velLocal.z : s.src === 'vy' ? this.velLocal.y : s.src === 'vx' ? this.velLocal.x : this.poseVel[s.src] ?? 0;
       let tgt = s.base + clamp(src * s.gain, -1.5, 1.5);
       if (s.extra) tgt += s.extra(this);
-      if (s.wobble) tgt += Math.sin(this.time * 2.3 + s.phase) * s.wobble;
+      if (s.wobble) tgt += Math.sin(this.time * s.rate + s.phase) * s.wobble;
       s.obj.rotation[s.axis] = clamp(s.sp.step(tgt, dt), s.base + s.min, s.base + s.max);
     }
     this.extraUpdate && this.extraUpdate(dt);
@@ -663,20 +654,22 @@ export class Character {
   applyPose(p) {
     const R = this.rig, d = this.dims;
     R.body.position.set(p.bx, p.by, p.bz);
-    // squash on impacts and landings, a stretch in the air
-    const sq = p.squash || 0;
-    R.body.scale.set(1 + sq * 0.05, 1 - sq * 0.07, 1 + sq * 0.05);
+    // squash on impacts and landings (negative stretches), and the smear: a stretch along the strike
+    const sq = p.squash || 0, smr = p.smear || 0;
+    R.body.scale.set(1 + sq * 0.06 - smr * 0.03, 1 - sq * 0.08 - smr * 0.04, 1 + sq * 0.06 + smr * 0.16);
     R.hips.position.y = d.hipH + p.dy;
     R.hips.rotation.set(p.hrx, p.hry, p.hrz);
     R.spine.rotation.set(p.lean, p.twist, p.side);
     // breathing: the chest swells and settles
-    const br = Math.sin(this.time * 2.1) * 0.012;
-    R.spine.scale.set(1 + sq * 0.04 - br * 0.4, 1 - sq * 0.05 + br, 1 + sq * 0.04 + br * 0.6);
+    const br = Math.sin(this.time * 2.2) * 0.016;
+    R.spine.scale.set(1 + sq * 0.04 - br * 0.3, 1 - sq * 0.05 + br, 1 + sq * 0.04 + br * 0.7);
     R.head.rotation.set(p.nod, p.turn, p.tilt);
     R.shL.rotation.set(-p.lSh, p.lTw, p.lAb);
     R.shR.rotation.set(-p.rSh, -p.rTw, -p.rAb);
     R.elL.rotation.x = -p.lEl;
     R.elR.rotation.x = -p.rEl;
+    R.elR.scale.y = 1 + smr * 0.2;
+    if (R.mountR) R.mountR.scale.set(1, 1 + smr * 0.5, 1);
     R.hipL.rotation.set(-p.lHip, 0, p.lHab);
     R.hipR.rotation.set(-p.rHip, 0, -p.rHab);
     R.knL.rotation.x = p.lKn;
@@ -686,459 +679,5 @@ export class Character {
   }
 }
 
-// ------------------------------------------------------------------ shared limb painters
-/** Gloved/booted limbs etc. are capsules in voxel units hanging down -Y from the joint. */
-const limb = (P, len, r0, r1, col, o = {}) => P.cap([0, o.top ?? 0.6, 0], [0, -len, 0], r0, r1, col, false, o);
-/** A band of colour on an existing limb between y0 and y1 (surface only). */
-const band = (P, y0, y1, col) => P.paint((x, y, z) => (y >= y0 && y < y1 ? (typeof col === 'function' ? col(x, y, z) : col) : undefined));
-/** Paint the outward surface voxels matching test with col. */
-const skin = (P, test, col) => P.paint((x, y, z, c) => (test(x, y, z) && P.surface(x, y, z) ? (typeof col === 'function' ? col(x, y, z, c) : col) : undefined));
-/** Ring of studs/rivets around a y level at radius r. */
-/** A block on the shared grid with its edges trimmed (inclusive bounds): the basic voxel head. */
-function block(P, x0, y0, z0, x1, y1, z1, c) {
-  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
-    if ((x === x0 || x === x1) + (y === y0 || y === y1) + (z === z0 || z === z1) >= 2) continue;
-    P.set(x, y, z, typeof c === 'function' ? c(x, y, z) : c);
-  }
-}
-/** Set a list of [x,y,z] voxels to a colour (or colour function). */
-function at(P, list, c) { for (const [x, y, z] of list) P.set(x, y, z, typeof c === 'function' ? c(x, y, z) : c); }
-/** Heads are placed voxel by voxel on the shared grid, odd-wide so masks and visors have a true centre. */
-const NATIVE = { native: true, offset: [0.5, 0, 0.5] };
-function rivets(P, y, r, n, col, rz = r) {
-  for (let i = 0; i < n; i++) { const a = (i / n) * TAU; P.set(Math.floor(Math.sin(a) * r), y, Math.floor(Math.cos(a) * rz), col); }
-}
-/** Boot on the foot joint: ankle at origin, sole on y = -footH, toes toward +Z. */
-function boot(P, cols, sole, o = {}) {
-  const w = o.w || 2.2, len = o.len || 3.6;
-  P.ell(0, -0.6, 1.0, w, 1.7, len, leather(cols, 9), false);
-  P.carve((x, y) => y < -2);
-  P.paint((x, y, z) => (y === -2 ? sole : undefined));
-  P.box(-w + 0.4, -2, -1.5, w - 0.4, 1.5, 1, leather(cols, 9));
-  if (o.toe) P.ell(0, -1.1, 3.2, w * 0.9, 1.1, 1.3, o.toe);
-  if (o.laces) for (let y = -1; y <= 1; y++) P.set(0, y, 1.6 + (y < 0 ? 0.6 : 0), o.laces);
-}
-
-// ------------------------------------------------------------------ palettes (warm, saturated, a bit pastel)
-const PAL = {
-  bran: {
-    shirt: ['#2e405a', '#3c587c', '#5276a2', '#7498c2'], pants: ['#2e2628', '#3e3434', '#544644'], apron: ['#4a2614', '#6a3a20', '#8a522e', '#a86c3c'],
-    glove: ['#4e2a14', '#70421e', '#93602c'], boot: ['#22160e', '#342216', '#4a3220'], hood: ['#3a2216', '#563420', '#73482a', '#8e5c34'],
-    brass: ['#6a4412', '#a8761e', '#e2ae3a', '#ffe98a'], lens: ['#a84a08', '#ff8a1a', '#ffc65a', '#fff2c8'], hair: ['#5a1e0c', '#82301a', '#ae4a24', '#d26a34'],
-    kerchief: ['#7a1e1a', '#b0342a', '#e05a40', '#ff8a64'], skin: ['#b87a5a', '#d29870', '#e8b48c'], sole: '#140c08',
-  },
-  elio: {
-    robe: ['#1c1a3e', '#2a2862', '#3c3a88', '#5654b0'], trim: ['#7a4a10', '#bc8424', '#f0c050', '#fff0a8'], lining: ['#123c3c', '#1e5a56', '#2e7e74', '#46a296'],
-    stole: ['#4a1224', '#6e1e34', '#962c48', '#bc4860'], glove: ['#18141e', '#241e2c', '#322a3c'], slipper: ['#2a1e2e', '#3c2c40', '#54405a'],
-    void: '#050308', glint: '#9af0ff',
-  },
-  durgan: {
-    mail: ['#3e424c', '#5e6470', '#8a92a0', '#b8c0cc'], steel: ['#2e333c', '#555d6a', '#8a94a4', '#c2ccd8', '#eef4fa'], bronze: ['#5a3412', '#925a22', '#cc8a3a', '#f2c070'],
-    horn: ['#7a6a4c', '#b09c74', '#dccfac', '#fff4dc'], beard: ['#6a2410', '#9a3a18', '#cc5826', '#f0864a'], fur: ['#32200f', '#4e341b', '#6e4c2c', '#8e6842'],
-    tunic: ['#22401e', '#30602c', '#43823c'], leather: ['#33200f', '#4e321a', '#6c4a28'], boot: ['#1e1610', '#30241a', '#463424'], sole: '#100a06', slit: '#060406',
-  },
-  clover: {
-    hood: ['#163e46', '#225e64', '#307e80', '#4aa09c'], lining: ['#a89474', '#cab896', '#e8dcc0'], scarf: ['#7a2222', '#b43c34', '#e2604a', '#ff9474'],
-    vest: ['#422412', '#623a1e', '#835430', '#a46e42'], shirt: ['#a89878', '#cabea0', '#e8e0c8'], shorts: ['#2e2836', '#3e3648', '#524a5e'],
-    stockA: ['#b47c1e', '#dca03a', '#f6c45a'], stockB: ['#3e2618', '#54361e'], boot: ['#241a12', '#38281a', '#4e3a26'], sole: '#120c08',
-    ear: ['#b4a494', '#d8ccc0', '#f4ece4'], inner: ['#d48a92', '#eaa8ae'], tail: ['#d8d2cc', '#efeae6', '#ffffff'], shadow: '#0a080e', strap: ['#3a2212', '#58361c'],
-  },
-};
-
-// ------------------------------------------------------------------ builders
-const BUILD = {
-  // ================================================================ BRAN: young blacksmith behind a forge mask
-  bran(c) {
-    const C = PAL.bran;
-    c.rigFrom({ footH: 2, legLo: 11, legUp: 12, torsoH: 15, neckH: 1.5, shX: 6.2, shY: 13, armUp: 8, armLo: 7, hipX: 2.7 });
-    const R = c.rig;
-    const rx = (y) => 4.3 + sm(y / 13) * 1.6 - Math.max(0, y - 13) * 0.7, rz = (y) => 2.9 + Math.sin(Math.PI * clamp(y / 15, 0, 1)) * 0.85;
-    // pelvis, belt with a brass buckle, tool pouch and hanging tongs
-    c.part(R.hips, (P) => {
-      P.ell(0, -1, 0, 4.7, 3.4, 3.3, fabric(C.pants, 11));
-      P.loft(-1, 2, () => [5.1, 3.7], leather(C.apron, 12));
-      P.box(-1.5, -1, 3, 1.5, 2, 4.5, metal(C.brass, 13));
-      P.box(-0.5, 0, 4, 0.5, 1, 4.8, C.brass[3]);
-      P.box(4, -4, -1.5, 6, 0.5, 2, leather(C.glove, 14));
-      P.box(4.2, -0.5, -1.3, 5.8, 0.5, 1.8, C.brass[1]);
-      P.cap([-4.6, 0, -1], [-5.2, -7, 0.5], 0.5, 0.45, metal(['#3a3e48', '#6a707e', '#a8b0bc'], 15));
-      P.cap([-5.4, 0, -1], [-6.0, -6.5, 0], 0.5, 0.45, metal(['#3a3e48', '#6a707e', '#a8b0bc'], 15));
-    });
-    // heavy apron skirt on a spring
-    const flap = c.joint(R.hips, ...c.v(0, -0.5, 3.6));
-    c.part(flap, (P) => {
-      const L = leather(C.apron, 16);
-      for (let y = -13; y < 1; y++) for (let x = -6; x < 6; x++) {
-        const w = 4.8 + Math.max(0, -y - 5) * 0.14;
-        if (x + 0.5 < -w || x + 0.5 > w) continue;
-        if (y <= -12 && hash(x, y, 1) > 0.55) continue; // scorched, ragged hem
-        const z = -Math.floor(((x + 0.5) ** 2) / 24);
-        const edge = Math.abs(x + 0.5) > w - 1.2 || y === -12 || y === 0;
-        const col = edge && (x + y) & 1 ? mix(C.apron[3], '#e8c89a', 0.4) : L(x, y, z);
-        P.set(x, y, z, col); P.set(x, y, z - 1, mul(C.apron[1], 0.9));
-      }
-      // pocket with tools poking out, scorch marks, rivets
-      for (let y = -8; y < -4; y++) for (let x = -3; x < 2; x++) P.set(x, y, 1 - Math.floor(((x + 0.5) ** 2) / 24), y === -5 || x === -3 || x === 1 ? C.apron[0] : C.apron[3]);
-      P.cap([-2, -5, 1], [-2.6, -1.5, 1.2], 0.5, 0.5, '#7a8290'); P.cap([0, -5, 1], [0.4, -2, 1.3], 0.5, 0.5, '#8a5a32');
-      for (const [x, y] of [[-4, -1], [3, -1]]) P.set(x, y, 1, C.brass[3]);
-      for (let k = 0; k < 6; k++) { const x = Math.floor(hash(k, 3, 9) * 9) - 4, y = -2 - Math.floor(hash(k, 4, 9) * 9); P.set(x, y, 1 - Math.floor(((x + 0.5) ** 2) / 24), '#2a1a12'); }
-    });
-    c.addSpring(flap, 'x', { base: 0, src: 'vz', gain: -0.12, k: 70, d: 7, extra: (ch) => Math.max(0, ch.pose.lHip, ch.pose.rHip) * -0.8, min: -1.4, max: 0.4 });
-    // torso: slate shirt, leather bib with straps, red neckerchief
-    c.part(R.spine, (P) => {
-      P.loft(-1, 15.5, (y) => [rx(y), rz(y)], fabric(C.shirt, 21));
-      P.loft(1, 12.5, (y) => [3.7, rz(y) + 1], leather(C.apron, 22), { front: true });
-      skin(P, (x, y, z) => z > 0 && Math.abs(x + 0.5) <= 3.7 && (y === 1 || y === 12 || Math.abs(x + 0.5) > 2.9) && y >= 1 && y <= 12 && (x + y) & 1, mix(C.apron[3], '#e8c89a', 0.45));
-      for (const sx of [-1, 1]) {
-        P.cap([sx * 3, 12, rz(12) - 0.3], [sx * 3.5, 15.3, 0], 0.75, 0.75, leather(C.apron, 23));
-        P.cap([sx * 3.5, 15.3, 0], [sx * 2.2, 2, -rz(2) + 0.2], 0.75, 0.75, leather(C.apron, 23));
-        P.set(sx > 0 ? 2 : -3, 12, Math.round(rz(12)) + 1, C.brass[3]);
-      }
-      P.ell(0, 14.8, 0.3, 3.2, 1.4, 2.7, fabric(C.kerchief, 24));
-      P.ell(1.6, 13.6, 3.1, 1.1, 1.1, 0.9, C.kerchief[2]);
-      P.cap([1.6, 13.1, 3.4], [2.5, 10.6, 3.9], 0.8, 0.5, fabric(C.kerchief, 25));
-      P.cap([1.4, 13.1, 3.2], [0.6, 10.9, 3.8], 0.7, 0.45, fabric(C.kerchief, 26));
-    });
-    // head: leather forge hood, a riveted iron welding mask with one amber window — no face
-    // the head, voxel by voxel: a leather hood and an iron welding mask with a recessed amber window
-    c.part(R.head, (P) => {
-      block(P, -4, 0, -4, 4, 8, 4, (x, y, z) => ramp(C.hood, 0.3 + y * 0.05 + (hash(x, y, z, 31) - 0.5) * 0.2, x, y, z, 31));
-      block(P, -3, -2, -3, 3, -1, 3, (x, y, z) => ramp(C.hood, 0.28 + (hash(x, y, z, 32) - 0.5) * 0.2, x, y, z, 32));
-      for (let z = -3; z <= 3; z++) P.set(0, 8, z, z & 1 ? C.hood[3] : C.hood[1]); // stitched crown seam
-      const iron = ['#24262c', '#3a3e48', '#5a606c', '#8a92a0', '#b4bcc8'];
-      for (let y = 1; y <= 7; y++) for (let x = -3; x <= 3; x++) {
-        if ((y === 1 || y === 7) && Math.abs(x) === 3) continue;
-        P.set(x, y, 5, ramp(iron, 0.36 + y * 0.04 - x * 0.02 + (x === 0 && y < 4 ? 0.16 : 0), x, y, 5, 33));
-      }
-      for (let x = -3; x <= 3; x++) P.set(x, 6, 5, ramp(iron, 0.8 - x * 0.03, x, 6, 5, 35)); // brow ridge
-      for (let x = -2; x <= 2; x++) for (let y = 4; y <= 5; y++) {
-        P.set(x, y, 5, null);
-        P.set(x, y, 4, y === 5 ? (x === -2 ? C.lens[3] : C.lens[2]) : x === 2 ? C.lens[0] : C.lens[1]);
-      }
-      at(P, [[-3, 2, 5], [3, 2, 5], [-3, 6, 5], [3, 6, 5]], (x) => C.brass[x < 0 ? 3 : 2]);
-      for (const sx of [-1, 1]) { P.set(sx * 5, 5, 1, C.brass[2]); P.set(sx * 5, 5, 0, C.brass[1]); } // hinge bolts
-      // auburn hair bursting out of the crown, and a lock at the back
-      at(P, [[-1, 9, -1], [0, 9, 0], [1, 9, -1], [0, 9, -2], [-1, 9, 1], [1, 9, 1], [-2, 9, -2]], (x, y, z) => ramp(C.hair, 0.3 + hash(x, z, 38) * 0.3, x, y, z, 38));
-      at(P, [[0, 10, -1], [-1, 10, 0], [1, 10, -2]], (x, y, z) => ramp(C.hair, 0.65, x, y, z, 38));
-      P.set(0, 11, -2, C.hair[3]);
-      at(P, [[-1, 6, -5], [0, 5, -5], [1, 6, -5], [0, 4, -5]], (x, y, z) => ramp(C.hair, 0.45, x, y, z, 39));
-    }, NATIVE);
-    const sleeve = fabric(C.shirt, 41);
-    for (const side of ['L', 'R']) {
-      const sx = side === 'L' ? 1 : -1;
-      c.part(R['sh' + side], (P) => {
-        P.ell(0, -0.6, 0, 2.5, 2.4, 2.4, sleeve);
-        limb(P, 6.5, 2.1, 1.9, sleeve);
-        P.cap([0, -5.3, 0], [0, -7.2, 0], 2.45, 2.45, fabric(['#5476a2', '#7498c2', '#9ab8d8'], 42));
-        P.cap([0, -7, 0], [0, -8.6, 0], 1.7, 1.6, fabric(C.skin, 43));
-      });
-      c.part(R['el' + side], (P) => {
-        limb(P, 4, 1.7, 1.55, fabric(C.skin, 44));
-        P.cap([0, -3.4, 0], [0, -7, 0], 2.05, 2.25, leather(C.glove, 45));
-        band(P, -4.2, -3.2, leather(['#2e1a0c', '#4a2c14'], 46));
-        P.set(sx > 0 ? 1 : -2, -5, 1, C.brass[2]);
-      });
-      c.part(R['hand' + side], (P) => {
-        P.ell(0, -1.6, 0.3, 1.9, 2.0, 1.75, leather(C.glove, 47));
-        P.ell(sx * 1.2, -1.0, 1.4, 0.8, 1.0, 0.8, leather(C.glove, 47));
-      });
-      c.part(R['hip' + side], (P) => {
-        limb(P, 12, 2.6, 2.15, fabric(C.pants, 51));
-        P.ell(0, -11, 1.2, 1.9, 1.6, 1.0, fabric(['#4a3e3a', '#5e504a'], 52));
-      });
-      c.part(R['kn' + side], (P) => {
-        limb(P, 4, 2.15, 2.0, fabric(C.pants, 53));
-        P.cap([0, -3.4, 0], [0, -11, 0], 2.35, 2.15, leather(C.boot, 54));
-        band(P, -4.2, -3.2, leather(['#4a3220', '#634630'], 55));
-        for (let y = -10; y < -4; y += 2) P.set(sx > 0 ? 0 : -1, y, 2, '#c8a06a');
-      });
-      c.part(R['ft' + side], (P) => boot(P, C.boot, C.sole, { toe: metal(['#3a3e48', '#6a707e', '#9aa2ae'], 56), laces: '#c8a06a' }));
-    }
-    c.backItem = c.backWeapon(R.spine, { bp: 'hammer', ids: ['iron', 'iron', 'coal'], grade: 2 }, c.v(3.5, 3, -4.5), [0.12, 0, 0.62]);
-    c.headTop = 11 * VS;
-  },
-
-  // ================================================================ ELIO: hooded elemental mage
-  elio(c) {
-    const C = PAL.elio;
-    c.rigFrom({ footH: 2, legLo: 10, legUp: 11, torsoH: 14, neckH: 1, shX: 5.4, shY: 12, armUp: 7.5, armLo: 7, hipX: 2.3 });
-    const R = c.rig, hv = 23;
-    const robe = fabric(C.robe, 61), trim = (s) => metal(C.trim, s);
-    c.part(R.hips, (P) => {
-      P.ell(0, -1, 0, 4.2, 3, 3, robe);
-      P.loft(-1, 2, () => [4.6, 3.5], fabric(C.stole, 62));
-      P.ell(2.4, 0.5, 3.2, 1.4, 1.4, 1, trim(63));
-      P.cap([2.4, -0.5, 3.4], [2.9, -6, 3.9], 0.8, 0.5, fabric(C.stole, 64));
-      P.cap([1.9, -0.5, 3.4], [1.6, -5, 4.0], 0.7, 0.45, fabric(C.stole, 64));
-      P.set(2, -6, 4, C.trim[2]); P.set(1, -5, 4, C.trim[2]);
-    });
-    // long robe skirt swaying on a spring; gold hem and an open front showing teal lining
-    const skirt = c.joint(R.hips, 0, 0, 0);
-    c.part(skirt, (P) => {
-      P.loft(-hv + 0.6, 0.5, (y) => { const t = clamp(-y / hv, 0, 1); return [4.5 + t * 2.9, 3.4 + t * 2.4, 0, -t * 0.4]; }, (x, y, z, { u }) => {
-        const t = -y / hv, front = Math.abs(u) < 0.16 + t * 0.12 && y < -6;
-        if (front) return null;
-        if (y < -hv + 2.6) return ramp(C.trim, 0.5 + (((x + z) & 1) ? 0.25 : 0), x, y, z, 65);
-        if (Math.abs(u) < 0.3 + t * 0.12 && y < -5) return ramp(C.trim, 0.6, x, y, z, 66);
-        return robe(x, y, z);
-      }, { shell: 1.4 });
-      P.loft(-hv + 0.6, -5, (y) => { const t = clamp(-y / hv, 0, 1); return [3.8 + t * 2.6, 2.8 + t * 2.2, 0, -t * 0.4]; }, fabric(C.lining, 67), { shell: 1, front: true });
-      for (let k = 0; k < 7; k++) { const a = (k / 7) * TAU + 0.4; P.set(Math.round(Math.sin(a) * 7), -hv + 3, Math.round(Math.cos(a) * 5.5 - 0.4), C.trim[3]); }
-    });
-    c.addSpring(skirt, 'x', { base: 0, src: 'vz', gain: -0.1, k: 40, d: 5, min: -0.3, max: 0.3, extra: (ch) => Math.max(0, ch.pose.lHip, ch.pose.rHip) * -0.3 });
-    c.addSpring(skirt, 'z', { base: 0, src: 'vx', gain: 0.12, k: 40, d: 5, min: -0.25, max: 0.25 });
-    c.part(R.spine, (P) => {
-      P.loft(-1, 14.5, (y) => [3.9 + sm(y / 12) * 1.0 - Math.max(0, y - 12) * 0.6, 2.8 + Math.sin(Math.PI * clamp(y / 14, 0, 1)) * 0.6], robe);
-      // stole: two maroon bands with gold stitching down the front
-      for (const sx of [-1, 1]) P.loft(1, 14.5, () => [1.1, 3.6, sx * 2.1, 0.2], (x, y, z) => (z > 1 ? ((y % 3 === 0 && x === (sx > 0 ? 2 : -3)) ? C.trim[2] : fabric(C.stole, 68)(x, y, z)) : undefined), { front: true });
-      P.loft(12.5, 15.5, (y) => [3.6 - (y - 12.5) * 0.3, 3.2], fabric(C.robe, 69));
-      P.ell(0, 1.5, 3.3, 1.3, 1.3, 0.8, trim(70));
-    });
-    // the hood: deep, gold-edged, nothing inside but dark and two faint glints
-    c.part(R.head, (P) => {
-      const robeV = (x, y, z) => ramp(C.robe, 0.3 + (y + 1) * 0.04 + (hash(x >> 1, y >> 1, z >> 1, 71) - 0.5) * 0.16, x, y, z, 71);
-      block(P, -4, -1, -5, 4, 9, 4, robeV);
-      // a brow jutting over the opening, gold along its lip
-      for (let x = -3; x <= 3; x++) { P.set(x, 8, 5, robeV(x, 8, 5)); P.set(x, 7, 5, ramp(C.trim, 0.55 + (x < 0 ? 0.15 : 0), x, 7, 5, 72)); }
-      const open = (x, y, z) => Math.abs(x) <= 2 && y >= 1 && y <= 6 && z >= 1;
-      P.carve(open);
-      P.paint((x, y, z) => (open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) || open(x, y - 1, z) || open(x, y, z + 1)
-        ? (z === 4 ? ramp(C.trim, 0.6 + (x < 0 ? 0.15 : 0), x, y, z, 73) : C.void) : undefined));
-      P.set(-1, 4, 0, { glow: true, c: C.glint }); P.set(1, 4, 0, { glow: true, c: C.glint });
-    }, { ...NATIVE, glow: 1.3 });
-    const tip = c.joint(R.head, ...c.v(0, 9.2, -3.6));
-    c.part(tip, (P) => {
-      P.cap([0, 0, 0], [0, 2.6, -3.6], 2.0, 0.7, robe);
-      P.ell(0, 2.6, -4.2, 0.9, 0.9, 0.9, trim(73));
-      P.cap([0, 2, -4.4], [0, -0.5, -5], 0.35, 0.35, C.trim[2]);
-    });
-    c.addSpring(tip, 'x', { base: 0, src: 'vz', gain: 0.4, k: 40, d: 4, wobble: 0.05 });
-    c.glints = [];
-    for (const side of ['L', 'R']) {
-      const sx = side === 'L' ? 1 : -1;
-      c.part(R['sh' + side], (P) => { P.ell(0, -0.4, 0, 2.3, 2.3, 2.3, robe); limb(P, 7, 2.0, 2.3, robe); });
-      c.part(R['el' + side], (P) => {
-        P.cap([0, 0.5, 0], [0, -6, 0.6], 2.3, 3.5, robe, false);
-        P.carve((x, y, z) => y < -3 && Math.hypot(x + 0.5, z + 0.5 - 0.5) < 2.4 + (-y - 3) * 0.32);
-        P.paint((x, y, z) => (y <= -5 ? ramp(C.trim, 0.6, x, y, z, 74) : undefined));
-        P.cap([0, -3, 0.4], [0, -5.8, 0.6], 1.6, 1.5, fabric(C.lining, 75));
-      });
-      c.part(R['hand' + side], (P) => P.ell(0, -1.0, 0.4, 1.5, 1.7, 1.4, fabric(C.glove, 76)));
-      c.part(R['hip' + side], (P) => limb(P, 11, 2.2, 1.9, fabric(C.robe, 77)));
-      c.part(R['kn' + side], (P) => limb(P, 10, 1.9, 1.7, fabric(C.glove, 78)));
-      c.part(R['ft' + side], (P) => { boot(P, C.slipper, '#120c14', { w: 1.9, len: 3.4 }); P.ell(0, 0.4, 3.6, 0.8, 0.8, 0.8, C.trim[2]); });
-      void sx;
-    }
-    c.backItem = c.backWeapon(R.spine, { bp: 'staff', ids: ['quartz', 'iron'], el: { ice: 1 }, grade: 2 }, c.v(-2.4, -2.4, -4.4), [0.12, 0, -0.45]);
-    // book prop for reading
-    const book = c.joint(R.handL, ...c.v(-2.4, -1.6, 2));
-    c.part(book, (P) => {
-      P.box(-3, -0.5, -2, 3, 0.5, 2, fabric(['#c8bca0', '#efe6cc'], 79));
-      P.box(-3.4, -1, -2.4, 3.4, -0.5, 2.4, leather(['#5a1a2a', '#7a2438', '#a0344a'], 80));
-      P.box(-0.5, -0.5, -2.4, 0.5, 0.8, 2.4, leather(['#5a1a2a', '#7a2438'], 80));
-    });
-    book.rotation.set(0.9, 0.3, 0.2);
-    book.visible = false;
-    c.props.book = book;
-    const k = new Kindle();
-    c.group.add(k.group);
-    c.kindle = k;
-    c.kindleHome = new THREE.Vector3(0.36, 1.22, 0.12);
-    k.group.position.copy(c.kindleHome);
-    c.extraUpdate = (dt) => {
-      const tgt = c.kindleTarget || c.kindleHome;
-      k.group.position.lerp(tgt, 1 - Math.exp(-3 * dt));
-      // the hood's glints blink, and dim when tired or sad
-      c.blinkT = (c.blinkT ?? 2) - dt;
-      if (c.blinkT < -0.12) c.blinkT = 2 + Math.random() * 3;
-      const dim = c.blinkT < 0 || c.expr === 'sleepy' || c.expr === 'sad';
-      c.glowMat.color.setScalar(dim ? 0.15 : c.expr === 'angry' || c.expr === 'determined' ? 1.4 : 1);
-    };
-    c.headTop = 12 * VS;
-  },
-
-  // ================================================================ DURGAN: stocky gnome warrior, visor closed
-  durgan(c) {
-    const C = PAL.durgan;
-    c.rigFrom({ footH: 2, legLo: 5, legUp: 6, torsoH: 11, neckH: 1, shX: 7.2, shY: 9.5, armUp: 6, armLo: 5.5, hipX: 3.2 });
-    const R = c.rig;
-    const rx = (y) => 5.9 + Math.sin(Math.PI * clamp(y / 11, 0, 1)) * 0.9 - Math.max(0, y - 9.5) * 0.8, rz = (y) => 4.3 + Math.sin(Math.PI * clamp(y / 11, 0, 1)) * 0.8;
-    c.part(R.hips, (P) => {
-      P.ell(0, -1, 0, 5.8, 3.2, 4.4, fabric(C.tunic, 81));
-      // studded leather skirt plates
-      P.loft(-4.5, 1, (y) => [6.1 + (-y) * 0.15, 4.7 + (-y) * 0.1], (x, y, z, { u }) => (Math.floor((u + 3.2) * 2.2) % 2 ? leather(C.leather, 82)(x, y, z) : mul(C.leather[1], 0.85)), { shell: 1 });
-      P.loft(0, 2.5, () => [6.4, 4.9], leather(C.leather, 83));
-      P.ell(0, 1.2, 4.9, 2, 2, 1, metal(C.bronze, 84));
-      P.set(0, 1, 6, C.bronze[3]); P.set(-1, 1, 6, C.bronze[3]);
-      rivets(P, -3, 6.3, 14, C.bronze[2], 4.9);
-    });
-    c.part(R.spine, (P) => {
-      P.loft(-1, 11.5, (y) => [rx(y), rz(y)], mail(C.mail, 85));
-      // leather harness crossing the chest
-      for (const sx of [-1, 1]) P.cap([sx * 4.5, 10, rz(10) - 0.5], [-sx * 4.2, 1, rz(1)], 0.9, 0.9, leather(C.leather, 86));
-      P.ell(0, 5.5, rz(5.5) + 0.4, 1.4, 1.4, 0.8, metal(C.bronze, 87));
-      // fur mantle around the shoulders
-      for (let a = 0; a < 26; a++) {
-        const t = (a / 26) * TAU, r = 6.6 + hash(a, 1, 88) * 1.2;
-        P.ell(Math.sin(t) * (r - 1), 10.2 + hash(a, 2, 88) * 1.2, Math.cos(t) * (r - 2.1), 2.0, 1.8, 1.9, fur(C.fur, 89));
-      }
-    });
-    // helm, voxel by voxel: a closed visor whose eye slit is split by a bronze nose guard, a brow
-    // band and crest, horns curling up from bronze bosses, and a great beard spilling out beneath
-    c.part(R.head, (P) => {
-      const steel = (x, y, z) => ramp(C.steel, 0.36 + (y - 2) * 0.05 + (x < 0 ? 0.06 : 0) + (hash(x, y, z, 91) - 0.5) * 0.08, x, y, z, 91);
-      block(P, -4, 2, -4, 4, 9, 4, steel);
-      for (const sx of [-1, 1]) for (let y = 1; y <= 2; y++) for (let z = 0; z <= 3; z++) P.set(sx * 4, y, z, steel(sx * 4, y, z)); // cheek guards
-      P.paint((x, y, z) => (y === 7 ? ramp(C.bronze, 0.55 + ((x + z) & 1) * 0.2, x, y, z, 93) : undefined));
-      for (let z = -3; z <= 3; z++) { P.set(0, 10, z, ramp(C.bronze, 0.72, 0, 10, z, 94)); P.set(0, 9, z, ramp(C.bronze, 0.5, 0, 9, z, 94)); }
-      for (let x = -3; x <= 3; x++) for (let y = 2; y <= 6; y++) P.set(x, y, 5, steel(x, y, 5));
-      for (let x = -3; x <= 3; x++) if (x !== 0) { P.set(x, 5, 5, null); P.set(x, 5, 4, C.slit); }
-      for (let y = 2; y <= 6; y++) P.set(0, y, 5, ramp(C.bronze, 0.45 + y * 0.07, 0, y, 5, 90));
-      at(P, [[-3, 3, 5], [3, 3, 5], [-3, 6, 5], [3, 6, 5]], C.bronze[3]);
-      for (const sx of [-1, 1]) {
-        at(P, [[5, 6, 0], [5, 7, 0], [5, 6, -1], [5, 7, -1]].map(([x, y, z]) => [sx * x, y, z]), (x, y, z) => ramp(C.bronze, 0.62, x, y, z, 98));
-        // a horn swept out and up along a curve, thick at the root, ridged, tapering to a pale point
-        for (let i = 0; i <= 24; i++) {
-          const t = i / 24, u = 1 - t, r = 1.45 - t * 0.95;
-          const hx = u * u * 4.8 + 2 * u * t * 9.8 + t * t * 8.9, hy = u * u * 6.6 + 2 * u * t * 6.4 + t * t * 11.9;
-          for (let x = Math.floor(hx - r); x <= hx + r; x++) for (let y = Math.floor(hy - r); y <= hy + r; y++) {
-            if ((x + 0.5 - hx) ** 2 + (y + 0.5 - hy) ** 2 > r * r || x < 5) continue;
-            const col = ramp(C.horn, 0.22 + t * 0.72 + ((i >> 2) & 1 ? 0.07 : 0), x, y, 0, 96);
-            for (let z = r > 0.95 ? -1 : 0; z <= 0; z++) P.set(sx * x, y, z, col);
-          }
-        }
-      }
-      const beard = (x, y, z) => ramp(C.beard, 0.35 + (y + 3) * 0.06 + ((x + y) & 1 ? 0.1 : 0), x, y, z, 99);
-      for (const [y, w, z0, z1] of [[1, 4, 2, 5], [0, 4, 2, 5], [-1, 4, 2, 5], [-2, 3, 3, 5], [-3, 2, 3, 4]]) for (let x = -w; x <= w; x++) for (let z = z0; z <= z1; z++) {
-        if (Math.abs(x) === w && (z === z0 || z === z1)) continue;
-        P.set(x, y, z, beard(x, y, z));
-      }
-    }, NATIVE);
-    c.braids = [];
-    for (const sx of [-1, 1]) {
-      const bj = c.joint(R.head, ...c.v(sx * 1.8, -2.4, 4.4));
-      c.part(bj, (P) => {
-        P.cap([0, 0, 0], [sx * -0.4, -6.2, 0.4], 1.35, 0.9, (x, y, z, t) => ramp(C.beard, 0.4 + ((y & 1) ? 0.3 : 0), x, y, z, 102));
-        for (const t of [0.35, 0.8]) P.ell(sx * -0.4 * t, -6.2 * t, 0.4 * t, 1.6, 0.8, 1.6, metal(C.bronze, 103));
-      });
-      c.addSpring(bj, 'x', { base: 0, src: 'vy', gain: 0.22, k: 60, d: 6, min: -0.4, max: 0.4 });
-      c.addSpring(bj, 'z', { base: 0, src: 'vx', gain: 0.14, k: 50, d: 6, min: -0.3, max: 0.3 });
-    }
-    for (const side of ['L', 'R']) {
-      const sx = side === 'L' ? 1 : -1;
-      c.part(R['sh' + side], (P) => {
-        limb(P, 6, 2.6, 2.3, mail(C.mail, 104));
-        // steel pauldron with a bronze rim and rivets
-        P.ell(sx * 0.6, 0.6, 0, 3.5, 2.8, 3.3, metal(C.steel, 105));
-        P.carve((x, y) => y < -0.6);
-        P.paint((x, y, z) => (y === -1 || y === 0 ? (P.surface(x, y, z) ? ramp(C.bronze, 0.6, x, y, z, 106) : undefined) : undefined));
-        rivets(P, 1, 3.2, 8, C.bronze[3], 3.0);
-      });
-      c.part(R['el' + side], (P) => {
-        limb(P, 5.5, 2.3, 2.4, leather(C.leather, 107));
-        for (const y of [-1, -4]) band(P, y, y + 1, metal(C.bronze, 108));
-      });
-      c.part(R['hand' + side], (P) => { P.ell(0, -1.6, 0.3, 2.3, 2.2, 2.1, leather(C.leather, 109)); P.ell(sx * 1.5, -1, 1.5, 1, 1.1, 1, leather(C.leather, 109)); });
-      c.part(R['hip' + side], (P) => limb(P, 6, 3.0, 2.7, leather(C.leather, 110)));
-      c.part(R['kn' + side], (P) => { limb(P, 5, 2.7, 2.6, leather(C.boot, 111)); band(P, -1, 0, leather(C.fur, 112)); });
-      c.part(R['ft' + side], (P) => boot(P, C.boot, C.sole, { w: 2.7, len: 3.8, toe: metal(C.steel, 113) }));
-    }
-    c.backItem = c.backWeapon(R.spine, { bp: 'axe', ids: ['iron', 'iron', 'coal', 'bat_fang'], grade: 2 }, c.v(-3.5, 0, -5.8), [0.15, 0, -0.8]);
-    c.extraUpdate = () => {
-      // the helm settles a touch after each bob (a heavy head)
-      c.rig.head.rotation.x += Math.sin(c.time * 2.1) * 0.01;
-    };
-    c.headTop = 13 * VS;
-  },
-
-  // ================================================================ CLOVER: rabbit scout, hood and scarf
-  clover(c) {
-    const C = PAL.clover;
-    c.rigFrom({ footH: 2, legLo: 9, legUp: 9, torsoH: 11, neckH: 1, shX: 4.6, shY: 9.6, armUp: 6.5, armLo: 6, hipX: 2.1 });
-    const R = c.rig;
-    const rx = (y) => 3.5 + sm(y / 10) * 0.7 - Math.max(0, y - 9.5) * 0.6, rz = (y) => 2.5 + Math.sin(Math.PI * clamp(y / 11, 0, 1)) * 0.5;
-    c.part(R.hips, (P) => {
-      P.ell(0, -1.2, 0, 3.9, 3.0, 2.9, fabric(C.shorts, 121));
-      P.loft(-0.5, 1.5, () => [4.2, 3.2], leather(C.strap, 122));
-      P.box(-0.5, -0.5, 3, 1.5, 1.5, 3.8, metal(['#7a5418', '#c89a3a', '#f0d070'], 123));
-      // dagger sheath on the left hip
-      P.cap([3.8, 0, 0.5], [4.6, -6, 1.6], 0.8, 0.6, leather(C.strap, 124));
-    });
-    const tail = c.joint(R.hips, ...c.v(0, -1, -3));
-    c.part(tail, (P) => P.ell(0, 0, -1.2, 2.0, 1.9, 1.8, fur(C.tail, 125)));
-    c.addSpring(tail, 'y', { base: 0, src: 'vx', gain: 0.4, wobble: 0.15, k: 60, d: 5 });
-    c.part(R.spine, (P) => {
-      P.loft(-1, 11.5, (y) => [rx(y), rz(y)], fabric(C.shirt, 126));
-      // quilted vest, open at the front
-      P.loft(0, 10, (y) => [rx(y) + 0.7, rz(y) + 0.7], (x, y, z, { u }) => {
-        if (Math.abs(u) < 0.22) return undefined;
-        return ((x + y + 40) % 4 === 0 || (x - y + 40) % 4 === 0) ? ramp(C.vest, 0.42, x, y, z, 127) : ramp(C.vest, 0.62, x, y, z, 127);
-      }, { shell: 0.9 });
-      // satchel strap from the right shoulder to the left hip, a buckle
-      P.cap([-3.6, 10.5, 1.5], [3.4, 0, rz(0) + 0.6], 0.8, 0.8, leather(C.strap, 128));
-      P.cap([-3.6, 10.5, -1.5], [3.4, 0, -rz(0) - 0.6], 0.8, 0.8, leather(C.strap, 128));
-      P.set(0, 5, Math.round(rz(5)) + 1, '#e0b84a');
-      // thick scarf wound round the neck, its knot on the front
-      P.ell(0, 11.6, 0.2, 3.6, 1.9, 3.2, fabric(C.scarf, 129));
-      P.ell(-1.2, 10.4, 2.8, 1.4, 1.4, 1, fabric(C.scarf, 130));
-    });
-    const tails = c.joint(R.spine, ...c.v(-1.2, 11, -2.6));
-    c.part(tails, (P) => {
-      P.cap([0, 0, 0], [-0.8, -2, -5], 1.2, 0.8, fabric(C.scarf, 131));
-      P.cap([0.8, 0, 0], [1.6, -3.5, -4.4], 1.1, 0.7, fabric(C.scarf, 132));
-      for (const [x, y, z] of [[-1, -2, -6], [1, -4, -5]]) { P.set(x, y, z, C.scarf[3]); P.set(x, y - 1, z, C.scarf[2]); }
-    });
-    c.addSpring(tails, 'x', { base: 0, src: 'vz', gain: 0.5, k: 35, d: 4, wobble: 0.06, min: -0.4, max: 1.2 });
-    c.addSpring(tails, 'z', { base: 0, src: 'vx', gain: -0.3, k: 35, d: 4, min: -0.5, max: 0.5 });
-    // hood with the scarf pulled up over the face: only shadow shows
-    // the hood, voxel by voxel: a shadowed opening rimmed in pale lining, the scarf pulled up to the nose
-    const hoodV = (x, y, z) => ramp(C.hood, 0.35 + y * 0.05 + (hash(x >> 1, y >> 1, z, 133) - 0.5) * 0.16, x, y, z, 133);
-    c.part(R.head, (P) => {
-      block(P, -3, 0, -4, 3, 7, 3, hoodV);
-      const open = (x, y, z) => Math.abs(x) <= 1 && y >= 3 && y <= 5 && z >= 1;
-      P.carve(open);
-      P.paint((x, y, z) => (open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) || open(x, y - 1, z) || open(x, y, z + 1)
-        ? (z === 3 ? ramp(C.lining, 0.5 + (x < 0 ? 0.25 : 0), x, y, z, 134) : C.shadow) : undefined));
-      block(P, -4, -1, -4, 4, 2, 4, (x, y, z) => ramp(C.scarf, 0.4 + (y === 2 ? 0.3 : 0) + ((x + z) & 1 ? 0.08 : 0), x, y, z, 135));
-    }, NATIVE);
-    const earJ = [];
-    const earCol = (x, y, z) => (y === 0 ? hoodV(x, 7, z) : z === 0 && x === 0 && y < 5 ? ramp(C.inner, 0.25 + y * 0.15, x, y, z, 136) : ramp(C.ear, 0.35 + y * 0.07 + (x < 0 ? 0.12 : 0) + (hash(x, y, z, 137) - 0.5) * 0.12, x, y, z, 137));
-    const ear = (P, top) => { for (let y = 0; y <= top; y++) for (let x = -1; x <= 1; x++) for (let z = -1; z <= 0; z++) if (y < top || x === 0) P.set(x, y, z, earCol(x, y, z)); };
-    for (const sx of [-1, 1]) {
-      const ej = c.joint(R.head, ...c.v(sx * 1.8, 8.0, -0.6));
-      const floppy = sx < 0;
-      c.part(ej, (P) => ear(P, floppy ? 3 : 6), NATIVE);
-      ej.rotation.z = floppy ? 0.35 : -0.12;
-      earJ.push(ej);
-      c.addSpring(ej, 'x', { base: -0.12, src: 'vy', gain: 0.35, k: 70, d: 6, wobble: 0.02, phase: sx, extra: (ch) => -ch.pose.ears * 0.25 });
-      c.addSpring(ej, 'z', { base: ej.rotation.z, src: 'vx', gain: -0.2, k: 60, d: 6, extra: (ch) => ch.pose.ears * (floppy ? -0.15 : 0.1) });
-      if (floppy) {
-        // the tip flops over and bounces
-        const tip = c.joint(ej, ...c.v(0, 4.4, 0));
-        c.part(tip, (P) => { for (let y = 0; y <= 3; y++) for (let x = -1; x <= 1; x++) for (let z = -1; z <= 0; z++) if (y < 3 || x === 0) P.set(x, y, z, earCol(x, y + 1, z)); }, NATIVE);
-        tip.rotation.z = 1.7;
-        c.addSpring(tip, 'z', { base: 1.7, src: 'vy', gain: -0.7, k: 30, d: 3.5, wobble: 0.08, phase: 2, extra: (ch) => -ch.pose.ears * 0.6 });
-      }
-    }
-    for (const side of ['L', 'R']) {
-      const sx = side === 'L' ? 1 : -1;
-      c.part(R['sh' + side], (P) => { P.ell(0, -0.8, 0, 2.2, 2.4, 2.2, fabric(C.shirt, 141)); limb(P, 6.5, 1.8, 1.55, fabric(C.shirt, 141)); });
-      c.part(R['el' + side], (P) => { limb(P, 6, 1.6, 1.45, leather(C.strap, 142)); band(P, -5.5, -4.5, fabric(C.scarf, 143)); });
-      c.part(R['hand' + side], (P) => { P.ell(0, -1.2, 0.3, 1.5, 1.7, 1.4, fur(C.ear, 144)); P.ell(sx * 1, -0.8, 1.2, 0.7, 0.8, 0.7, fur(C.ear, 144)); });
-      c.part(R['hip' + side], (P) => {
-        limb(P, 9, 2.0, 1.7, (x, y, z) => (y > -3 ? fabric(C.shorts, 145)(x, y, z) : ((y >> 1) & 1 ? ramp(C.stockA, 0.6, x, y, z, 146) : ramp(C.stockB, 0.5, x, y, z, 147))));
-      });
-      c.part(R['kn' + side], (P) => {
-        limb(P, 4, 1.7, 1.6, (x, y, z) => ((y >> 1) & 1 ? ramp(C.stockA, 0.6, x, y, z, 146) : ramp(C.stockB, 0.5, x, y, z, 147)));
-        P.cap([0, -3.4, 0], [0, -9, 0], 2.0, 1.85, leather(C.boot, 148));
-        P.cap([0, -3.4, 0], [0, -4.6, 0], 2.35, 2.35, leather(['#54402a', '#6a5236'], 149));
-      });
-      c.part(R['ft' + side], (P) => boot(P, C.boot, C.sole, { w: 1.9, len: 3.3 }));
-    }
-    c.backItem = c.backWeapon(R.hips, { bp: 'dagger', ids: ['silver', 'spider_silk'], grade: 2 }, c.v(-4.2, 0.5, -1), [0.4, 0, 0.35]);
-    c.ears = earJ;
-    c.headTop = 16 * VS;
-  },
-};
-
+/** Build an explorer: 'bran' | 'elio' | 'durgan' | 'clover'. */
 export function buildCharacter(id) { return new Character(id); }

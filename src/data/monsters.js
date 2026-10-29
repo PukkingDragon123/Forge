@@ -22,7 +22,7 @@ mon('cave_bat', {
   name: 'Lanternwing', region: 0, hp: 36, dmg: 4, interval: 2.2, dodge: 0.12,
   attacks: [{ name: 'Lantern Swoop', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Flare Shriek', dmg: 0.6, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.3 }],
   drops: [{ id: 'bat_fang', chance: 1 }, { id: 'bat_wing', chance: 0.6 }],
-  model: { arch: 'lanternwing', body: '#a8463e', belly: '#6a3434', accent: '#d8784a', eye: '#ffe04a', scale: 1 },
+  model: { arch: 'lanternwing', body: '#a8463e', belly: '#6a3434', accent: '#d8784a', eye: '#ffe04a', scale: 1.15 },
   desc: 'An imp that moved into a lost miner\'s lantern. Flits. Dodges. 12% chance your swing hits nothing.',
 });
 mon('ooze', {
@@ -36,7 +36,7 @@ mon('kobold', {
   name: 'Kobold Digger', region: 0, hp: 55, dmg: 5, interval: 2.6,
   attacks: [{ name: 'Pick Jab', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Grab Coins', dmg: 0.4, windup: 0.8, kind: 'special', effect: 'steal', weight: 0.35 }],
   drops: [{ id: 'kobold_rag', chance: 0.9 }, { id: 'iron', chance: 0.5 }, { id: 'coal', chance: 0.5 }],
-  model: { arch: 'kobold', body: '#c86a3a', belly: '#e8b88a', accent: '#6a4a2a', eye: '#ffe04a', scale: 0.85 },
+  model: { arch: 'kobold', body: '#c86a3a', belly: '#e8b88a', accent: '#6a4a2a', eye: '#ffe04a', scale: 1.05 },
   coins: [8, 14],
   desc: 'Small, sneaky, smells of lamp oil. Steals coins.',
 });
@@ -76,7 +76,7 @@ mon('shard_bat', {
   name: 'Shard Sprite', region: 1, hp: 40, dmg: 4, interval: 2.0, dodge: 0.15, weak: ['shock'],
   attacks: [{ name: 'Crystal Dive', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Shard Rain', dmg: 0.4, windup: 0.9, kind: 'multi', hits: 3, weight: 0.4 }],
   drops: [{ id: 'bat_fang', chance: 0.8 }, { id: 'quartz', chance: 0.6 }, { id: 'bat_wing', chance: 0.4 }],
-  model: { arch: 'sprite', body: '#dce6ff', belly: '#a0b4ff', accent: '#ff9af0', eye: '#7affff', scale: 1, crystals: '#8ae8ff' },
+  model: { arch: 'sprite', body: '#dce6ff', belly: '#a0b4ff', accent: '#ff9af0', eye: '#7affff', scale: 1.3, crystals: '#8ae8ff' },
   desc: 'A crystal fairy. Its wings chime like glass when it dives.',
 });
 mon('crystal_crab', {
@@ -97,7 +97,7 @@ mon('prism_wisp', {
   name: 'Prism Wisp', region: 1, hp: 48, dmg: 5, interval: 2.4, dodge: 0.1, resist: ['bleed', 'poison'],
   attacks: [{ name: 'Flicker', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Lance of Light', dmg: 1.5, windup: 1.2, kind: 'unblockable', weight: 0.3 }],
   drops: [{ id: 'wisp_essence', chance: 0.8 }, { id: 'moonstone', chance: 0.2 }],
-  model: { arch: 'prismwisp', body: '#9af0ff', belly: '#ffffff', accent: '#ff9af0', eye: '#1a2a4a', scale: 1 },
+  model: { arch: 'prismwisp', body: '#9af0ff', belly: '#ffffff', accent: '#ff9af0', eye: '#1a2a4a', scale: 1.15 },
   desc: 'A lost light that forgot how to be kind.',
 });
 mon('crystal_golem', {
@@ -129,7 +129,7 @@ mon('shroomling', {
   name: 'Shroomling', region: 2, hp: 58, dmg: 4, interval: 2.4, weak: ['fire'], resist: ['poison'],
   attacks: [{ name: 'Headbutt', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Spore Puff', dmg: 0.6, windup: 1.0, kind: 'special', effect: 'poison', weight: 0.4 }],
   drops: [{ id: 'mushroom_cap', chance: 1 }, { id: 'spore_sac', chance: 0.6 }, { id: 'glowcap', chance: 0.4 }],
-  model: { arch: 'mushroom', body: '#e0d0b0', belly: '#f0e8d0', accent: '#d04a3a', eye: '#1a1a1a', scale: 0.85, cap: '#d04a3a' },
+  model: { arch: 'mushroom', body: '#e0d0b0', belly: '#f0e8d0', accent: '#d04a3a', eye: '#1a1a1a', scale: 1.0, cap: '#d04a3a' },
   desc: 'Angry little hat with legs.',
 });
 mon('moss_snail', {
@@ -143,14 +143,14 @@ mon('lantern_moth', {
   name: 'Glowcap Wisp', region: 2, hp: 50, dmg: 5, interval: 2.2, dodge: 0.15, weak: ['fire'],
   attacks: [{ name: 'Spore Puff', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Spore Glare', dmg: 0.5, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.35 }],
   drops: [{ id: 'moth_dust', chance: 1 }, { id: 'feather', chance: 0.25 }],
-  model: { arch: 'glowwisp', body: '#bff8ec', belly: '#ffffff', accent: '#5af0c8', cap: '#4a58c8', eye: '#141a2e', scale: 1 },
+  model: { arch: 'glowwisp', body: '#bff8ec', belly: '#ffffff', accent: '#5af0c8', cap: '#4a58c8', eye: '#141a2e', scale: 1.2 },
   desc: 'A lost spirit wearing a glowing mushroom. Drawn to your lantern. And your face.',
 });
 mon('bloat_toad', {
   name: 'Bloatcap', region: 2, hp: 85, dmg: 6, interval: 3.0, weak: ['shock'],
   attacks: [{ name: 'Tongue Lash', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Spore Flop', dmg: 1.7, windup: 1.4, kind: 'heavy', weight: 0.45 }],
   drops: [{ id: 'toad_tongue', chance: 1 }, { id: 'venomite', chance: 0.3 }, { id: 'emerald', chance: 0.1 }],
-  model: { arch: 'bloatcap', body: '#6c8c5a', belly: '#e6d69c', accent: '#c04a8a', eye: '#ffd24a', cap: '#c8462e', spore: '#5af0c8', scale: 1.1 },
+  model: { arch: 'bloatcap', body: '#6c8c5a', belly: '#e6d69c', accent: '#b4c86a', tongue: '#e0607a', eye: '#ffd24a', cap: '#c8462e', spore: '#5af0c8', scale: 1.1 },
   desc: 'Half toad, half toadstool. Mostly mouth.',
 });
 mon('silk_spider', {
@@ -203,14 +203,14 @@ mon('ruin_owl', {
   name: 'Gargoyle', region: 3, hp: 70, dmg: 6, interval: 2.2, dodge: 0.15,
   attacks: [{ name: 'Stone Talons', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Silent Dive', dmg: 1.4, windup: 1.0, kind: 'unblockable', weight: 0.3 }],
   drops: [{ id: 'feather', chance: 1 }, { id: 'gold', chance: 0.25 }],
-  model: { arch: 'gargoyle', body: '#8a8478', belly: '#6e685e', accent: '#ffd24a', eye: '#4affe0', scale: 1 },
+  model: { arch: 'gargoyle', body: '#8e8a84', belly: '#6e6a66', accent: '#ffd24a', eye: '#4affe0', scale: 1.25 },
   desc: 'Guarded a library until the library forgot it. Now it guards nothing, fiercely.',
 });
 mon('gilded_guard', {
   name: 'Gilded Guard', region: 3, hp: 120, dmg: 7, interval: 2.8, armor: 3, weak: ['shock'],
   attacks: [{ name: 'Halberd', dmg: 1, windup: 0.8, kind: 'normal' }, { name: 'Shield Bash', dmg: 1.5, windup: 1.2, kind: 'heavy', weight: 0.45 }],
   drops: [{ id: 'gold', chance: 0.6 }, { id: 'bronze_ancient', chance: 0.7 }, { id: 'cursed_plate', chance: 0.25 }],
-  model: { arch: 'knight', body: '#c8a040', belly: '#4a3a2a', accent: '#ff4a4a', eye: '#4affe0', scale: 1.05 },
+  model: { arch: 'knight', body: '#c8a040', belly: '#4a3a2a', accent: '#ff4a4a', eye: '#4affe0', scale: 1.15 },
   coins: [10, 18],
   desc: 'Empty golden armor, still on duty.',
 });
@@ -243,21 +243,21 @@ mon('magma_slime', {
   name: 'Magma Slime', region: 4, hp: 95, dmg: 7, interval: 2.8, weak: ['ice'], resist: ['fire'],
   attacks: [{ name: 'Splash', dmg: 1, windup: 0.8, kind: 'normal' }, { name: 'Eruption', dmg: 1.6, windup: 1.3, kind: 'heavy', effect: 'burn', weight: 0.4 }],
   drops: [{ id: 'lava_core', chance: 1 }, { id: 'brimstone', chance: 0.6 }, { id: 'magmasteel', chance: 0.2 }],
-  model: { arch: 'slime', body: '#ff6a1a', belly: '#ffd04a', accent: '#3a1a14', eye: '#1a0a0a', scale: 0.95, glow: true },
+  model: { arch: 'slime', body: '#ff6a1a', belly: '#ffd04a', accent: '#3a1a14', eye: '#1a0a0a', scale: 1.05, glow: true },
   desc: 'Fire-proof. Ice makes it crumble.',
 });
 mon('salamander', {
   name: 'Magma Imp', region: 4, hp: 90, dmg: 7, interval: 2.3, weak: ['ice'], resist: ['fire'],
   attacks: [{ name: 'Ember Claw', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Fire Spit', dmg: 0.5, windup: 1.0, kind: 'multi', hits: 3, effect: 'burn', weight: 0.4 }],
   drops: [{ id: 'salamander_scale', chance: 1 }, { id: 'fire_gland', chance: 0.4 }],
-  model: { arch: 'magmaimp', body: '#42302c', belly: '#ffb04a', accent: '#ff7a1a', eye: '#ffe04a', scale: 1 },
+  model: { arch: 'magmaimp', body: '#6a3a2e', belly: '#ffb04a', accent: '#ff7a1a', eye: '#ffe04a', scale: 1 },
   desc: 'Born in the lava pools. Thinks you look chilly.',
 });
 mon('cinder_bat', {
   name: 'Flame Skull', region: 4, hp: 70, dmg: 6, interval: 2.0, dodge: 0.15, weak: ['ice'],
   attacks: [{ name: 'Burning Bite', dmg: 1, windup: 0.6, kind: 'normal', effect: 'burn' }, { name: 'Ash Cloud', dmg: 0.4, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.3 }],
   drops: [{ id: 'bat_fang', chance: 1 }, { id: 'ember', chance: 0.6 }],
-  model: { arch: 'flameskull', body: '#ecdfc2', belly: '#ff7a2a', accent: '#ffd04a', eye: '#ffe04a', scale: 1 },
+  model: { arch: 'flameskull', body: '#ecdfc2', belly: '#ff7a2a', accent: '#ffd04a', eye: '#ffe04a', scale: 1.3 },
   desc: 'A miner who swore he would never leave the forge. He kept his word.',
 });
 mon('cinder_golem', {
@@ -296,14 +296,14 @@ mon('cursed_knight', {
   name: 'Cursed Knight', region: 5, hp: 150, dmg: 9, interval: 2.7, armor: 4, weak: ['holy'], resist: ['curse'],
   attacks: [{ name: 'Cursed Blade', dmg: 1, windup: 0.8, kind: 'normal' }, { name: 'Crack Weapon', dmg: 0.8, windup: 1.2, kind: 'special', effect: 'crack', weight: 0.35 }, { name: 'Execution', dmg: 2.0, windup: 1.6, kind: 'heavy', weight: 0.3 }],
   drops: [{ id: 'cursed_plate', chance: 1 }, { id: 'cursedore', chance: 0.4 }, { id: 'soulstone', chance: 0.04 }],
-  model: { arch: 'knight', body: '#3a3448', belly: '#1a1420', accent: '#c86bff', eye: '#ff5af0', scale: 1.1 },
+  model: { arch: 'knight', body: '#3a3448', belly: '#1a1420', accent: '#c86bff', eye: '#ff5af0', scale: 1.15 },
   desc: 'Served the Lord in life. Still does.',
 });
 mon('wraith', {
   name: 'Tomb Wraith', region: 5, hp: 110, dmg: 9, interval: 2.4, dodge: 0.2, weak: ['holy', 'fire'], resist: ['bleed', 'poison'],
   attacks: [{ name: 'Chill Touch', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Wail', dmg: 1.5, windup: 1.2, kind: 'unblockable', weight: 0.35 }],
   drops: [{ id: 'ectoplasm', chance: 1 }, { id: 'voidcrystal', chance: 0.1 }],
-  model: { arch: 'wraith', body: '#5a4a7a', belly: '#9a8ac0', accent: '#c86bff', eye: '#9affc8', scale: 1.0 },
+  model: { arch: 'wraith', body: '#5a4a7a', belly: '#9a8ac0', accent: '#c86bff', eye: '#9affc8', scale: 1.1 },
   desc: 'Mostly hate, partly sheet.',
 });
 mon('bone_hound', {

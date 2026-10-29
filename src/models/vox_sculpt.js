@@ -84,8 +84,9 @@ export function tone(R, t, lo = 0, hi = R.length - 2, h = 0.5, dither = 0.18) {
 export function metal(R, n, h = 0.5, o = {}) {
   const s = spec(n, o.p ?? 30);
   if (s > (o.st ?? 0.55)) return R[R.length - 1];
-  const t = lit(n) * 0.75 + n[1] * 0.35 + (h - 0.5) * 0.15;
-  const band = t < -0.1 ? 1 : t < 0.15 ? 2 : t < 0.45 ? 3 : t < 0.7 ? 4 : 5;
+  // chrome-style banding: bright sky, a dark horizon line, warm ground bounce underneath
+  const t = lit(n) * 0.75 + n[1] * 0.35 + (h - 0.5) * 0.12;
+  const band = t > 0.62 ? 5 : t > 0.35 ? 4 : t > 0.08 ? 3 : t > -0.14 ? 1 : 2;
   return R[Math.max(0, Math.min(R.length - 2, band + (o.bias || 0)))];
 }
 
@@ -156,7 +157,7 @@ export const curve = (fn, n = 12) => Array.from({ length: n + 1 }, (_, i) => fn(
 
 /**
  * Convex polytope: planes [{n:[x,y,z], o}] in local unit space, scaled by s=[sx,sy,sz], rotated by B, at c.
- * f.facet(x,y,z) → { i, n (model-space normal), gap (distance to the next-nearest face = edge proximity) }.
+ * f.facet(x,y,z) → { i, n (model-space normal), i2/n2 (next-nearest face), gap (distance to it = edge proximity) }.
  */
 export function poly(c, planes, s = [1, 1, 1], B = null, amp = 0, freq = 0.3, seed = 0) {
   const P = planes.map((p) => ({ n: norm(p.n), o: p.o }));
@@ -175,9 +176,9 @@ export function poly(c, planes, s = [1, 1, 1], B = null, amp = 0, freq = 0.3, se
   f.facet = (x, y, z) => {
     const q = loc(x, y, z, c, B);
     const qx = q[0] / s[0], qy = q[1] / s[1], qz = q[2] / s[2];
-    let a = -1e9, b = -1e9, ia = 0;
-    for (let i = 0; i < P.length; i++) { const v = P[i].n[0] * qx + P[i].n[1] * qy + P[i].n[2] * qz - P[i].o; if (v > a) { b = a; a = v; ia = i; } else if (v > b) b = v; }
-    return { i: ia, n: W[ia], gap: (a - b) * sm, q };
+    let a = -1e9, b = -1e9, ia = 0, ib = 0;
+    for (let i = 0; i < P.length; i++) { const v = P[i].n[0] * qx + P[i].n[1] * qy + P[i].n[2] * qz - P[i].o; if (v > a) { b = a; ib = ia; a = v; ia = i; } else if (v > b) { b = v; ib = i; } }
+    return { i: ia, i2: ib, n: W[ia], n2: W[ib], gap: (a - b) * sm, q };
   };
   return BB(f, bbOf(c, [m, m, m]));
 }
@@ -266,9 +267,9 @@ function bbDist(b, x, y, z) { return Math.hypot(Math.max(b[0] - x, 0, x - b[3]),
  * the faces they expose). Painters get (x, y, z, n, h): design-space point, surface normal, voxel hash.
  */
 export class Sculpt {
-  constructor() { this.parts = []; this.cuts = []; this.own = -1; this.cutOwn = -1; }
-  /** o: { k: smooth-union radius with earlier parts } */
-  add(f, paint, o = {}) { this.parts.push({ f, paint: typeof paint === 'function' ? paint : () => paint, k: o.k || 0, bb: o.k ? pad(f.bb, o.k) : f.bb }); return this; }
+  constructor() { this.parts = []; this.cuts = []; this.tops = []; this.own = -1; this.cutOwn = -1; }
+  /** o: { k: smooth-union radius with earlier parts, top: unaffected by cuts (a gem in a hollow setting) } */
+  add(f, paint, o = {}) { (o.top ? this.tops : this.parts).push({ f, paint: typeof paint === 'function' ? paint : () => paint, k: o.k || 0, bb: o.k ? pad(f.bb, o.k) : f.bb }); return this; }
   cut(f, paint = null) { this.cuts.push({ f, paint: paint && (typeof paint === 'function' ? paint : () => paint), bb: f.bb }); return this; }
   field(x, y, z) {
     let d = 1e9, o = -1;
@@ -279,16 +280,21 @@ export class Sculpt {
       if (P.k && d < 1e8) { if (v < d) o = i; d = smin(d, v, P.k); } else if (v < d) { d = v; o = i; }
     }
     this.own = o; this.cutOwn = -1;
-    if (d > 2) return d;
-    for (let j = 0; j < this.cuts.length; j++) {
+    if (d <= 2) for (let j = 0; j < this.cuts.length; j++) {
       const K = this.cuts[j];
       if (bbDist(K.bb, x, y, z) > Math.max(0, -d) + 0.6) continue;
       const v = -K.f(x, y, z);
       if (v > d) { d = v; this.cutOwn = j; }
     }
+    for (let i = 0; i < this.tops.length; i++) {
+      const P = this.tops[i];
+      if (bbDist(P.bb, x, y, z) > d) continue;
+      const v = P.f(x, y, z);
+      if (v < d) { d = v; this.own = this.parts.length + i; this.cutOwn = -1; }
+    }
     return d;
   }
-  bounds() { return pad(merge(this.parts.map((p) => p.bb)), 0.5); }
+  bounds() { return pad(merge([...this.parts, ...this.tops].map((p) => p.bb)), 0.5); }
   /**
    * Bake at `k` voxels per design unit. Returns a VoxelGrid (with .k, .origin = design-space min corner).
    * o.dilate: grow by a fraction of a voxel so hairline features survive low resolutions.
@@ -338,7 +344,7 @@ export class Sculpt {
       const px = bb[0] + (x + 0.5) / k, py = bb[1] + (y + 0.5) / k, pz = bb[2] + (z + 0.5) / k;
       const n = norm([this.field(px + e, py, pz) - this.field(px - e, py, pz), this.field(px, py + e, pz) - this.field(px, py - e, pz), this.field(px, py, pz + e) - this.field(px, py, pz - e)]);
       const h = hash3(x, y, z, seed);
-      const P = w <= -2 ? this.cuts[-2 - w] : this.parts[w];
+      const P = w <= -2 ? this.cuts[-2 - w] : w >= this.parts.length ? this.tops[w - this.parts.length] : this.parts[w];
       let col = P.paint(px, py, pz, n, h);
       if (col == null || col === 0) col = 0x302830;
       g.set(x - mnx, y - mny, z - mnz, typeof col === 'string' ? C(col) : col);

@@ -148,7 +148,7 @@ export function bunting(w, ax, ay, az, bx, by, bz, seed = 1) {
   for (let i = 0; i <= n; i++) {
     const t = i / n, x = Math.round(ax + (bx - ax) * t), y = Math.round(ay + (by - ay) * t - Math.sin(t * Math.PI) * L * 0.12), z = Math.round(az + (bz - az) * t);
     w.set(x, y, z, C('#4a3a3a'));
-    if (i % 5 === 2) { const c = cols[(i / 5 + seed) % cols.length | 0]; for (let r = 1; r <= 4; r++) for (let q = -(4 - r) >> 1; q <= (4 - r) >> 1; q++) w.set(x + q, y - r, z, ramp(c, 0.6 - r * 0.06, x + q, r)); }
+    if (i % 5 === 2) { const c = cols[(((Math.floor(i / 5) + Math.floor(seed)) % cols.length) + cols.length) % cols.length]; for (let r = 1; r <= 4; r++) for (let q = -(4 - r) >> 1; q <= (4 - r) >> 1; q++) w.set(x + q, y - r, z, ramp(c, 0.6 - r * 0.06, x + q, r)); }
   }
 }
 
@@ -295,7 +295,7 @@ export function books(w, x, y, z, n = 4, seed = 1) {
   const cols = ['#a83a3a', '#3a6a9a', '#6a8a3a', '#8a5aa8', '#c8963a'];
   for (let k = 0; k < n; k++) {
     const bw = 7 - (k % 2), bd = 5, by = y + k * 2, off = Math.round((n3(k, seed, 1, 2) - 0.5) * 2);
-    box(w, x - (bw >> 1) + off, by, z - (bd >> 1), x + (bw >> 1) + 1 + off, by + 2, z + (bd >> 1) + 1, (px, py, pz) => (pz === z + (bd >> 1) && px !== x - (bw >> 1) + off ? CLOTH.cream[3] : C(cols[(k + seed) % cols.length])));
+    box(w, x - (bw >> 1) + off, by, z - (bd >> 1), x + (bw >> 1) + 1 + off, by + 2, z + (bd >> 1) + 1, (px, py, pz) => (pz === z + (bd >> 1) && px !== x - (bw >> 1) + off ? CLOTH.cream[1] : C(cols[(k + seed) % cols.length])));
   }
 }
 /** Merchant stall: counter, striped awning, shelf of glowing jars, hanging goods, sign. Front faces +z. */

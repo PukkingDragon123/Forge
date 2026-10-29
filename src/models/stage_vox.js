@@ -365,9 +365,10 @@ export class Stage {
     const [r, g, b] = hexToRgb(col);
     const t = gradTex(24, 64, (px, py) => {
       const u = Math.abs(px + 0.5 - 12) / 12, v = py / 64;
-      const a = Math.max(0, (1 - u * u) * (1 - v) ** 1.4) * 255 * (bayer(px, py) * 0.35 + 0.65);
+      const a = Math.max(0, (1 - u * u) * (1 - v) ** 1.4) * 255;
       return [r, g, b, Math.round(a)];
     });
+    t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter; // a soft beam, not a pixel checker
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: k, fog: false }));
     m.geometry.translate(0, -h / 2, 0);
     m.position.set(x, yTop, z);
@@ -592,6 +593,14 @@ function buildArena(st, B, ri, tomb) {
     if (ri === 0 || ri === 3) B.op(-9, 9, (w) => PR.pipe(w, [[vx(-9), vx(3.4), vx(wallZ + 0.5)], [vx(-1.5), vx(3.4), vx(wallZ + 0.5)], [vx(-1.5), vx(4.2), vx(wallZ + 0.5)], [vx(9), vx(4.2), vx(wallZ + 0.5)]], 1.6, PR.IRON, { valve: true }));
     B.op(-6.5, 6.5, (w) => PR.bunting(w, vx(-6.4), vx(3.0), vx(wallZ + 1.2), vx(-2.6), vx(3.1), vx(wallZ + 1.2), ri));
     for (let k = 0; k < 10; k++) { const x = (r() > 0.5 ? 1 : -1) * (3.4 + r() * 3.2); clutter(B, x, wallZ + 0.8 + r() * 1.6, r, ri === 2 ? ['mush', 'sack', 'barrel'] : ri === 1 ? ['crystal', 'crate', 'sack'] : ri === 3 ? ['gold', 'crate', 'barrel'] : ri === 4 ? ['crate', 'barrel', 'brazier'] : ri === 5 ? ['bones', 'crystal', 'brazier'] : ['crate', 'barrel', 'sack', 'rack', 'cart']); }
+    // each layer's signature set-pieces
+    if (ri === 1) for (const [x, h] of [[-5.6, 34], [5.9, 28], [-2.2, 18]]) B.op(x - 0.8, x + 0.8, (w) => PR.crystals(w, vx(x), 0, vx(wallZ + 0.7), h, R.ore[Math.abs(Math.round(x)) % 2], Math.round(x * 5), 7));
+    if (ri === 2) for (const [x, h] of [[-5.4, 38], [6.0, 30], [-6.4, 18]]) B.op(x - 1, x + 1, (w) => PR.mushroom(w, vx(x), 0, vx(wallZ + 0.9), h, x < 0 ? PR.CLOTH.salmon : PR.CLOTH.mustard, '#5af0c8', Math.round(x * 3)));
+    if (ri === 3) {
+      for (const x of [-3.3, 3.3]) B.op(x - 0.5, x + 0.5, (w) => PR.pillar(w, vx(x), 0, vx(wallZ + 0.6), 90, R.stone.map((c) => mixC(c, 0xf0d8a0, 0.25)), Math.round(x * 3), PR.CLOTH.teal));
+      B.op(-8, 8, (w) => { const Z = vx(wallZ + 1.5); for (let x = vx(-8); x < vx(8); x++) for (let dz = -4; dz <= 4; dz++) { w.set(x, 1, Z + dz, 0); w.set(x, 0, Z + dz, (NOAO | (Math.abs(dz) === 4 ? C('#cfe8d0') : h3(x, dz, 1, 4) > 0.97 ? C('#bff8f0') : C('#2a8a8a'))) >>> 0); } });
+      B.lamp(0, 0.3, wallZ + 1.5, '#5ae8d8', 3, 0.6);
+    }
     st.addShaft(-1.4, 4.9, -2.4, 1.2, 5.4, R.lamp, 0.22, 0.35);
     st.addShaft(2.2, 4.9, -2.0, 0.8, 5.0, R.lamp2, -0.18, 0.25);
   }
@@ -640,7 +649,7 @@ function buildRoom(st, B, ri, opts) {
     for (const [x, z, s] of [[-2.6, -1.2, 11], [2.5, -1.0, 9], [0.2, -2.3, 7], [-3.8, -2.2, 6], [3.9, -2.3, 7]]) B.op(x - 0.6, x + 0.6, (w) => PR.goldPile(w, vx(x), 0, vx(z), s, Math.round(x * 7)));
     for (const x of [-3.2, 3.2]) B.op(x - 0.5, x + 0.5, (w) => PR.pillar(w, vx(x), 0, vx(-2.4), 70, R.rock, Math.round(x * 3), PR.CLOTH.mustard));
     for (const x of [-1.8, 1.8]) clutter(B, x, -2.5, () => 0.99, ['brazier']);
-    B.op(-1, 1, (w) => PR.arch(w, 0, 0, vx(wallZ + 0.4), 32, 44, R.rock, '#ffd25e', 5));
+    B.op(-1, 1, (w) => PR.arch(w, 0, 0, vx(wallZ + 0.4), 32, 44, R.stone.map((c) => mixC(c, 0xf0d8a0, 0.3)), '#ffd25e', 5));
     st.addShaft(0, 4.7, -1.4, 1.8, 5.0, '#ffe8a0', 0.05, 0.45);
     st.ambient(['gold']);
   } else if (room === 'camp') {
@@ -657,7 +666,7 @@ function buildRoom(st, B, ri, opts) {
     st.ambient(['motes']);
   } else {
     A.prop = V(0.6, 0, -0.8);
-    B.op(-1.6, 1.6, (w) => PR.arch(w, vx(0.6), 0, vx(wallZ + 0.4), 40, 54, R.rock, R.oreGlow ? R.ore[0] : '#9affc8', 7));
+    B.op(-1.6, 1.6, (w) => PR.arch(w, vx(0.6), 0, vx(wallZ + 0.4), 40, 54, R.stone.map((c) => mixC(c, 0xe8d8c0, 0.3)), R.oreGlow ? R.ore[0] : '#9affc8', 7));
     for (const x of [-0.7, 1.9]) { B.op(x - 0.2, x + 0.2, (w) => { cyl(w, vx(x) + 0.5, vx(-2.2) + 0.5, 0, 6, 1.6, 1.4, PR.CLOTH.cream[2]); w.set(vx(x), 6, vx(-2.2), glowC('#ffd27a')); }); B.flame(x, 0.3, -2.2, 0.35, 'fire', false); }
     for (let k = 0; k < 6; k++) clutter(B, (r() > 0.5 ? 1 : -1) * (2.8 + r() * 2.6), -2.4 + r() * 1.5, r, ri === 5 ? ['bones', 'crystal'] : ['crate', 'sack', 'bones', 'crystal']);
     const spot = new THREE.SpotLight(new THREE.Color(R.lamp2), 14, 12, 0.5, 0.7, 1.4);
@@ -715,16 +724,17 @@ function buildCorridor(st, B, ri, opts) {
   };
   // the wall follows the floor down where the path drops
   rockWall(B, X0, X1, wallZ, -5.2, crawl ? 2.6 : 4.8, { seed: 51, amp: crawl ? 5 : 7, dent: (x) => 0 });
-  floorField(B, X0, X1, wallZ, 2.4, floorY, { seed: 52 });
+  const ZN = 4.4; // the floor runs right up to the lens
+  floorField(B, X0, X1, wallZ, ZN, floorY, { seed: 52 });
   ceiling(B, X0, X1, wallZ - 0.2, wallZ + (crawl ? 3.6 : 1.4), crawl ? 2.3 : 4.6, { seed: 53, long: !crawl });
   // chasm / shaft walls going down into the dark, with a glow at the bottom for lava
   if (gap || shaft) {
     const g = gap || shaft;
     for (const xe of [g[0], g[1]]) B.op(xe - 0.6, xe + 0.6, (w) => {
       const X = vx(xe), side = xe === g[0] ? 1 : -1;
-      for (let y = vx(-4.8); y < 0; y++) for (let z = vx(wallZ); z < vx(2.4); z++) for (let k = 0; k < 4; k++) w.set(X - side * k + (side < 0 ? 0 : -1), y + (shaft && xe === g[1] ? vx(-3.4) - y + y : 0), z, tone(R.rock, 0.12 + (y - vx(-4.8)) * 0.002));
+      for (let y = vx(-4.8); y < 0; y++) for (let z = vx(wallZ); z < vx(ZN); z++) for (let k = 0; k < 4; k++) w.set(X - side * k + (side < 0 ? 0 : -1), y + (shaft && xe === g[1] ? vx(-3.4) - y + y : 0), z, tone(R.rock, 0.12 + (y - vx(-4.8)) * 0.002));
     });
-    if (tun === 'lavabridge' || R.lava) B.op(g[0], g[1], (w) => box(w, vx(g[0]), vx(-3.6), vx(wallZ), vx(g[1]), vx(-3.5), vx(2.4), (px, py, pz) => glowC(h3(px, py, pz, 2) > 0.7 ? '#ffc85a' : h3(px, pz, 1, 3) > 0.4 ? '#ff6a1a' : '#c8380a')));
+    if (tun === 'lavabridge' || R.lava) B.op(g[0], g[1], (w) => box(w, vx(g[0]), vx(-3.6), vx(wallZ), vx(g[1]), vx(-3.5), vx(ZN), (px, py, pz) => glowC(h3(px, py, pz, 2) > 0.7 ? '#ffc85a' : h3(px, pz, 1, 3) > 0.4 ? '#ff6a1a' : '#c8380a')));
   }
   // bridge decks
   if (gap) {
@@ -764,7 +774,7 @@ function buildCorridor(st, B, ri, opts) {
   for (let x = X0 + 4; x < X1 - 3; x += 7 + r() * 4) {
     if (avoid(x)) continue;
     const pk = r();
-    if (pk < 0.35) B.op(x - 0.6, x + 0.6, (w) => PR.sign(w, vx(x), vx(crawl ? 1.2 : 1.8), vx(wallZ + 0.4), ['EXIT >', 'LEVEL 2', 'KEEP OUT', 'OIL', 'SHAFT 3', 'DANGER'][Math.floor(r() * 6)], { paint: ['#3a6a6a', '#6a3a3a', '#5a4a8a'][Math.floor(r() * 3)], ink: '#ffe8b0' }));
+    if (pk < 0.35) B.op(x - 1.3, x + 1.3, (w) => PR.sign(w, vx(x), vx(crawl ? 1.2 : 1.8), vx(wallZ + 0.4), ['EXIT >', 'LEVEL 2', 'KEEP OUT', 'OIL', 'SHAFT 3', 'DANGER'][Math.floor(r() * 6)], { paint: ['#3a6a6a', '#6a3a3a', '#5a4a8a'][Math.floor(r() * 3)], ink: '#ffe8b0' }));
     else if (pk < 0.65) B.op(x - 0.4, x + 0.4, (w) => PR.poster(w, vx(x), vx(1.1), vx(wallZ + 0.4), 10, 14, ['pick', 'skull', 'gem', 'arrow'][Math.floor(r() * 4)], Math.floor(r() * 4)));
     else if (ri === 0 || ri === 3) B.op(x - 3, x + 3, (w) => PR.pipe(w, [[vx(x - 3), vx(2.9), vx(wallZ + 0.45)], [vx(x), vx(2.9), vx(wallZ + 0.45)], [vx(x), vx(0.2), vx(wallZ + 0.45)]], 1.5, PR.IRON, { valve: r() > 0.5, drip: true }));
     else B.op(x - 2, x + 2, (w) => PR.vine(w, vx(x), vx(crawl ? 2.2 : 4.4), vx(wallZ + 0.6), 30 + Math.floor(r() * 30), undefined, Math.floor(x), ri === 2 ? '#ff8ae0' : null));
@@ -779,12 +789,18 @@ function buildCorridor(st, B, ri, opts) {
     const z = 2.4 + r() * 0.8;
     B.op(x - 0.5, x + 0.5, (w) => PR.stalactite(w, vx(x), vx(crawl ? 2.6 : 4.3), vx(z), 14 + Math.floor(r() * 26), R.rock.map((c) => mixC(c, 0x0a0812, 0.35)), vx(x)));
   }
+  // low dark boulders close to the lens frame the walk (kept under knee height so feet stay visible)
+  for (let x = X0 + 1; x < X1; x += 4.5 + r() * 4) {
+    if (avoid(x) || r() < 0.3) continue;
+    boulders(B, x, floorY(x) ?? 0, 3.7 + r() * 0.4, 0.7 + r() * 0.5, 0.55, 0.45, { seed: Math.floor(x * 7), n: 3, dark: true });
+  }
   // water for flooded halls
   if (tun === 'flooded') {
-    const tex = gradTex(64, 32, (px, py) => { const w0 = Math.sin(px * 0.4 + py * 0.9) > 0.86 || Math.sin(px * 0.23 - py * 1.3) > 0.93; const [a, b, c] = hexToRgb(R.drip || '#5ae8d8'); return w0 ? [Math.min(255, a + 80), Math.min(255, b + 60), 255, 200] : [a * 0.35, b * 0.5, c * 0.6, 150]; });
+    // calm translucent teal with a few pixel glints that drift (not a busy tiled pattern)
+    const tex = gradTex(64, 32, (px, py) => { const [a, b, c] = hexToRgb(R.drip || '#5ae8d8'); const g = h3(px, py, 1, 9); const glint = g > 0.985 || (g > 0.96 && (px + py * 3) % 7 === 0); return glint ? [Math.min(255, a + 90), Math.min(255, b + 70), 255, 210] : [a * 0.3, b * 0.45, c * 0.55, 165]; });
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set((X1 - X0) / 2, 2.4);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, 4.8).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: true }));
-    m.position.set((X0 + X1) / 2, -0.33, wallZ + 2.4);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(X1 - X0, ZN - wallZ).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: true }));
+    m.position.set((X0 + X1) / 2, -0.33, (wallZ + ZN) / 2);
     st.group.add(fxify(m, 8));
     st.updaters.push((dt, t) => { tex.offset.x = t * 0.03; tex.offset.y = Math.sin(t * 0.4) * 0.05; });
     st.emitters.push((dt) => { if (rnd.chance(dt * 4)) st.P.alpha.emit({ pos: [st.focus.x + rnd.float(-5, 5), -0.32, rnd.float(-1.5, 1.5)], vel: [0, 0.3, 0], life: [0.4, 0.8], size: 1, color: '#d8ffff', alpha: 0.8 }); });
@@ -825,7 +841,7 @@ function buildCorridor(st, B, ri, opts) {
   for (let i = 0; i < 3; i++) { const p = new THREE.PointLight(0xffffff, 0, 5, 1.5); st.group.add(p); st.pool.push(p); st.lights.push(p); }
   st.walkerLight = new THREE.PointLight(new THREE.Color(R.lamp), 2.0, 5.5, 1.5);
   st.group.add(st.walkerLight); st.lights.push(st.walkerLight);
-  st.shadowCatcher(X0, X1, wallZ, 2.4, tun === 'flooded' ? -0.62 : 0);
+  st.shadowCatcher(X0, X1, wallZ, ZN, tun === 'flooded' ? -0.62 : 0);
   st.ambient(R.ambient);
   st.drips([-3, 1.5, 4], crawl ? 2.2 : 4.4, R.drip);
   for (let x = X0 + 3; x < X1; x += 8 + r() * 6) if (r() > 0.4) st.addShaft(x, crawl ? 2.3 : 4.6, wallZ + 0.8, 0.9, crawl ? 2.4 : 4.6, R.lamp, (r() - 0.5) * 0.5, 0.3);

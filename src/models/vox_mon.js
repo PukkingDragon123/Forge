@@ -78,7 +78,7 @@ function pattern(tile, x, y, z, seed) {
     case 'wood': case 'bark': return [0.46 + ((x + z) % 3 === 0 ? -0.16 : 0.05) + (H(x, y >> 3, z, seed) - 0.5) * 0.12, h > 0.92 ? 1 : 0, 0];
     case 'crystal': { const f = ((x + y * 2 + z) >> 1) % 3; return [0.38 + f * 0.14 + (y % 5 === 0 ? 0.1 : 0), 0, 1]; }
     case 'membrane': return [0.46 + j, ((x + (y >> 1)) % 6 === 0 || (z + y) % 9 === 0) ? 1 : 0, ((x + (y >> 1)) % 6 === 0) ? 1 : 0];
-    case 'cap': return [0.56 + j, H(x >> 1, y >> 1, z >> 1, seed) > 0.84 ? 1 : 0, 0];
+    case 'cap': { const sp = H(Math.floor(x / 3), Math.floor(y / 3), Math.floor(z / 3), seed) > 0.82; return [sp ? 0.62 : 0.54 + j, sp ? 1 : 0, 0]; }
     case 'slime': return [h > 0.94 ? 0.92 : 0.54 + j, H(x >> 2, y >> 2, z >> 2, seed) > 0.8 ? 1 : 0, 0];
     case 'crust': case 'lava': {
       const n = vn(x / 4.5, y / 5.5, z / 4.5, seed);
@@ -96,7 +96,7 @@ function pattern(tile, x, y, z, seed) {
       const on = lu >= 0 && lu < 4 && lv >= 0 && lv < 5 && g[lv][lu] === '#';
       return [on ? 0.6 : 0.42 + j, on ? 1 : 0, on ? 1 : 0];
     }
-    case 'moss': return [0.42 + h * 0.3, h > 0.6 ? 1 : 0, 0];
+    case 'moss': { const n = vn(x / 2.4, y / 2.4, z / 2.4, seed); return [0.46 + (n - 0.5) * 0.5 + j, n > 0.6 ? 1 : 0, 0]; }
     case 'gill': return [y % 3 === 0 ? 0.3 : 0.55, y % 3 === 0 ? 1 : 0, 0];
     case 'hide': { const n = vn(x / 4, y / 4, z / 4, seed); return [0.5 + (n - 0.5) * 0.32 + j, n > 0.63 ? 1 : 0, 0]; }
     case 'spots': return [0.52 + j, H(x >> 1, y >> 1, z >> 1, seed) > 0.82 ? 1 : 0, 0];

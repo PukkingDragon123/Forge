@@ -496,6 +496,8 @@ SCRIPTS.prologue = (c) => {
   const seal = buildSealWall();
   seal.group.position.set(0, 0, -0.8);
   T.group.add(seal.group);
+  // two braziers keep a little warmth by the door
+  for (const x of [-3.3, 3.3]) { try { const b = buildProp('brazier', { intensity: 2.6, distance: 5 }); b.position.set(x, 0, -0.35); seal.group.add(b); } catch (e) { /* optional */ } }
   const runeMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(2.2, 2.2, 2.2), fog: false });
   seal.group.traverse((o) => { if (o.isMesh && o.name === 'glow') o.material = runeMat; });
   const lord = c.monster('cursed_lord', 'tomb', V(0, 0, -3.6), Math.PI / 2);
@@ -503,11 +505,11 @@ SCRIPTS.prologue = (c) => {
   c.freeze(lord);
   const doorL = c.light('tomb', 'point', '#b050ff', 0, V(0, 2.0, -1.4), { dist: 14, decay: 1.1, fl: 0.15, sp: 5 });
   const throneL = c.light('tomb', 'point', '#c86bff', 0, V(0.4, 4.6, -2.0), { dist: 14, decay: 1.1 });
-  const eyes = c.add(glowSprite('#ff6af0', 0.9, 0), 'tomb');
+  const eyes = c.add(glowSprite('#ff6af0', 0.5, 0), 'tomb');
   eyes.position.set(0, 3.95, -2.75);
-  const spots = { bran: V(-0.45, 0, 1.55), durgan: V(-1.45, 0, 2.05), elio: V(0.75, 0, 1.9), clover: V(1.7, 0, 2.5) };
+  const spots = { bran: V(-0.3, 0, 1.25), durgan: V(-1.75, 0, 2.65), elio: V(0.95, 0, 2.3), clover: V(1.95, 0, 2.95) };
   const F = {};
-  CHARACTER_ORDER.forEach((id) => { F[id] = c.char(id, 'tomb', spots[id].clone().add(V(0, 0, 3.4)), Math.PI, 'walk'); });
+  CHARACTER_ORDER.forEach((id) => { F[id] = c.char(id, 'tomb', spots[id].clone().add(V(0, 0, 1.8)), Math.PI, 'walk'); });
   const lan = buildProp('lantern', { light: false });
   F.durgan.hold(lan, 'left');
   const lanL = c.light(lan, 'point', '#ffc070', 2.8, V(0, 0.15, 0), { dist: 6.5, decay: 1.3, fl: 0.18 });
@@ -521,13 +523,13 @@ SCRIPTS.prologue = (c) => {
     music: 'tomb',
     shots: [
       { set: 'tomb', dur: 6.4, dip: 1.6,
-        cam: { pos: [[0.5, 6.4, 9.0], [0.2, 4.0, 7.6], [-0.3, 1.8, 6.5]], look: [[0, 2.6, -0.8], [0, 2.2, -0.8], [0, 1.6, -0.8]], fov: [46, 38] },
-        enter: (c) => { CHARACTER_ORDER.forEach((id, i) => c.walk(F[id], spots[id], 4.7 + i * 0.3)); c.dustFall(-4, 4, -0.6, 3, 7.2, 10); },
+        cam: { pos: [[0.8, 5.0, 9.4], [0.3, 3.5, 8.1], [-0.2, 1.9, 6.7]], look: [[0, 1.0, 2.0], [0, 1.5, 0.6], [0, 1.75, -0.8]], fov: [48, 40] },
+        enter: (c) => { CHARACTER_ORDER.forEach((id, i) => c.walk(F[id], spots[id], 3.8 + i * 0.35)); c.dustFall(-4, 4, -0.6, 3, 7.2, 10); },
         at: [[0.2, (c) => c.sfx('rumble', { vol: 0.35, pitch: 0.55 })]],
         cap: 'Long ago, four friends went looking for treasure in the Forbidden Tomb.', capAt: 1.4 },
       { dur: 4.6,
-        cam: { pos: [[-1.0, 1.45, 3.4], [-0.6, 1.62, 2.6]], look: [[0, 1.9, -0.8], [0, 1.95, -0.8]], fov: [34, 29] },
-        enter: (c) => { F.elio.play('read', { loop: true }); c.walk(F.bran, V(-0.3, 0, 1.15), 0.9, { then: 'point' }); },
+        cam: { pos: [[-1.75, 2.15, 3.7], [-1.3, 2.2, 3.0]], look: [[0.1, 1.85, -0.8], [0.1, 1.9, -0.8]], fov: [36, 31] },
+        enter: (c) => { F.elio.play('read', { loop: true }); c.walk(F.bran, V(-0.2, 0, 0.95), 0.9, { then: 'point' }); },
         at: [
           [0.6, (c) => { c.sfx('curse_hum', { vol: 0.6 }); c.tween(1.6, (k) => runeMat.color.setScalar(2.2 + Math.sin(k * Math.PI * 3) * 1.4), 'linear'); }],
           [3.0, (c) => {
@@ -552,8 +554,8 @@ SCRIPTS.prologue = (c) => {
           c.later(1.2, () => { F.elio.play('block', { loop: true }); F.clover.play('dodge'); });
         } },
       { dur: 5.4,
-        cam: { pos: [[0, 1.25, -0.9], [0, 0.95, -1.7]], look: [[0, 3.4, -3.6], [0, 3.9, -3.6]], fov: [40, 48] },
-        enter: (c) => { c.later(0.15, () => { c.freeze(lord, false); lord.play('intro'); c.sfx('boss_intro'); }); c.lightTo(throneL, 7, 2.2); c.tween(2.2, (k) => eyes.material.color.setRGB(3 * k, 1.2 * k, 3 * k)); c.curseSmoke(V(0, 0.05, -3.2), 1.2, 26); },
+        cam: { pos: [[0.95, 0.75, -0.3], [0.35, 0.65, -1.0]], look: [[0, 2.8, -3.6], [0, 3.3, -3.6]], fov: [52, 46] },
+        enter: (c) => { c.later(0.15, () => { c.freeze(lord, false); lord.play('intro'); c.sfx('boss_intro'); }); c.lightTo(throneL, 7, 2.2); c.tween(2.2, (k) => eyes.material.color.setRGB(1.6 * k, 0.6 * k, 1.6 * k)); c.curseSmoke(V(0, 0.05, -3.2), 1.2, 26); },
         at: [[2.75, (c) => {
           lord.play('roar'); c.sfx('boss_roar'); c.punch = 7; c.haptic(60);
           c.burst(V(0, 3.0, -3.0), '#c86bff', { size: 1.4, r: 8, flash: 0.75, shake: 1.1, n: 160 });
@@ -561,13 +563,13 @@ SCRIPTS.prologue = (c) => {
           seal.group.visible = false;
           for (let i = 0; i < 9; i++) c.debris.spawn({ pos: [rnd(-4.5, 4.5), rnd(0.5, 6.5), -1.0], count: 26, colors: seal.colors, speed: 2.5, up: 2.2, spread: 0.6, dir: [0, 0, rnd(3, 7)], floor: 0.03, life: 2.6, scale: [0.7, 1.6] });
           for (let i = 0; i < 60; i++) c.P.alpha.emit({ pos: [rnd(-4.5, 4.5), rnd(0.2, 4), -0.8], vel: [rnd(-0.6, 0.6), rnd(0, 0.6), rnd(1, 3)], spread: 0.3, life: [1.5, 3], size: [2, 4], sizeEnd: 6, color: ['#4a3a5a', '#6a5a78'], alpha: 0.55, drag: 1.2 });
-          c.envTo(1.0, 0.62, 1.3, 1.8, 0.25, 'outQuad'); c.later(0.3, () => c.envTo(0.62, 0.44, 0.84, 1.3, 1.6));
+          c.envTo(0.9, 0.56, 1.15, 1.5, 0.25, 'outQuad'); c.later(0.3, () => c.envTo(0.52, 0.38, 0.68, 1.15, 1.6));
           beams.forEach((b) => (b.visible = false));
           c.postTo({ bloom: 1.5 }, 0.2); c.later(0.6, () => c.postTo({ bloom: 1.15 }, 1.5));
         }]],
         cap: 'And something old woke up.', capAt: 0.9 },
       { dur: 5.6,
-        cam: { pos: [[-2.3, 0.72, 2.75], [-1.75, 0.92, 2.3]], look: [[-0.2, 1.15, 0.6], [-0.4, 1.3, 1.25]], fov: [36, 29] },
+        cam: { pos: [[-3.5, 0.9, 0.7], [-3.0, 1.05, 0.85]], look: [[-0.25, 1.25, 0.95], [-0.25, 1.4, 1.0]], fov: [33, 27] },
         enter: (c) => {
           wave = c.add(waveRing('#c86bff', 0.1), 'tomb'); wave.position.set(0, 0.03, -3.2);
           wallW = c.add(waveWall('#c86bff'), 'tomb'); wallW.position.copy(wave.position);
@@ -593,7 +595,7 @@ SCRIPTS.prologue = (c) => {
           }],
         ] },
       { dur: 6.8,
-        cam: { pos: [[-2.5, 1.25, -0.25], [0.2, 1.05, -0.05], [2.5, 1.2, 0.25]], look: [[-1.0, 1.0, 2.0], [0, 0.95, 2.0], [1.0, 1.0, 2.1]], fov: 36, ease: 'linear' },
+        cam: { pos: [[-2.4, 1.15, -1.5], [0.2, 1.05, -1.3], [2.4, 1.15, -1.1]], look: [[-1.2, 1.0, 2.2], [0.2, 0.95, 2.1], [1.3, 1.0, 2.5]], fov: 40, ease: 'linear' },
         enter: (c) => {
           c.loop('wind', 0.3);
           CHARACTER_ORDER.forEach((id, i) => {

@@ -225,7 +225,7 @@ const sporegoblin = {
     }
     for (const s of SIDES) {
       const n = s > 0 ? 'earL' : 'earR';
-      m.bone(n, [0.03, 0.05, s * 0.12], 'head', { rot: [s * -(PI / 2 - 0.3), 0, 0] });
+      m.bone(n, [0.03, 0.05, s * 0.12], 'head', { rot: [s * (PI / 2 - 0.3), 0, 0] });
       m.plate(n, [0, 0, 0], [[-0.05, -0.03], [0.06, -0.03], [0.24, 0.16], [0.03, 0.08]], 0.016, 0.01, skin, { k: 0.015 });
     }
     m.cap('head', [0.01, 0.1, 0], [0.01, 0.16, 0], 0.07, 0.06, gill, { k: 0.02 });
@@ -278,7 +278,7 @@ const gargoyle = {
     const stone = m.mat('stone', md.body, { acc: shade(md.body, 0.12) });
     const stone2 = m.mat('stone', md.belly, { acc: md.body });
     const rune = m.mat('rune', md.body, { acc: md.accent, glow: md.accent, gk: 2.2 });
-    const wingS = m.mat('stone', shade(md.body, -0.1), { acc: shade(md.body, -0.2) });
+    const wingS = m.mat('membrane', shade(md.body, -0.18), { acc: shade(md.body, -0.34) });
     const dark = m.mat('smooth', '#2a2428');
     const gold = m.mat('metal', md.accent, { acc: '#fff4c0' });
     m.bone('body', [0, 0.34, 0]);
@@ -298,14 +298,14 @@ const gargoyle = {
       m.sph('head', [-0.13, 0.06, s * 0.055], 0.036, null, { op: 'sub', k: 0.006 });
       m.sph('head', [-0.12, 0.06, s * 0.055], 0.03, glowMat(m, md.eye, 3, 'eye'), { k: 0.003 });
       m.tube('head', hornPath([0.02, 0.13, s * 0.08], [0.6, 0.7, s * 0.4], [1, 0, 0], 0.24, 1.6, 5), (t) => 0.045 * (1 - t) + 0.014, dark, { k: 0.01 });
-      m.plate('head', [0.04, 0.04, s * 0.12], [[-0.03, -0.02], [0.06, -0.02], [0.16, 0.08], [0.02, 0.05]], 0.014, 0.01, stone, { rot: [s * -(PI / 2 - 0.5), 0, 0], k: 0.01 });
+      m.plate('head', [0.04, 0.04, s * 0.12], [[-0.03, -0.02], [0.06, -0.02], [0.16, 0.08], [0.02, 0.05]], 0.014, 0.01, stone, { rot: [s * (PI / 2 - 0.5), 0, 0], k: 0.01 });
     }
     m.tor('head', [-0.01, 0.0, 0], 0.13, 0.018, gold, { rot: [0, 0, 0.25], k: 0.004 });
     // stone wings raised high
     for (const s of SIDES) {
       const n = s > 0 ? 'wingL' : 'wingR';
       m.bone(n, [0.1, 0.3, s * 0.13], 'body');
-      wing(m, n, s, 1.9, 1.05, wingS, stone, dark);
+      wing(m, n, s, 1.6, 0.95, wingS, stone, dark);
     }
     // arms with three-clawed hands
     for (const s of SIDES) {

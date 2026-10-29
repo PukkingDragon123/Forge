@@ -1,17 +1,17 @@
-// Forged weapons as voxel pixel art on the game's one voxel grid (0.04 world units, the same as
-// the explorers who hold them), so every voxel is placed like a pixel on an ornate sprite sword:
-// a honed bright edge column beside a dark etched fuller, runes in the fuller that glow with the
-// weapon's element, guards that grow and curl with the grade, gem-set pommels, wrapped grips, and
-// on masterworks gold wings, langets and filigree. Bone blades are notched, crystal ones faceted,
-// star-iron holds stars, magmasteel runs with molten seams. The look comes from the ingredients.
+// Forged weapons as voxel models on the party's fine grid (0.02 world units, the same as the
+// explorers who hold them), built like ornate pixel-art swords: a honed bright edge and a bevel
+// beside a dark etched fuller, runes in the fuller that glow with the weapon's element, guards that
+// widen and curl with the grade, gem-set pommels, spiral-wrapped grips, and on masterworks gold
+// wings, langets and filigree. Bone blades are notched, crystal ones faceted, star-iron holds stars,
+// magmasteel runs with molten seams. The look comes from the ingredients.
 // Plus the curse: glowing cracks, and a shatter into voxel shards.
 import * as THREE from 'three';
 import { LAYER_FX } from '../gfx/renderer.js';
 import { MATERIALS } from '../data/materials.js';
-import { VPart, VOX, rgb, mix, mul, hash, voxToon, voxGlow } from './vox_char_kit.js';
+import { VPart, VOX_PARTY, rgb, mix, mul, hash, voxToon, voxGlow } from './vox_char_kit.js';
 
-/** World size of one weapon voxel: the shared grid, so a held weapon matches its explorer. */
-const WVS = VOX;
+/** World size of one weapon voxel: the party's grid, so a held weapon matches its explorer. */
+const WVS = VOX_PARTY;
 const ELEMENT_GLOW = { fire: '#ff7a2a', ice: '#7fe3ff', shock: '#ffe74a', poison: '#8fe04a', curse: '#c86bff', holy: '#fff3b0', bleed: '#ff4f6a' };
 const METAL_TINT = {
   iron: '#b8bec8', copper: '#d8844a', tin: '#c8ccd4', silver: '#e8eef8', gold: '#ffd04a', mithril: '#bff4ff', stariron: '#4a4a7a',
@@ -55,213 +55,218 @@ export function weaponLook(w) {
 }
 
 // ------------------------------------------------------------------ palettes from the look
-const rampOf = (c) => [mul(c, 0.38), mul(c, 0.62), rgb(c), mix(c, '#ffffff', 0.45), mix(c, '#ffffff', 0.8)];
-const pick = (R, t) => { t = Math.max(0, Math.min(0.999, t)) * (R.length - 1); const i = Math.floor(t); return mix(R[i], R[Math.min(i + 1, R.length - 1)], t - i); };
+// Ramps run [deep, shade, base, light, gleam]; tones are flat so the mesher can merge them.
+const rampOf = (c) => [mul(c, 0.36), mul(c, 0.6), rgb(c), mix(c, '#ffffff', 0.42), mix(c, '#ffffff', 0.78)];
+const pick = (R, t) => R[Math.max(0, Math.min(R.length - 1, Math.round(t * (R.length - 1))))];
 function pal(L) {
   return {
     blade: rampOf(L.blade), trim: rampOf(L.trim), wrap: rampOf(L.wrap),
-    wood: [rgb('#3a2212'), rgb('#5a3820'), rgb('#7a5030'), rgb('#9a6a40'), rgb('#b8855a')],
+    wood: [rgb('#2e1a0e'), rgb('#4a2e1a'), rgb('#6a4428'), rgb('#8a5c36'), rgb('#aa7a4c')],
     gem: L.gem ? rampOf(L.gem) : null,
-    bone: [rgb('#8a7a5a'), rgb('#c8b890'), rgb('#e8dcc0'), rgb('#f6efe0'), rgb('#ffffff')],
+    bone: [rgb('#8a7a5a'), rgb('#c0b088'), rgb('#e2d6b8'), rgb('#f4ecda'), rgb('#ffffff')],
   };
 }
 const glowOf = (c) => ({ glow: true, c });
+/** The inscription down a fuller: an irregular run of glyph marks, offset between the two columns. */
+const RUNE = [1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1];
+const runeAt = (row, col) => RUNE[(row + col * 5 + 120) % RUNE.length];
 
-// ------------------------------------------------------------------ shared pieces (weapon voxel units, grip column at x=0,z=0)
-/** Wrapped grip from y0 up to y1 (exclusive), alternating turns of the binding. */
-function grip(H, Q, y0, y1) { for (let y = y0; y < y1; y++) H.set(0, y, 0, pick(Q.wrap, (y & 1) ? 0.3 : 0.62)); }
-/** Wooden haft with a little grain, from y0 to y1. */
-function haft(H, Q, y0, y1) { for (let y = y0; y < y1; y++) H.set(0, y, 0, pick(Q.wood, 0.42 + ((y * 7) % 5 === 0 ? -0.15 : 0) + hash(0, y, 0, 9) * 0.18)); }
-/** A ring of trim around the shaft at height y. */
-function collar(H, Q, y, t = 0.62) { for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) H.set(x, y, z, pick(Q.trim, t + (x < 0 || z > 0 ? 0.15 : -0.05))); }
-/** Pommel below the grip: a gem held between trim claws (or a plain knob), capped. */
-function pommel(H, Q, L, y) {
-  if (Q.gem) {
-    H.set(0, y, 0, glowOf(pick(Q.gem, 0.72)));
-    H.set(-1, y, 0, pick(Q.trim, 0.75)); H.set(1, y, 0, pick(Q.trim, 0.45));
-    H.set(0, y - 1, 0, pick(Q.trim, 0.6));
-    if (L.masterwork) { H.set(-1, y - 1, 0, pick(Q.trim, 0.85)); H.set(1, y - 1, 0, pick(Q.trim, 0.55)); }
-  } else {
-    H.set(0, y, 0, pick(Q.trim, 0.62)); H.set(-1, y, 0, pick(Q.trim, 0.78)); H.set(1, y, 0, pick(Q.trim, 0.42));
-    if (L.grade >= 2) H.set(0, y - 1, 0, pick(Q.trim, 0.7));
+// ------------------------------------------------------------------ shared pieces (weapon voxel units; the grip runs up x,z ∈ [-1,0])
+/** A spiral-wrapped grip from y0 to y1, two voxels square with rounded binding. */
+function grip(H, Q, y0, y1) {
+  for (let y = y0; y < y1; y++) for (let x = -2; x < 2; x++) for (let z = -2; z < 2; z++) {
+    const ex = x === -2 || x === 1, ez = z === -2 || z === 1;
+    if (ex && ez) continue;
+    const turn = ((y + (x + z + 4) * 0.5) | 0) % 3 === 0;
+    H.set(x, y, z, pick(Q.wrap, turn ? 0.25 : ex || ez ? 0.5 : 0.6));
   }
 }
-/** The inscription down a fuller: an irregular run of glyph marks rather than an even dotted line. */
-const RUNE = [1, 0, 1, 1, 0, 1, 0, 0];
-/** One blade voxel, its colour by column: honed edge, body, etched fuller (with runes), filigree. */
-function bladeVox(B, L, Q, x, y, k, role) {
-  let c;
-  if (L.bladeKind === 'crystal') c = pick(Q.blade, role === 'edge' ? 0.9 : ((x + y) % 3 === 0 ? 0.78 : 0.48) + k * 0.1);
-  else if (L.bladeKind === 'bone') c = pick(Q.bone, role === 'edge' ? 0.62 : role === 'fuller' ? 0.32 : 0.48 + (y % 4 === 0 ? -0.15 : 0));
-  else c = pick(Q.blade, role === 'edge' ? 0.9 : role === 'back' ? 0.66 : role === 'fuller' ? 0.3 + k * 0.08 : 0.56 + k * 0.1);
-  if (role === 'fuller') {
-    // the etched fuller carries the weapon's nature: runes in its element, stars, molten seams
-    if (L.glow && RUNE[y & 7]) return B.set(x, y, 0, glowOf((y >> 3) & 1 && L.glow2 ? L.glow2 : y % 3 === 0 ? mix(L.glow, '#ffffff', 0.4) : L.glow));
-    if (L.magma && hash(x, y, 0, 3) > 0.45) return B.set(x, y, 0, glowOf(hash(x, y, 1) > 0.5 ? '#ff7a2a' : '#ffc04a'));
-    if (L.star && y % 3 === 0) return B.set(x, y, 0, glowOf('#ffe8a0'));
-    if (L.bladeKind === 'crystal' && y % 3 === 1) return B.set(x, y, 0, glowOf(pick(Q.blade, 0.85)));
-  }
-  // a strong element licks the edges
-  if (role === 'edge' && L.glow && L.power >= 4 && hash(x, y, 2) > 0.7) return B.set(x, y, 0, glowOf(mix(L.glow, '#ffffff', 0.35)));
-  B.set(x, y, 0, c);
+/** Wooden haft with grain, from y0 to y1. */
+function haft(H, Q, y0, y1, r = 1.6) { H.cap([0, y0, 0], [0, y1, 0], r, r, (x, y, z) => pick(Q.wood, hash(x, y >> 2, z, 9) > 0.8 ? 0.25 : (y * 3 + x) % 7 === 0 ? 0.35 : 0.5)); }
+/** A ring of trim around the shaft between y0 and y1. */
+function collar(H, Q, y0, y1, r = 2.6) { H.cap([0, y0, 0], [0, y1, 0], r, r, (x, y) => pick(Q.trim, y === Math.ceil(y1) - 1 ? 0.75 : 0.5), false, { flat: true }); }
+/** A pommel: a gem held in trim claws, or a faceted knob. */
+function pommel(H, Q, L, y) {
+  H.ell(0, y, 0, 2.6, 2.4, 2.6, (x, yy) => pick(Q.trim, yy > y - 0.5 ? 0.7 : 0.45));
+  if (Q.gem) { H.ell(0, y - 0.5, 0, 1.8, 1.8, 2.8, (x, yy, z, d) => glowOf(pick(Q.gem, d < 0.4 ? 0.9 : 0.6))); }
+  H.cap([0, y - 2, 0], [0, y - 4, 0], 1.6, 0.7, () => pick(Q.trim, L.masterwork ? 0.9 : 0.6));
 }
 /**
- * A straight blade: columns x0..x1 from y0 for len rows, narrowing to a point. Left column is the
- * honed edge, right column the back edge, the middle the fuller. Masterworks gild the ricasso.
+ * A blade along +Y from y0, len rows, half-width w(k) (k = 0..1 along it), two voxels thick. Columns:
+ * honed edge, bevel, body, etched fuller (runes when elemental), body, bevel, back edge.
  */
-function straightBlade(B, L, Q, y0, len, o = {}) {
-  const x0 = o.x0 ?? -1, x1 = o.x1 ?? 1;
+function blade(B, L, Q, y0, len, w, o = {}) {
+  const cx = o.cx || (() => 0);
   for (let i = 0; i < len; i++) {
-    const y = y0 + i, k = i / len;
-    let l = x0, r = x1;
-    if (o.clip && i >= len - 2) l = Math.min(r, x0 + (i - (len - 3)));
-    for (let x = l; x <= r; x++) {
-      const role = x === x0 ? 'edge' : x === x1 ? 'back' : (i >= 1 && i < len - 1) ? 'fuller' : 'body';
-      if (L.bladeKind === 'bone' && role === 'edge' && i % 3 === 2) continue; // notched bone edge
-      if (L.masterwork && role === 'fuller' && i < 2) { B.set(x, y, 0, i === 1 && Q.gem ? glowOf(pick(Q.gem, 0.8)) : pick(Q.trim, 0.85)); continue; }
-      bladeVox(B, L, Q, x, y, k, role);
+    const y = y0 + i, k = i / len, hw = w(k), c = cx(k);
+    if (hw <= 0.2) continue;
+    for (let x = Math.floor(c - hw); x < Math.ceil(c + hw); x++) {
+      const dx = x + 0.5 - c;
+      if (Math.abs(dx) > hw) continue;
+      const fromL = dx + hw, fromR = hw - dx;
+      const role = fromL < 1.05 ? 'edge' : fromR < 1.05 ? 'back' : fromL < 2.05 || fromR < 2.05 ? 'bevel' : Math.abs(dx) < 1.01 && k > 0.06 && k < (o.fuller ?? 0.72) ? 'fuller' : 'body';
+      if (L.bladeKind === 'bone' && role === 'edge' && i % 4 === 3) continue; // a notched bone edge
+      let col;
+      if (L.bladeKind === 'crystal') col = pick(Q.blade, role === 'edge' ? 1 : ((x + y + 30) % 5 < 2 ? 0.75 : 0.5) + (role === 'fuller' ? -0.25 : 0));
+      else if (L.bladeKind === 'bone') col = pick(Q.bone, role === 'edge' ? 0.75 : role === 'fuller' ? 0.25 : (y % 5 === 0 ? 0.3 : 0.5));
+      else col = pick(Q.blade, role === 'edge' ? 1 : role === 'back' ? 0.75 : role === 'bevel' ? 0.75 : role === 'fuller' ? 0.25 : 0.5);
+      for (const z of [-1, 0]) {
+        let v = col;
+        if (role === 'fuller') {
+          const col2 = x + 0.5 - c < 0 ? 0 : 1;
+          if (L.masterwork && k < 0.16) v = Q.gem && i === 2 ? glowOf(pick(Q.gem, 0.85)) : pick(Q.trim, (i + col2) % 2 ? 0.75 : 1);
+          else if (L.glow && runeAt(i, col2)) v = glowOf((i >> 3) & 1 && L.glow2 ? L.glow2 : i % 3 === 0 ? mix(L.glow, '#ffffff', 0.4) : L.glow);
+          else if (L.magma && hash(x, y, 0, 3) > 0.5) v = glowOf(hash(x, y, 1) > 0.5 ? '#ff7a2a' : '#ffc04a');
+          else if (L.star && hash(x, y, 2) > 0.8) v = glowOf('#ffe8a0');
+          else if (L.bladeKind === 'crystal' && i % 3 === 1) v = glowOf(pick(Q.blade, 0.9));
+          else if (!L.glow && runeAt(i, col2) && L.grade >= 2) v = pick(Q.blade, 0.1); // etched, unlit
+        } else if (role === 'edge' && L.glow && L.power >= 4 && hash(x, y, 2) > 0.72) v = glowOf(mix(L.glow, '#ffffff', 0.35));
+        B.set(x, y, z, v);
+      }
     }
   }
-  // the point
-  const tx = o.clip ? x1 : Math.round((x0 + x1) / 2);
-  B.set(tx, y0 + len, 0, L.bladeKind === 'bone' ? pick(Q.bone, 0.8) : pick(Q.blade, 0.95));
   if (L.fangs) for (let f = 0; f < Math.min(3, L.fangs); f++) {
-    const fy = y0 + 3 + f * Math.max(3, Math.floor(len / 4));
-    if (fy + 1 >= y0 + len) break;
-    B.set(x0 - 1, fy, 0, pick(Q.bone, 0.55)); B.set(x0 - 1, fy + 1, 0, pick(Q.bone, 0.7)); B.set(x0 - 2, fy + 1, 0, pick(Q.bone, 0.9));
+    const k = 0.2 + f * 0.22, y = y0 + Math.round(k * len), x = Math.floor(cx(k) - w(k)) - 1;
+    B.cap([x + 1, y, -0.5], [x - 2.5, y + 3, -0.5], 1.1, 0.3, (xx, yy, zz, t) => pick(Q.bone, 0.5 + t * 0.5));
   }
-  return y0 + len + 1;
+  return y0 + len;
+}
+/** A crossguard bar across y0..y0+1 of half-width hw, curling up at the tips with the grade. */
+function guard(H, Q, L, y0, hw) {
+  for (let x = -hw; x < hw; x++) for (let y = y0; y < y0 + 2; y++) for (let z = -2; z < 2; z++) {
+    const ax = Math.abs(x + 0.5), centre = ax < 2.6;
+    if (!centre && (z === -2 || z === 1)) continue;
+    H.set(x, y, z, pick(Q.trim, y > y0 ? 0.75 : 0.5) );
+  }
+  if (Q.gem) for (const z of [-2, 1]) for (const x of [-1, 0]) for (const y of [y0, y0 + 1]) H.set(x, y, z + (z < 0 ? -1 : 1), glowOf(pick(Q.gem, y > y0 ? 0.9 : 0.7)));
+  else for (const z of [-3, 2]) H.ell(-0, y0 + 1, z + 0.5, 1.4, 1.4, 0.8, pick(Q.trim, 0.9));
+  if (L.grade >= 2) for (const sx of [-1, 1]) H.cap([sx * (hw - 0.5), y0 + 1, -0.5], [sx * (hw + 0.6), y0 + 4, -0.5], 1.1, 0.7, () => pick(Q.trim, 0.9));
+  if (L.masterwork) for (const sx of [-1, 1]) {
+    H.cap([sx * (hw + 0.6), y0 + 4, -0.5], [sx * (hw - 0.8), y0 + 6.5, -0.5], 0.8, 0.5, () => pick(Q.trim, 1)); // the curl turns back in
+    H.cap([sx * 3.5, y0 + 1.5, -0.5], [sx * 4.8, y0 + 4.5, -0.5], 0.9, 0.5, () => pick(Q.trim, 0.8)); // wings by the ricasso
+    H.cap([sx * 1.6, y0, -0.5], [sx * 1.6, y0 - 3, -0.5], 0.8, 0.6, () => pick(Q.trim, 0.6)); // langets down the grip
+  }
 }
 
 // ------------------------------------------------------------------ builders: return { hilt: VPart, blade: VPart, tip }
 const BUILD = {
   sword(L, Q) {
     const H = new VPart(), B = new VPart();
-    const mw = L.masterwork, half = mw ? 4 : L.grade >= 2 ? 3 : 2;
-    grip(H, Q, -4, 0);
-    pommel(H, Q, L, -5);
-    // crossguard: grows and curls with the grade; a stone (or boss) at the heart
-    for (let x = -half; x <= half; x++) H.set(x, 0, 0, pick(Q.trim, 0.42 + (x < 0 ? 0.22 : 0) + (Math.abs(x) === half ? 0.18 : 0)));
-    for (const z of [-1, 1]) H.set(0, 0, z, Q.gem ? glowOf(pick(Q.gem, 0.75)) : pick(Q.trim, 0.82));
-    if (L.grade >= 2) for (const sx of [-1, 1]) H.set(sx * half, 1, 0, pick(Q.trim, 0.78));
-    if (mw) for (const sx of [-1, 1]) {
-      H.set(sx * half, 2, 0, pick(Q.trim, 0.92)); // tall curling quillons
-      H.set(sx * 2, 1, 0, pick(Q.trim, 0.7)); // wings beside the ricasso
-      H.set(sx, -1, 0, pick(Q.trim, 0.55)); // langets down the grip
-    }
-    const tip = straightBlade(B, L, Q, 1, 15);
+    grip(H, Q, -8, 0);
+    pommel(H, Q, L, -9.5);
+    guard(H, Q, L, 0, L.masterwork ? 9 : L.grade >= 2 ? 7.5 : 6);
+    const tip = blade(B, L, Q, 2, 32, (k) => (k < 0.08 ? 3.1 : k < 0.74 ? 4 - k * 0.6 : (3.55) * (1 - (k - 0.74) / 0.26)));
     return { hilt: H, blade: B, tip: tip * WVS };
   },
   dagger(L, Q) {
     const H = new VPart(), B = new VPart();
-    grip(H, Q, -3, 0);
-    pommel(H, Q, L, -4);
-    for (let x = -2; x <= 2; x++) H.set(x, 0, 0, pick(Q.trim, 0.45 + (x < 0 ? 0.2 : 0)));
-    if (Q.gem) H.set(0, 0, 1, glowOf(pick(Q.gem, 0.75)));
-    if (L.grade >= 2) { H.set(2, 1, 0, pick(Q.trim, 0.8)); H.set(-2, -1, 0, pick(Q.trim, 0.65)); } // an S-guard
-    const tip = straightBlade(B, L, Q, 1, 6, { clip: true });
+    grip(H, Q, -6, 0);
+    pommel(H, Q, L, -7.5);
+    guard(H, Q, L, 0, 4.5);
+    const tip = blade(B, L, Q, 2, 15, (k) => (k < 0.66 ? 3.2 - k * 0.6 : 2.8 * (1 - (k - 0.66) / 0.34) + 0.1), { cx: (k) => k * k * 2, fuller: 0.6 });
     return { hilt: H, blade: B, tip: tip * WVS };
   },
   axe(L, Q) {
     const H = new VPart(), B = new VPart();
-    haft(H, Q, -8, 15);
-    grip(H, Q, -4, 1);
-    H.set(0, -9, 0, pick(Q.trim, 0.6));
-    collar(H, Q, 10); collar(H, Q, 14);
-    if (Q.gem) for (const z of [-1, 1]) H.set(0, 12, z, glowOf(pick(Q.gem, 0.75)));
+    haft(H, Q, -18, 33);
+    grip(H, Q, -10, 2);
+    H.ell(0, -19, 0, 2.4, 1.6, 2.4, () => pick(Q.trim, 0.6));
+    collar(H, Q, 22, 24); collar(H, Q, 30, 32);
+    if (Q.gem) for (const z of [-3, 2]) H.ell(-0, 27, z + 0.5, 1.3, 1.5, 0.8, (x, y, zz, d) => glowOf(pick(Q.gem, d < 0.4 ? 0.9 : 0.6)));
     // a bearded bit flaring to a long bright edge
-    const cols = [[2, 10, 14], [3, 9, 15], [4, 8, 15], [5, 7, 16]];
-    for (const [x, y0, y1] of cols) for (let y = y0; y <= y1; y++) {
-      const edge = x === 5, k = (y - y0) / (y1 - y0);
-      if (L.glow && x === 3 && (y === 11 || y === 13)) { B.set(x, y, 0, glowOf(y === 13 && L.glow2 ? L.glow2 : L.glow)); continue; }
-      if (edge && L.glow && L.power >= 4 && hash(x, y, 2) > 0.7) { B.set(x, y, 0, glowOf(mix(L.glow, '#ffffff', 0.35))); continue; }
-      if (L.masterwork && x === 2 && (y === 10 || y === 14)) { B.set(x, y, 0, pick(Q.trim, 0.85)); continue; }
-      B.set(x, y, 0, L.bladeKind === 'bone' ? pick(Q.bone, edge ? 0.6 : 0.45) : pick(Q.blade, edge ? 0.9 : x === 4 ? 0.64 : 0.44 + k * 0.12));
+    for (let x = 2; x <= 13; x++) {
+      const k = (x - 2) / 11, top = 31 + Math.round(k * 2 + k * k * 2), bot = 23 - Math.round(k * k * 9);
+      for (let y = bot; y <= top; y++) for (const z of [-1, 0]) {
+        const edge = x >= 12, bev = x === 11, k2 = (y - bot) / Math.max(1, top - bot);
+        let v = L.bladeKind === 'bone' ? pick(Q.bone, edge ? 0.75 : 0.5) : pick(Q.blade, edge ? 1 : bev ? 0.75 : x < 4 ? 0.25 : 0.5);
+        if (x === 6 && y >= 25 && y <= 29 && L.glow && runeAt(y, 0)) v = glowOf(L.glow);
+        else if (x === 6 && y >= 25 && y <= 29 && L.grade >= 2 && runeAt(y, 0)) v = pick(Q.blade, 0.1);
+        if (edge && L.glow && L.power >= 4 && hash(x, y, 2) > 0.72) v = glowOf(mix(L.glow, '#ffffff', 0.35));
+        if (L.masterwork && x === 3 && (y === bot || y === top)) v = pick(Q.trim, 1);
+        if (k2 < 0 || k2 > 1) continue;
+        B.set(x, y, z, v);
+      }
     }
-    for (let y = 11; y <= 13; y++) B.set(1, y, 0, pick(Q.blade, 0.38));
-    // back spike
-    B.set(-2, 11, 0, pick(Q.blade, 0.5)); B.set(-2, 12, 0, pick(Q.blade, 0.62)); B.set(-3, 12, 0, pick(Q.blade, 0.85));
-    if (L.fangs) { B.set(-1, 15, 0, pick(Q.bone, 0.6)); B.set(-1, 16, 0, pick(Q.bone, 0.85)); }
-    return { hilt: H, blade: B, tip: 17 * WVS };
+    for (let y = 24; y <= 30; y++) for (const x of [1, -2]) for (const z of [-2, 1]) B.set(x, y, z, pick(Q.blade, 0.25));
+    B.cap([-2, 27, -0.5], [-7, 26.5, -0.5], 1.8, 0.4, (x, y, z, t) => pick(Q.blade, t > 0.7 ? 1 : 0.5)); // the back spike
+    if (L.fangs) B.cap([-1, 32, -0.5], [-3, 36, -0.5], 1, 0.3, () => pick(Q.bone, 0.75));
+    return { hilt: H, blade: B, tip: 36 * WVS };
   },
   hammer(L, Q) {
     const H = new VPart(), B = new VPart();
-    haft(H, Q, -8, 12);
-    grip(H, Q, -4, 1);
-    H.set(0, -9, 0, pick(Q.trim, 0.6));
-    collar(H, Q, 10);
-    // an octagonal head with banded collars and bright striking faces
-    for (let x = -4; x <= 4; x++) for (let y = 11; y <= 15; y++) for (let z = -2; z <= 2; z++) {
-      if (Math.abs(y - 13) === 2 && Math.abs(z) === 2) continue;
-      const ax = Math.abs(x), face = ax === 4, band = ax === 3;
-      let c = band ? pick(Q.trim, 0.6 + (y > 13 ? 0.2 : 0)) : pick(Q.blade, face ? 0.86 : 0.42 + (y > 13 ? 0.16 : 0) + (z > 0 ? 0.05 : 0) + (x < 0 ? 0.04 : 0));
-      if (face && L.glow && (y + z) % 2 === 0) c = glowOf(L.glow);
-      B.set(x, y, z, c);
+    haft(H, Q, -17, 24, 1.8);
+    grip(H, Q, -10, 2);
+    H.ell(0, -18, 0, 2.4, 1.6, 2.4, () => pick(Q.trim, 0.6));
+    collar(H, Q, 19, 21, 2.8);
+    // an octagonal head: banded collars, bright striking faces, a stone or a golem core
+    for (let x = -9; x < 9; x++) for (let y = 21; y < 32; y++) for (let z = -5; z < 5; z++) {
+      const dy = y + 0.5 - 26.5, dz = z + 0.5;
+      if (Math.abs(dy) + Math.abs(dz) > 7.6) continue;
+      const ax = Math.abs(x + 0.5), face = ax > 8, band = ax > 5.5 && ax < 7.5;
+      let v = band ? pick(Q.trim, dy > 0 ? 0.75 : 0.5) : pick(Q.blade, face ? 1 : dy > 2 ? 0.75 : dy < -3 ? 0.25 : 0.5);
+      if (face && L.glow && (y + z) % 3 === 0) v = glowOf(L.glow);
+      B.set(x, y, z, v);
     }
-    if (L.core) for (const [x, y] of [[0, 13], [1, 13], [-1, 13], [0, 12], [0, 14]]) B.set(x, y, 2, glowOf(x === 0 && y === 13 ? '#fff0b0' : '#ffb84a'));
-    else if (Q.gem) for (const z of [-2, 2]) B.set(0, 13, z, glowOf(pick(Q.gem, 0.78)));
-    if (L.masterwork) for (const x of [-2, 0, 2]) B.set(x, 16, 0, pick(Q.trim, 0.85));
-    if (L.fangs) for (const x of [-3, 3]) { B.set(x, 16, 0, pick(Q.bone, 0.6)); B.set(x, 17, 0, pick(Q.bone, 0.85)); }
-    return { hilt: H, blade: B, tip: 16 * WVS };
+    if (L.core) B.ell(-0, 26.5, 4.5, 2.6, 2.6, 1.4, (x, y, z, d) => glowOf(d < 0.35 ? '#fff0b0' : '#ffb84a'));
+    else if (Q.gem) for (const z of [-5, 4]) B.ell(-0, 26.5, z + 0.5, 1.8, 1.8, 1, (x, y, zz, d) => glowOf(pick(Q.gem, d < 0.4 ? 0.9 : 0.6)));
+    if (L.masterwork) for (const x of [-5, -1, 3]) B.cap([x + 0.5, 32, -0.5], [x + 0.5, 34, -0.5], 1, 0.5, () => pick(Q.trim, 1));
+    if (L.fangs) for (const x of [-6, 6]) B.cap([x, 32, -0.5], [x, 36, -0.5], 1.1, 0.3, () => pick(Q.bone, 0.75));
+    return { hilt: H, blade: B, tip: 34 * WVS };
   },
   spear(L, Q) {
     const H = new VPart(), B = new VPart();
-    haft(H, Q, -11, 22);
-    grip(H, Q, -4, 3);
-    H.set(0, -12, 0, pick(Q.trim, 0.6));
-    collar(H, Q, 21); H.set(0, 22, 0, pick(Q.trim, 0.7));
-    if (Q.gem) H.set(0, 21, 1, glowOf(pick(Q.gem, 0.75)));
+    haft(H, Q, -22, 45, 1.5);
+    grip(H, Q, -8, 4);
+    H.ell(0, -23, 0, 2.2, 1.6, 2.2, () => pick(Q.trim, 0.6));
+    collar(H, Q, 42, 46, 2.4);
+    if (Q.gem) H.ell(-0, 44, 2.5, 1.2, 1.4, 1, (x, y, z, d) => glowOf(pick(Q.gem, 0.8)));
     // a tassel hanging from the socket
-    for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (let y = 18; y <= 20; y++) H.set(x, y, z, L.glow ? mix(L.glow, '#8a1a10', 0.45 + (y - 18) * 0.1) : rgb(y === 18 ? '#8a2018' : (x + z + y) & 1 ? '#c8402a' : '#a83020'));
-    // a leaf blade with a raised spine
-    B.set(0, 23, 0, pick(Q.blade, 0.5));
-    for (let y = 24; y <= 29; y++) for (let x = -1; x <= 1; x++) bladeVox(B, L, Q, x, y, (y - 24) / 6, x === -1 ? 'edge' : x === 1 ? 'back' : y > 24 && y < 29 ? 'fuller' : 'body');
-    B.set(0, 30, 0, pick(Q.blade, 0.82)); B.set(0, 31, 0, pick(Q.blade, 0.95));
-    if (L.masterwork) for (const sx of [-1, 1]) B.set(sx * 2, 24, 0, pick(Q.trim, 0.85)); // gilded wings
-    return { hilt: H, blade: B, tip: 32 * WVS };
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      H.cap([Math.cos(a) * 2, 42, Math.sin(a) * 2], [Math.cos(a) * 3, 36 - (i % 3), Math.sin(a) * 3], 0.7, 0.55, () => (L.glow ? mix(L.glow, '#6a1010', 0.5) : rgb(i % 2 ? '#c8402a' : '#9a2a1a')));
+    }
+    const tip = blade(B, L, Q, 46, 20, (k) => (k < 0.15 ? 1.4 + k * 14 : k < 0.5 ? 3.5 : 3.5 * (1 - (k - 0.5) / 0.5) + 0.2), { fuller: 0.75 });
+    if (L.masterwork) for (const sx of [-1, 1]) B.cap([sx * 3, 48, -0.5], [sx * 5.5, 46, -0.5], 0.8, 0.4, () => pick(Q.trim, 1));
+    return { hilt: H, blade: B, tip: tip * WVS };
   },
   staff(L, Q) {
     const H = new VPart(), B = new VPart();
-    // a gnarled shaft that wanders a voxel either way, with knots
-    let px = 0;
-    for (let y = -11; y < 15; y++) {
-      const x = Math.round(Math.sin(y * 0.33) * 0.8);
-      if (x !== px) H.set(px, y, 0, pick(Q.wood, 0.36));
-      H.set(x, y, 0, pick(Q.wood, 0.4 + hash(x, y, 0, 9) * 0.22 + ((y & 3) === 0 ? 0.08 : 0)));
-      if (y === -6 || y === 3) H.set(x + (y < 0 ? 1 : -1), y, 0, pick(Q.wood, 0.3));
-      px = x;
-    }
-    for (let y = -3; y < 2; y++) H.set(Math.round(Math.sin(y * 0.33) * 0.8), y, 0, pick(Q.wrap, (y & 1) ? 0.3 : 0.62));
-    const tx = px;
-    collar(H, Q, 15);
-    H.set(tx, 15, 0, pick(Q.trim, 0.7));
+    // a gnarled shaft wandering up, knotted
+    const pts = [];
+    for (let y = -22; y <= 30; y += 4) pts.push([Math.sin(y * 0.16) * 1.2, y, Math.cos(y * 0.13) * 0.6, 1.8 + ((y + 22) % 16 === 0 ? 0.7 : 0)]);
+    H.path(pts, (x, y, z) => pick(Q.wood, hash(x, y >> 1, z, 4) > 0.82 ? 0.25 : (y & 3) ? 0.5 : 0.75));
+    grip(H, Q, -6, 4);
+    const [tx, , tz] = pts[pts.length - 1];
+    collar(H, Q, 29, 31, 2.6);
     // roots curling up around a cut orb
-    for (const [x, z] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) {
-      for (let y = 16; y <= 18; y++) H.set(tx + x, y, z, pick(Q.wood, 0.45 + (y - 16) * 0.1));
-      H.set(tx + x / 2, 19, z / 2, pick(Q.wood, 0.72));
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4, ca = Math.cos(a), sa = Math.sin(a);
+      H.path([[tx + ca * 1.5, 30, tz + sa * 1.5, 1.2], [tx + ca * 4.8, 34, tz + sa * 4.8, 1], [tx + ca * 4.4, 39, tz + sa * 4.4, 0.8], [tx + ca * 1.4, 42, tz + sa * 1.4, 0.5]], () => pick(Q.wood, 0.5));
     }
     const O = rampOf(L.glow || L.gem || L.blade);
-    for (let x = -1; x <= 1; x++) for (let y = 16; y <= 18; y++) for (let z = -1; z <= 1; z++) {
-      if (Math.abs(x) + Math.abs(y - 17) + Math.abs(z) > 2) continue;
-      const core = x === 0 && y === 17 && z === 0;
-      B.set(tx + x, y, z, glowOf(pick(O, core ? 0.96 : (x + y + z) & 1 ? 0.72 : 0.5)));
-    }
-    return { hilt: H, blade: B, tip: 20 * WVS, orb: true };
+    B.ell(tx, 36.5, tz, 3.6, 4, 3.6, (x, y, z, d) => glowOf(pick(O, d < 0.3 ? 1 : d < 0.65 ? 0.75 : (x + y + z) & 1 ? 0.5 : 0.25)));
+    return { hilt: H, blade: B, tip: 43 * WVS, orb: true };
   },
   pickaxe(L, Q) {
     const H = new VPart(), B = new VPart();
-    haft(H, Q, -8, 13);
-    grip(H, Q, -4, 1);
-    H.set(0, -9, 0, pick(Q.trim, 0.6));
-    collar(H, Q, 11);
-    H.set(0, 14, 0, pick(Q.trim, 0.72));
-    if (Q.gem) H.set(0, 11, 1, glowOf(pick(Q.gem, 0.75)));
-    // two picks curving down to bright points
-    B.set(0, 12, 0, pick(Q.blade, 0.4)); B.set(0, 13, 0, pick(Q.blade, 0.55));
-    for (const sx of [-1, 1]) for (const [x, y, t] of [[1, 12, 0.45], [1, 13, 0.68], [2, 12, 0.45], [2, 13, 0.7], [3, 12, 0.58], [4, 12, 0.62], [5, 11, 0.7], [6, 10, 0.92]]) {
-      B.set(sx * x, y, 0, L.glow && x === 3 ? glowOf(L.glow) : pick(Q.blade, t + (sx < 0 ? 0.06 : 0)));
+    haft(H, Q, -16, 27);
+    grip(H, Q, -9, 1);
+    H.ell(0, -17, 0, 2.4, 1.6, 2.4, () => pick(Q.trim, 0.6));
+    collar(H, Q, 21, 23);
+    if (Q.gem) H.ell(-0, 22, 2.5, 1.2, 1.2, 1, () => glowOf(pick(Q.gem, 0.8)));
+    // two picks, square in section, curving down to bright points
+    for (const sx of [-1, 1]) {
+      let prev = [0, 25];
+      for (let i = 1; i <= 10; i++) {
+        const t = i / 10, x = sx * (1 + t * 13), y = 25 + Math.sin(t * Math.PI * 0.9) * 2 - t * t * 6;
+        const r = 2.3 * (1 - t) + 0.5;
+        B.cap([prev[0], prev[1], -0.5], [x, y, -0.5], r + 0.2, r, (xx, yy) => pick(Q.blade, t > 0.85 ? 1 : yy > y ? 0.75 : 0.5));
+        prev = [x, y];
+      }
+      if (L.glow) B.ell(sx * 6, 26, -0.5, 1, 1, 1.6, () => glowOf(L.glow));
     }
-    return { hilt: H, blade: B, tip: 14 * WVS };
+    B.ell(-0, 25, -0.5, 2.8, 2.6, 2.8, () => pick(Q.blade, 0.25));
+    return { hilt: H, blade: B, tip: 28 * WVS };
   },
 };
 
@@ -280,7 +285,7 @@ export function buildWeaponMesh(w = {}) {
   if (!G) {
     const Q = pal(L);
     const r = (BUILD[w.bp] || BUILD.sword)(L, Q);
-    G = { hilt: r.hilt.geometry(WVS, [0.5, 0, 0.5], { glowIntensity: 2.4, jitter: 0.04 }), blade: r.blade.geometry(WVS, [0.5, 0, 0.5], { glowIntensity: 2.6, jitter: 0.04 }), tip: r.tip, orb: r.orb };
+    G = { hilt: r.hilt.geometry(WVS, [0, 0, 0], { glowIntensity: 2.4 }), blade: r.blade.geometry(WVS, [0, 0, 0], { glowIntensity: 2.6 }), tip: r.tip, orb: r.orb };
     CACHE.set(key, G);
     if (CACHE.size > 60) CACHE.delete(CACHE.keys().next().value);
   }
@@ -294,7 +299,7 @@ export function buildWeaponMesh(w = {}) {
   g.userData.bladeMats = [bladeMat, hiltMat];
   if (blade) blade.userData.len = G.tip;
   if (L.masterwork) {
-    const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.022, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe08a').multiplyScalar(2.5), fog: false }));
+    const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.018, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe08a').multiplyScalar(2.5), fog: false }));
     s.position.set(0, G.tip * 0.97, 0.02); s.castShadow = false;
     g.add(s);
     g.userData.sparkle = s;
@@ -322,7 +327,7 @@ export function crackWeapon(group, amount = 0.5) {
       else box.set(new THREE.Vector3(-0.03, 0.1, -0.01), new THREE.Vector3(0.03, tip, 0.01));
       // jagged voxel-step cracks across the face
       const pts = [];
-      const s = WVS * 0.5;
+      const s = WVS;
       let x = Math.round((box.min.x + r() * (box.max.x - box.min.x)) / s) * s, y = Math.round((box.min.y + r() * (box.max.y - box.min.y)) / s) * s;
       const z = (r() < 0.5 ? box.max.z : box.min.z) + (r() < 0.5 ? 0.002 : -0.002);
       const steps = 4 + Math.floor(r() * 5);
@@ -366,10 +371,10 @@ export function shatterPieces(group, parent = null, opts = {}) {
   group.traverse((o) => {
     if (!o.isMesh || !o.geometry.attributes.color) return;
     const pos = o.geometry.attributes.position, col = o.geometry.attributes.color;
-    const n = o.userData.breakable ? 12 + Math.floor(r() * 6) : 4 + Math.floor(r() * 3);
+    const n = o.userData.breakable ? 16 + Math.floor(r() * 8) : 5 + Math.floor(r() * 3);
     for (let i = 0; i < n; i++) {
       const vi = Math.floor(r() * pos.count);
-      const size = WVS * s * (r() < 0.3 ? 0.5 : 1);
+      const size = WVS * s * (r() < 0.5 ? 1 : 2);
       const mat = r() < 0.15 ? curseM : new THREE.MeshLambertMaterial({ color: new THREE.Color().setRGB(col.getX(vi), col.getY(vi), col.getZ(vi)) });
       const mesh = new THREE.Mesh(cubeGeo, mat);
       mesh.scale.setScalar(size);
