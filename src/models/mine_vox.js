@@ -9,7 +9,7 @@
 //   • prop builders for the things you touch (anvil, tool crate, minecart, slate, note).
 //   • Debris: instanced voxel cubes that bounce and pile up on the floor.
 import * as THREE from 'three';
-import { S, VWorld, C, glowC, mixC, ramp, bayer, box, ell, cyl, cylZ, seg, sag, h3, GLOW, NOAO } from './stage_vox_kit.js';
+import { S, VWorld, C, glowC, ramp, bayer, box, ell, cylZ, seg, h3, GLOW, NOAO } from './stage_vox_kit.js';
 import * as PR from './stage_vox_props.js';
 import { buildOreModel } from './ore_voxel.js';
 import { voxSprite } from '../gfx/voxsprite.js';
@@ -195,8 +195,9 @@ export function meshVox(w, R, opts = {}) {
   group.userData.glow = mk(glo, opts.glowMaterial || new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(opts.glowK ?? 1.7, opts.glowK ?? 1.7, opts.glowK ?? 1.7) }), 'vox-glow');
   return group;
 }
+/** Free a voxel group's buffers (own materials too; shared ones, like the ore models', are kept). */
 export function disposeVox(group) {
-  group.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose && o.material.dispose(); } });
+  group.traverse((o) => { if (!o.isMesh) return; o.geometry.dispose(); if (o.name === 'vox' || o.name === 'vox-glow') o.material.dispose(); });
 }
 
 // ------------------------------------------------------------------ the chamber
@@ -357,7 +358,7 @@ function paintChamber(w, region, BOARD) {
   PR.lampPost(w, U(150), deckV + 1, -4, 16, '#ffd08a');
   for (let k = 0; k < 4; k++) { // jars of glowing stuff
     const u = U(178) + k * 4, col = [accent, '#9affd0', '#ffd27a', '#ff9ab0'][k];
-    box(w, u, deckV + 1, 4, u + 3, deckV + 5, 7, (a, b) => (b === deckV + 4 ? PR.IRON[2] : (a + b) % 3 === 0 ? glowC(mixHex(col, '#ffffff', 0.4)) : glowC(col)));
+    box(w, u, deckV + 1, 4, u + 3, deckV + 5, 7, (a, b) => (b === deckV + 4 ? PR.IRON[2] : b === deckV + 2 && a === u + 1 ? glowC(col) : C(mixHex(col, '#3a2a4a', (a - u) * 0.18))));
   }
   PR.toolRack(w, U(96), Vy(250, -6), -6);
   PR.sign(w, U(170), Vy(118, -5), -5, region === 0 ? 'HOLLOWDEEP' : 'DIG SITE', { paint: '#2e7470', ink: '#fff0c8', hang: 3 });
@@ -370,8 +371,8 @@ function paintChamber(w, region, BOARD) {
   PR.pipe(w, [[U(712), Vy(216, pz), pz], [U(790), Vy(216, pz), pz], [U(980), Vy(216, pz), pz]], 1.8, PR.IRON, { valve: true });
   PR.pipe(w, [[U(712), Vy(236, pz), pz], [U(944), Vy(236, pz), pz], [U(944), FY, pz]], 1.4, PR.BRASS);
   const gU = U(846), gV = Vy(256, -2);
-  ell(w, gU + 0.5, gV + 0.5, -2, 4.2, 4.2, 1.2, (px, py) => (Math.hypot(px + 0.5 - gU - 0.5, py + 0.5 - gV - 0.5) > 3.2 ? PR.BRASS[2] : C('#fff4d8')));
-  for (let k = 0; k < 3; k++) w.set(gU + k, gV + k, 0, C('#c83a3a'));
+  ell(w, gU + 0.5, gV + 0.5, -2, 3.2, 3.2, 1.2, (px, py) => (Math.hypot(px - gU, py - gV) > 2.2 ? PR.BRASS[2] : C('#e8dcc0')));
+  for (let k = 0; k < 2; k++) w.set(gU + k, gV + k, 0, C('#c83a3a'));
   for (const sy of [286, 326]) {
     const v = Vy(sy, 0);
     box(w, U(852), v, -6, U(940), v + 2, 2, (a, b) => ramp(PR.WOOD_PALE, 0.5 + (b === v + 1 ? 0.2 : 0) + n3(a >> 3, b, 1, 3) * 0.1, a, b));
@@ -379,7 +380,7 @@ function paintChamber(w, region, BOARD) {
     for (let k = 0; k < 5; k++) {
       const u = U(860) + k * 4 + (sy & 1), h = 3 + ((k * 7 + sy) % 3);
       const col = [accent, '#9ae8ff', '#ffd27a', '#ff9ab0', '#c8a0ff'][(k + sy) % 5];
-      box(w, u, v + 2, -3, u + 3, v + 2 + h, 0, (a, b) => (b === v + 1 + h ? C('#e8dcc8') : (a + b) % 4 === 0 ? glowC(mixHex(col, '#ffffff', 0.45)) : glowC(col)));
+      box(w, u, v + 2, -3, u + 3, v + 2 + h, 0, (a, b) => (b === v + 1 + h ? C('#e8dcc8') : b === v + 2 + (k % 2) && a === u + 1 ? glowC(col) : C(mixHex(col, '#3a2a4a', (a - u) * 0.18))));
     }
   }
   PR.lantern(w, U(884), Vy(300, 2), 2, '#ffd08a', 4);
@@ -408,14 +409,14 @@ export class RockFace {
     this.stones = new Map(); // 'x,y' → { key, group, w, chips:Set, ore }
   }
   center(x, y) { const c = this.geom.cells[y][x]; return { x: this.BOARD.x + c.cx, y: this.BOARD.y + c.cy }; }
-  /** Rebuild stones whose look changed. flagsOf(tile) → { exposed, flare } */
-  sync(tiles, flagsOf) {
+  /** Rebuild stones whose look changed. flagsOf(tile) → { exposed, flare }; now = scene time (s). */
+  sync(tiles, flagsOf, now = 0) {
     for (const row of tiles) for (const t of row) {
       const id = t.x + ',' + t.y;
       let s = this.stones.get(id);
       if (t.broken) {
         // keep a just-broken stone a moment so the break burst can read its voxels, then let it go
-        if (s) { s.brokenAt = s.brokenAt || performance.now(); if (performance.now() - s.brokenAt > 600) this.remove(t.x, t.y); }
+        if (s) { s.brokenAt = s.brokenAt ?? now; if (now - s.brokenAt > 0.6) this.remove(t.x, t.y); }
         continue;
       }
       const f = flagsOf(t);
@@ -429,7 +430,7 @@ export class RockFace {
     }
   }
   remove(x, y) { const id = x + ',' + y, s = this.stones.get(id); if (s) { this.drop(s); this.stones.delete(id); } }
-  drop(s) { this.group.remove(s.group); disposeVox(s.mesh); if (s.ore) s.ore.traverse((o) => o.isMesh && o.geometry.dispose()); }
+  drop(s) { this.group.remove(s.group); disposeVox(s.group); }
   /** Material tint for dim / hover / flash, and a little shake offset. */
   look(x, y, mul, dx = 0) {
     const s = this.stones.get(x + ',' + y);
@@ -759,5 +760,4 @@ export function oreSprite(id, px) {
 }
 /** A 3D ore model about `size` world units across (cart, tool crate, ore in the stone). */
 export function oreModel(id, size, res = 16) { return buildOreModel(id, { res, vs: size / res, glow: 1.5 }); }
-export { FY as FLOOR_VOXEL, S as VOXEL };
-void sag; void cyl; void mixC; void NOAO;
+export { S as VOXEL };

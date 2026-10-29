@@ -84,7 +84,12 @@ export class MiningScene extends Scene {
     this.amb = au.loop(this.region === 4 ? 'lava' : 'cave');
     this.co.start(function* () { yield 0.7; this.act('wave'); this.phase = 'prep'; }.bind(this));
   }
-  exit() { this.amb && this.amb.stop(1); }
+  exit() {
+    this.amb && this.amb.stop(1);
+    // the voxel room is rebuilt per visit: free its buffers (shared materials and the hero are left alone)
+    for (const g of [this.chamber, this.face && this.face.group, this.slate, ...Object.values(this.props || {})]) if (g) disposeVox(g);
+    if (this.debris) this.debris.mesh.dispose();
+  }
 
   buildWorld() {
     const run = this.game.run;
@@ -93,7 +98,8 @@ export class MiningScene extends Scene {
     const cam = mineCamera();
     // voxel room with baked light; the explorer and the ore get matching real-time lamps
     this.world = { scene, camera: cam, post: { tone: 0, saturation: 1.06, contrast: 1.02, lift: [0, 0, 0], gain: [1, 1, 1], vignette: 0.28, dither: 0, bloom: 0.55, threshold: 0.8, outline: 0.6, edge: 0.3 } };
-    scene.add(buildChamber(this.region, BOARD));
+    this.chamber = buildChamber(this.region, BOARD);
+    scene.add(this.chamber);
     scene.add(new THREE.HemisphereLight(0xd8c8f8, 0x5a3a4a, 1.05));
     const lamps = mineLamps(this.region);
     this.lamps = lamps.slice(0, 2).map((l) => { const p = new THREE.PointLight(0xffc27a, 3.4, 7, 1.2); p.position.set(l.x, l.y, l.z + 0.6); scene.add(p); return p; });
@@ -261,7 +267,7 @@ export class MiningScene extends Scene {
       const x = (q.u + 0.5) * VOXEL, y = (q.v + 0.5) * VOXEL, z = (q.z + 0.5) * VOXEL;
       const dx = x - o.x, dy = y - o.y, d = Math.hypot(dx, dy) || 0.01;
       const sp = rnd.float(0.6, 1.8) * power;
-      this.debris.spawn(x, y, z + 0.02, q.c, (dx / d) * sp + rnd.float(-0.4, 0.4), (dy / d) * sp * 0.8 + rnd.float(0.4, 1.8) * power, rnd.float(0.5, 2.0) * power, 0.95);
+      this.debris.spawn(x, y, z + 0.02, q.c, (dx / d) * sp * 0.6 + rnd.float(-0.3, 0.3), (dy / d) * sp * 0.7 + rnd.float(0.3, 1.4) * power, rnd.float(0.15, 0.85) * power, 0.95);
     }
   }
   chipFx(x, y, sx, sy, n) { this.spray(this.face.chip(x, y, sx, sy, n), sx, sy, 0.8); }
@@ -488,7 +494,7 @@ export class MiningScene extends Scene {
     for (const l of this.lamps) l.intensity = 3.4 + fl;
     this.flicker = fl;
     // voxel world upkeep: stones follow their clue state, the slate its chalk, the cart its bump
-    this.face.sync(this.wall.tiles, (t) => this.stoneFlags(t));
+    this.face.sync(this.wall.tiles, (t) => this.stoneFlags(t), this.time);
     const total = this.mr ? this.mr.strikes + this.mr.used : 3 + (this.pick.strikes || 0), left = this.mr ? this.mr.strikes : total;
     if (this.slateKey !== total + '|' + left) {
       if (this.slate) { this.world.scene.remove(this.slate); disposeVox(this.slate); }
