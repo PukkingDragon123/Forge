@@ -211,10 +211,15 @@ export function voxelizeMonster(m, cellRoot = 0.04) {
     gRgb: mm.glowHex ? hexRgb(mm.glowHex) : mm.tile === TILE.eye ? [1, 0.86, 0.55] : null,
   }));
   const seed = m.seed * 7 + 3;
+  // small creatures get calmer texture: at ~25 voxels tall, surface noise reads as dirt, so forms carry the shading
+  const vh = (hi[1] - lo[1]) / cell - 4;
+  const detail = clamp((vh - 14) / 46, 0.42, 1);
+  const STRUCT = new Set([TILE.crystal, TILE.crust, TILE.lava, TILE.rune, TILE.plate, TILE.gill, TILE.chitin, TILE.eye]);
   const colorOf = (idx, i, j, k, matIdx) => {
     const mm = mats[matIdx];
     const [s0, acc, gm] = pattern(mm.tile, i, j, k, seed + matIdx);
-    let s = s0 + mm.j * 1.4;
+    const dk = STRUCT.has(mm.tile) ? Math.max(detail, 0.85) : detail;
+    let s = 0.5 + (s0 - 0.5) * dk + mm.j * 1.4;
     if (!solid(i, j + 1, k)) s += 0.13; // lit tops
     if (!solid(i, j - 1, k)) s -= 0.1; // shadowed undersides
     if (!solid(i - 1, j, k) && !solid(i, j + 1, k)) s += 0.05; // upper-left rim toward the lamp

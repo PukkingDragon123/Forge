@@ -3,6 +3,7 @@
 // wax and chalk. Diegetic pieces (paper tags on twine, hanging signs, chalk slates, wax seals, nailed
 // scraps) sit beside the classic panel styles. Every result is a cached canvas keyed by style + size.
 import { Painter } from '../art/pixel.js';
+import { voxify, voxRelief } from './vox_ui.js';
 import { hash2, fbm2, clamp, mixHex, shadeHex } from '../core/math.js';
 import {
   INK, HM, WAX, cutMask, tornMask, makeMask, fillMask, inkEdge, wobbleLine, nail, rope, stitches, paperTone, grainTone, waxSeal, slateTone, hexOf,
@@ -78,7 +79,7 @@ function cornerGuard(p, cx, cy, sx, sy, s, seed) {
 }
 
 // ------------------------------------------------------------------ LEATHER (dialogs, plates)
-export function leather(w, h, opts = {}) {
+function paint_leather(w, h, opts = {}) {
   const tone = opts.tone || 'brown';
   const key = `leather|${w}|${h}|${tone}|${opts.stitch !== false}|${opts.rivets !== false}|${opts.seed || 0}`;
   return cached(key, () => {
@@ -116,7 +117,7 @@ export function leather(w, h, opts = {}) {
 }
 
 // ------------------------------------------------------------------ WOOD (warped plank board, individual nails)
-export function wood(w, h, opts = {}) {
+function paint_wood(w, h, opts = {}) {
   const key = `wood|${w}|${h}|${opts.tone || 'oak'}|${opts.vertical ? 1 : 0}|${opts.nails !== false}`;
   return cached(key, () => {
     const W = opts.tone === 'dark' ? HM.plankDark : HM.plank;
@@ -164,7 +165,7 @@ export function wood(w, h, opts = {}) {
 }
 
 // ------------------------------------------------------------------ PLANK (bar with forged iron end straps)
-export function plank(w, h, opts = {}) {
+function paint_plank(w, h, opts = {}) {
   const key = `plank|${w}|${h}|${opts.inset ? 1 : 0}|${opts.tone || ''}`;
   return cached(key, () => {
     const p = new Painter(w, h);
@@ -235,15 +236,15 @@ function forgedPlate(w, h, opts = {}) {
   }
   return p.toCanvas();
 }
-export function iron(w, h, opts = {}) {
+function paint_iron(w, h, opts = {}) {
   return cached(`iron|${w}|${h}|${opts.tone || ''}|${opts.rivets !== false}`, () => forgedPlate(w, h, { dark: opts.tone === 'dark', rivets: opts.rivets }));
 }
-export function steel(w, h, opts = {}) {
+function paint_steel(w, h, opts = {}) {
   return cached(`steel|${w}|${h}|${opts.glyph || ''}|${opts.dark ? 1 : 0}`, () => forgedPlate(w, h, opts));
 }
 
 // ------------------------------------------------------------------ PARCHMENT (deckled, nailed)
-export function parchment(w, h, opts = {}) {
+function paint_parchment(w, h, opts = {}) {
   const key = `parch|${w}|${h}|${opts.seed || 1}|${opts.burnt ?? 1}|${opts.lines ? 1 : 0}|${opts.nails ?? 'auto'}`;
   return cached(key, () => {
     const seed = (opts.seed || 1) * 977 + w * 3 + h;
@@ -275,7 +276,7 @@ export function parchment(w, h, opts = {}) {
 }
 
 // ------------------------------------------------------------------ OPEN BOOK
-export function book(w, h, opts = {}) {
+function paint_book(w, h, opts = {}) {
   return cached(`book|${w}|${h}|${opts.ribbon !== false}`, () => {
     const p = new Painter(w, h);
     const seed = seedOf('book', w, h);
@@ -335,7 +336,7 @@ export function book(w, h, opts = {}) {
 }
 
 // ------------------------------------------------------------------ STONE TABLET
-export function stone(w, h, opts = {}) {
+function paint_stone(w, h, opts = {}) {
   const key = `stone|${w}|${h}|${opts.tone || 'gray'}|${opts.seed || 3}`;
   return cached(key, () => {
     const seed = (opts.seed || 3) * 131 + w + h;
@@ -369,7 +370,7 @@ export function stone(w, h, opts = {}) {
 }
 
 // ------------------------------------------------------------------ DARK (tooltips, toasts): charcoal card
-export function dark(w, h, opts = {}) {
+function paint_dark(w, h, opts = {}) {
   const key = `dark|${w}|${h}|${opts.accent || 'gold'}`;
   return cached(key, () => {
     const p = new Painter(w, h);
@@ -398,7 +399,7 @@ export function dark(w, h, opts = {}) {
 }
 
 // ------------------------------------------------------------------ GOLD (brass bars, ornate brass frames)
-export function gold(w, h, opts = {}) {
+function paint_gold(w, h, opts = {}) {
   const key = `gold|${w}|${h}|${opts.inner || ''}|${opts.notch ? 1 : 0}`;
   return cached(key, () => {
     const G = HM.brass;
@@ -434,7 +435,7 @@ export function gold(w, h, opts = {}) {
 }
 
 // ------------------------------------------------------------------ SLOT (carved hollow)
-export function slot(w, h, opts = {}) {
+function paint_slot(w, h, opts = {}) {
   const key = `slot|${w}|${h}|${opts.tone || 'leather'}|${opts.glow || ''}`;
   return cached(key, () => {
     const T = {
@@ -464,7 +465,7 @@ export function slot(w, h, opts = {}) {
  *        | 'red' | 'green' | 'purple' (wax slab with an embossed seal).
  * state: 'idle' | 'hover' | 'down' | 'off'.  Face is h-3 tall; the bottom 3 px are its thickness.
  */
-export function button(w, h, style = 'wood', state = 'idle') {
+function paint_button(w, h, style = 'wood', state = 'idle') {
   const key = `btn|${w}|${h}|${style}|${state}`;
   return cached(key, () => {
     const p = new Painter(w, h);
@@ -525,7 +526,7 @@ export function button(w, h, style = 'wood', state = 'idle') {
 }
 
 // ------------------------------------------------------------------ RIBBON BANNER (15 px tall cloth)
-export function ribbon(w, color = 'red') {
+function paint_ribbon(w, color = 'red') {
   const key = `ribbon|${w}|${color}`;
   return cached(key, () => {
     const pal = {
@@ -562,7 +563,7 @@ export function ribbon(w, color = 'red') {
 }
 
 // ------------------------------------------------------------------ BARS (HP, progress)
-export function bar(w, h, fill, colors = ['#7a1a22', '#d03a3a', '#ff8a7a'], back = '#1a0d10') {
+function paint_bar(w, h, fill, colors = ['#7a1a22', '#d03a3a', '#ff8a7a'], back = '#1a0d10') {
   const p = new Painter(w, h);
   p.rect(0, 0, w, h, INK);
   p.rect(1, 1, w - 2, h - 2, back);
@@ -583,7 +584,7 @@ export function bar(w, h, fill, colors = ['#7a1a22', '#d03a3a', '#ff8a7a'], back
 }
 
 // ------------------------------------------------------------------ DIVIDER (hand-inked flourish)
-export function divider(w, color = 'gold') {
+function paint_divider(w, color = 'gold') {
   const key = `div|${w}|${color}`;
   return cached(key, () => {
     const c = color === 'gold' ? [HM.brass[1], HM.brass[4], HM.brass[6]] : ['#3a2a1a', '#8a6a4a', '#c8ac88'];
@@ -609,7 +610,7 @@ export function divider(w, color = 'gold') {
 }
 
 // ------------------------------------------------------------------ CHAIN (vertical blue-steel links)
-export function chain(len, opts = {}) {
+function paint_chain(len, opts = {}) {
   return cached(`chain|${len}|${opts.width || 11}`, () => {
     const W = opts.width || 11;
     const p = new Painter(W, len);
@@ -640,7 +641,7 @@ export function chain(len, opts = {}) {
 }
 
 // ------------------------------------------------------------------ SIGN (arrow signpost)
-export function sign(w, h, opts = {}) {
+function paint_sign(w, h, opts = {}) {
   return cached(`sign|${w}|${h}|${opts.dir || 'right'}`, () => {
     const p = new Painter(w, h);
     const seed = seedOf('sign', w, h);
@@ -671,7 +672,7 @@ export function sign(w, h, opts = {}) {
  * Paper tag on a twine string (luggage tag). Canvas is w × (h + string); the tag body starts at y = string.
  * opts: { tone: 'manila'|'paper'|'brass'|'leather', string = 12, seed }
  */
-export function tag(w, h, opts = {}) {
+function paint_tag(w, h, opts = {}) {
   const str = opts.string ?? 12, tone = opts.tone || 'manila';
   return cached(`tag|${w}|${h}|${tone}|${str}|${opts.seed || 0}`, () => {
     const seed = seedOf('tag', w, h, tone, opts.seed || 0);
@@ -717,7 +718,7 @@ export function tag(w, h, opts = {}) {
  * Wooden board hanging from two ropes (or chains). Canvas is w × (h + hang).
  * opts: { hang = 14, chain = false, planks = auto, tone: 'oak'|'dark', seed }
  */
-export function hangSign(w, h, opts = {}) {
+function paint_hangSign(w, h, opts = {}) {
   const hang = opts.hang ?? 14;
   return cached(`hang|${w}|${h}|${hang}|${opts.chain ? 1 : 0}|${opts.tone || ''}|${opts.seed || 0}`, () => {
     const seed = seedOf('hang', w, h, opts.seed || 0);
@@ -727,7 +728,7 @@ export function hangSign(w, h, opts = {}) {
     // ropes / chains behind the board
     for (const [i, x] of ax.entries()) {
       const top = i ? x - 3 : x + 3;
-      if (opts.chain) { const c = chain(hang + 6, { width: 7 }); p.blit(c, x - 3, -2); }
+      if (opts.chain) { const c = paint_chain(hang + 6, { width: 7 }); p.blit(c, x - 3, -2); }
       else rope(p, top, 0, x, hang + 4, { pal: HM.rope, thick: 2 });
     }
     const mask = cutMask(w, h, seed, { amp: 1, r: 3 });
@@ -755,7 +756,7 @@ export function hangSign(w, h, opts = {}) {
 }
 
 /** Chalk slate in a thin nailed wooden frame. opts: { chalk = true (stub on the ledge), seed } */
-export function slate(w, h, opts = {}) {
+function paint_slate(w, h, opts = {}) {
   return cached(`slate|${w}|${h}|${opts.chalk !== false}|${opts.seed || 0}`, () => {
     const seed = seedOf('slate', w, h, opts.seed || 0);
     const p = new Painter(w, h);
@@ -792,7 +793,7 @@ export function slate(w, h, opts = {}) {
 export const CHALK = HM.chalk[3];
 
 /** Wax seal. d = diameter (≥ 9). opts: { color: 'red'|'green'|'purple'|'blue'|'gold'|'black', glyph, ribbon } */
-export function seal(d, opts = {}) {
+function paint_seal(d, opts = {}) {
   const color = opts.color || 'red', glyph = opts.glyph || 'anvil';
   return cached(`seal|${d}|${color}|${glyph}|${opts.ribbon || ''}`, () => {
     const seed = seedOf('seal', d, color, glyph);
@@ -814,7 +815,7 @@ export function seal(d, opts = {}) {
 }
 
 /** Torn parchment scrap held by nails. opts: { nails: 1|2, seed, lines } */
-export function scrap(w, h, opts = {}) {
+function paint_scrap(w, h, opts = {}) {
   return cached(`scrap|${w}|${h}|${opts.nails ?? 1}|${opts.seed || 0}|${opts.lines ? 1 : 0}`, () => {
     const seed = seedOf('scrap', w, h, opts.seed || 0);
     const p = new Painter(w, h);
@@ -840,7 +841,7 @@ export function scrap(w, h, opts = {}) {
 }
 
 /** Vertical hanging cord (rope or twine) canvas of length len. */
-export function cord(len, opts = {}) {
+function paint_cord(len, opts = {}) {
   return cached(`cord|${len}|${opts.twine ? 1 : 0}`, () => {
     const p = new Painter(4, len);
     rope(p, 1, 0, 1, len - 1, { pal: opts.twine ? HM.twine : HM.rope, thick: 2 });
@@ -849,3 +850,43 @@ export function cord(len, opts = {}) {
 }
 
 export function clearFrameCache() { cache.clear(); }
+
+// ------------------------------------------------------------------ voxel versions
+// Every piece above is the design; what the game draws is its voxel relief (see ui/vox_ui.js).
+export const leather = voxify('leather', paint_leather, { relief: 'emboss' });
+export const wood = voxify('wood', paint_wood, { relief: 'emboss' });
+export const plank = voxify('plank', paint_plank, { relief: 'emboss' });
+export const iron = voxify('iron', paint_iron, { relief: 'emboss' });
+export const steel = voxify('steel', paint_steel, { relief: 'emboss' });
+export const parchment = voxify('parchment', paint_parchment, { relief: 'flat' });
+export const book = voxify('book', paint_book, { relief: 'flat' });
+export const stone = voxify('stone', paint_stone, { relief: 'emboss' });
+export const dark = voxify('dark', paint_dark, { relief: 'flat' });
+export const gold = voxify('gold', paint_gold, { relief: 'emboss' });
+export const slot = voxify('slot', paint_slot, { relief: 'emboss' });
+export const button = voxify('button', paint_button, { relief: 'emboss' });
+export const ribbon = voxify('ribbon', paint_ribbon, { relief: 'emboss' });
+export const divider = voxify('divider', paint_divider, { relief: 'emboss' });
+export const chain = voxify('chain', paint_chain, { relief: 'emboss' });
+export const sign = voxify('sign', paint_sign, { relief: 'emboss' });
+export const tag = voxify('tag', paint_tag, { relief: 'flat' });
+export const hangSign = voxify('hangSign', paint_hangSign, { relief: 'emboss' });
+export const slate = voxify('slate', paint_slate, { relief: 'flat' });
+export const seal = voxify('seal', paint_seal, { relief: 'emboss' });
+export const scrap = voxify('scrap', paint_scrap, { relief: 'flat' });
+export const cord = voxify('cord', paint_cord, { relief: 'emboss' });
+/** Meter: the empty and full bars are voxel reliefs, composited at the current fill (no rebuild per value). */
+const barScratch = new Map();
+export function bar(w, h, fill, colors = ['#7a1a22', '#d03a3a', '#ff8a7a'], back = '#1a0d10') {
+  const k = w + '|' + h + '|' + colors.join(',') + '|' + back;
+  const empty = voxRelief('bar0|' + k, () => paint_bar(w, h, 0, colors, back), { V: 1 });
+  const full = voxRelief('bar1|' + k, () => paint_bar(w, h, 1, colors, back), { V: 1 });
+  let c = barScratch.get(k);
+  if (!c) { c = document.createElement('canvas'); c.width = w; c.height = h; barScratch.set(k, c); }
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(empty, 0, 0);
+  const fw = Math.round(Math.max(0, Math.min(1, fill)) * w);
+  if (fw > 0) ctx.drawImage(full, 0, 0, fw, h, 0, 0, fw, h);
+  return c;
+}

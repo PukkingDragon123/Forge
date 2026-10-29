@@ -12,8 +12,9 @@ import { voxelizeMonster } from './vox_mon.js';
 import { VoxelBurst } from './vox_mon_fx.js';
 import { NORMAL_ARCHES } from './monster_normals.js';
 import { BOSS_ARCHES } from './monster_bosses.js';
+import { RPG_ARCHES } from './vox_mon_rpg.js';
 
-const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES };
+const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES, ...RPG_ARCHES };
 
 // state → duration (seconds). States missing here hold until the next play().
 const DUR = { attack: 0.45, multi: 0.9, special: 0.9, hurt: 0.3, die: 1.2, intro: 0.9, roar: 1.4 };
@@ -389,7 +390,6 @@ export class Monster {
   }
 
   dispose() {
-    // sculpted geometry is cached per id and shared; only per-instance resources are released
     // voxel geometry is cached per id and shared; only per-instance resources are released
     this.mat.dispose(); this.glowMat.dispose(); this.layerMat.dispose();
     this.burst.dispose();

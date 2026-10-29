@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { COLORS } from '../ui/font.js';
 import { ribbon as ui_ribbon } from '../ui/frames.js';
+import { voxRelief } from '../ui/vox_ui.js';
 import { CHARACTERS } from '../data/characters.js';
 import { REGIONS } from '../data/regions.js';
 import { CameraRig } from '../gfx/camera.js';
@@ -82,7 +83,7 @@ export function speech(ui, x, y, text, opts = {}) {
     const tx = Math.floor(w / 2) - 2;
     p.rect(tx, h, 4, 1, fill); p.rect(tx + 1, h + 1, 2, 1, fill); p.set(tx + 1, h + 2, fill);
     p.outline('#140c10');
-    bg = p.toCanvas();
+    bg = voxRelief('bubble|' + key, p.toCanvas(), { relief: 'flat', V: 1 }); // a voxel parchment bubble
     bubbleCache.set(key, bg);
   }
   const bx = Math.round(Math.max(2, Math.min(ui.w - w - 2, x - w / 2))), by = Math.round(y - h - 6);

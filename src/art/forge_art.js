@@ -2,6 +2,7 @@
 // a cast-iron ingot mould, the open recipe book and its ribbon bookmarks, the brass FORGE plaque,
 // a 2D anvil with a glowing billet, and the open leather backpack lying on the cave floor with
 // its burlap cloth and the crack you toss junk into. Warm forge light, teal shadows, inked edges.
+import { voxify } from '../ui/vox_ui.js';
 import { Painter, dither } from './pixel.js';
 import { hash2, fbm2, mixHex, shadeHex, hexToRgb, clamp } from '../core/math.js';
 import { withLights, lightAt, ramp9, pick, ink, plank, nail } from './handpaint.js';
@@ -42,7 +43,7 @@ function scorch(p, cx, cy, rx, ry, seed) {
 // ------------------------------------------------------------------ workbench
 export const BENCH_H = 168;
 /** The scorched workbench (960 × 168): planks, a lipped front edge, tongs, file and chisel at the ends. */
-export function benchCanvas() {
+function paint_benchCanvas() {
   return memo('bench', [{ x: 480, y: -120, r: 760 }, { x: 480, y: 60, r: 420, k: 0.4 }], () => {
     const W = 960, H = BENCH_H;
     const p = new Painter(W, H);
@@ -97,7 +98,7 @@ export function benchCanvas() {
 }
 
 /** Cast-iron ingot mould with n cavities. Returns a canvas with .slots [{x,y,w,h}] (local). */
-export function moldCanvas(n) {
+function paint_moldCanvas(n) {
   return memo('mold|' + n, [{ x: 0, y: -80, r: 520 }], () => {
     const S = 44, G = 8, W = n * S + (n - 1) * G + 24, H = 62;
     const p = new Painter(W, H);
@@ -130,7 +131,7 @@ export function moldCanvas(n) {
 // ------------------------------------------------------------------ the recipe book
 export const BOOK = { w: 330, h: 214 };
 /** Open leather-bound recipe book: two bulging pages, gutter shadow, stacked page edges. */
-export function bookCanvas() {
+function paint_bookCanvas() {
   return memo('book', [{ x: 260, y: -60, r: 520 }], () => {
     const { w: W, h: H } = BOOK;
     const p = new Painter(W, H);
@@ -178,7 +179,7 @@ function pagePts(side, W, H, drop) {
   return pts;
 }
 /** One page turning: a parchment leaf squashed to width w (for the flip animation). */
-export function leafCanvas(w, h) {
+function paint_leafCanvas(w, h) {
   w = Math.max(2, Math.round(w));
   return memo('leaf|' + w + 'x' + h, [{ x: w / 2, y: -40, r: 400 }], () => {
     const p = new Painter(w, h);
@@ -189,7 +190,7 @@ export function leafCanvas(w, h) {
   });
 }
 /** Satin ribbon bookmark with a forked tail. */
-export function ribbonCanvas(color, len) {
+function paint_ribbonCanvas(color, len) {
   return memo('rib|' + color + len, [], () => {
     const W = 14, p = new Painter(W, len);
     const c = [shadeHex(color, -0.5), shadeHex(color, -0.25), color, shadeHex(color, 0.25), shadeHex(color, 0.5)].map(hexToRgb);
@@ -202,7 +203,7 @@ export function ribbonCanvas(color, len) {
 
 // ------------------------------------------------------------------ the FORGE plaque (big button)
 /** Brass plaque nailed to a heavy board, with a hammer crossed behind. state: idle|hover|down|off */
-export function plaqueCanvas(w, h, state = 'idle') {
+function paint_plaqueCanvas(w, h, state = 'idle') {
   return memo(`plaque|${w}x${h}|${state}`, [{ x: w * 0.3, y: -40, r: 300 }], () => {
     const p = new Painter(w + 20, h + 20);
     const iron = ramp9(IRON);
@@ -228,7 +229,7 @@ export function plaqueCanvas(w, h, state = 'idle') {
 
 // ------------------------------------------------------------------ 2D anvil (when no 3D anvil exists)
 /** A big anvil with a glowing billet across its face; heat 0..1 tints the metal. */
-export function anvilFaceCanvas(heat = 1) {
+function paint_anvilFaceCanvas(heat = 1) {
   const hq = Math.round(clamp(heat, 0, 1) * 4);
   return memo('anvil|' + hq, [{ x: 160, y: -80, r: 420 }, { x: 160, y: 40, r: 140, k: 0.5 * hq / 4 }], () => {
     const W = 320, H = 190;
@@ -257,7 +258,7 @@ export function anvilFaceCanvas(heat = 1) {
 // ------------------------------------------------------------------ backpack
 /** Open leather backpack seen from above: the flap thrown back (suede underside up), bulging side
  *  pockets with buckles, a rolled blanket strapped below, and a grid of stitched pockets inside. */
-export function backpackCanvas(gw, gh, cell) {
+function paint_backpackCanvas(gw, gh, cell) {
   return memo(`pack|${gw}x${gh}|${cell}`, [{ x: 150, y: -60, r: 560 }], () => {
     const GW = gw * cell, GH = gh * cell, PAD = 18;
     const W = GW + PAD * 2 + 64, H = GH + PAD * 2 + 120;
@@ -346,7 +347,7 @@ export function backpackCanvas(gw, gh, cell) {
   });
 }
 /** Burlap cloth spread on the ground for loose loot. */
-export function clothCanvas(w, h) {
+function paint_clothCanvas(w, h) {
   return memo(`cloth|${w}x${h}`, [{ x: w * 0.4, y: -80, r: 520 }], () => {
     const p = new Painter(w, h);
     const bur = ramp9(BURLAP, '#ffd090', '#0e1a1a');
@@ -367,7 +368,7 @@ export function clothCanvas(w, h) {
   });
 }
 /** A jagged crack in the floor to toss junk into (glows hot when something is held over it). */
-export function pitCanvas(hot = false) {
+function paint_pitCanvas(hot = false) {
   return memo('pit|' + (hot ? 1 : 0), [{ x: 40, y: -60, r: 260 }], () => {
     const W = 96, H = 48;
     const p = new Painter(W, H);
@@ -390,7 +391,7 @@ export function pitCanvas(hot = false) {
   });
 }
 /** Little paper index tab sticking out of the book. */
-export function indexTabCanvas(w, h, on) {
+function paint_indexTabCanvas(w, h, on) {
   return memo(`itab|${w}x${h}|${on ? 1 : 0}`, [{ x: w / 2, y: -40, r: 300 }], () => {
     const p = new Painter(w, h);
     const paper = ramp9(on ? ['#9a7a52', '#c09a68', '#d8b682', '#ecd2a4', '#f8e6c4'] : ['#7a6040', '#9a7a52', '#b4946a', '#c8aa80', '#d8bc92'], '#ffe2a8', '#2a3a3a');
@@ -401,7 +402,7 @@ export function indexTabCanvas(w, h, on) {
   });
 }
 /** Cave floor under the bag: packed dirt and pebbles in a pool of lantern light. */
-export function floorCanvas(W = 960, H = 540) {
+function paint_floorCanvas(W = 960, H = 540) {
   return memo(`floor|${W}x${H}`, [{ x: W * 0.42, y: H * 0.35, r: 560 }], () => {
     const p = new Painter(W, H);
     const dirt = ramp9(DIRT, '#ffb060', '#06121a');
@@ -428,3 +429,23 @@ export function floorCanvas(W = 960, H = 540) {
   });
 }
 void mixHex;
+
+// ------------------------------------------------------------------ voxel versions
+// The painters above are the designs; the game draws their voxel reliefs (ui/vox_ui.js).
+export const benchCanvas = voxify('benchCanvas', paint_benchCanvas, { relief: 'emboss' });
+export const moldCanvas = voxify('moldCanvas', paint_moldCanvas, { relief: 'emboss' });
+export const bookCanvas = voxify('bookCanvas', paint_bookCanvas, { relief: 'flat' });
+/** Book leaf mid page-turn: width snaps to 4 px steps so the flip reuses a handful of renders. */
+const leafVox = voxify('leafCanvas', paint_leafCanvas, { relief: 'flat' });
+export function leafCanvas(w, h) { return leafVox(Math.max(4, Math.round(w / 4) * 4), Math.round(h)); }
+const ribbonVox = voxify('ribbonCanvas', paint_ribbonCanvas, { relief: 'emboss' });
+export function ribbonCanvas(color, len) { return ribbonVox(color, Math.round(len)); }
+export const plaqueCanvas = voxify('plaqueCanvas', paint_plaqueCanvas, { relief: 'emboss' });
+const anvilVox = voxify('anvilFaceCanvas', paint_anvilFaceCanvas, { relief: 'deep' });
+/** Heat glows in 5 steps, so the hammering reuses five renders. */
+export function anvilFaceCanvas(heat = 1) { return anvilVox(Math.round(clamp(heat, 0, 1) * 4) / 4); }
+export const backpackCanvas = voxify('backpackCanvas', paint_backpackCanvas, { relief: 'emboss' });
+export const clothCanvas = voxify('clothCanvas', paint_clothCanvas, { relief: 'flat' });
+export const pitCanvas = voxify('pitCanvas', paint_pitCanvas, { relief: 'emboss' });
+export const indexTabCanvas = voxify('indexTabCanvas', paint_indexTabCanvas, { relief: 'flat' });
+export const floorCanvas = voxify('floorCanvas', paint_floorCanvas, { relief: 'emboss' });

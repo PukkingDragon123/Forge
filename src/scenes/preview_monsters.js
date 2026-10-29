@@ -1,4 +1,4 @@
-// Monster lineup preview: ?set=0..5 | set=bosses | id=<monster> ; &state=windup|attack|multi|die|hurt|stun|intro|roar|special ; &phase=2
+// Monster lineup preview: ?set=0..5 | set=bosses | id=<monster> ; &state=windup|attack|multi|die|hurt|stun|intro|roar|special ; &phase=2 ; &zoom=2 ; &yaw=-0.3
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
 import { CameraRig } from '../gfx/camera.js';
@@ -43,9 +43,10 @@ export class PreviewMonsters extends Scene {
     const warm = new THREE.PointLight(0xff9a4a, 8, 12, 1.4); warm.position.set(-total / 2, 1.5, 2.5); scene.add(warm);
     this.rig = new CameraRig(30);
     const hf = 2 * Math.atan(Math.tan((30 * Math.PI) / 360) * (16 / 9));
-    const dist = Math.max((total / 2 + 0.6) / Math.tan(hf / 2), (maxH * 0.75) / Math.tan((30 * Math.PI) / 360), 2.2);
+    const dist = Math.max((total / 2 + 0.6) / Math.tan(hf / 2), (maxH * 0.75) / Math.tan((30 * Math.PI) / 360), 2.2) / +(q.get('zoom') || 1);
     const yaw = +(q.get('yaw') ?? -0.3); // default: front three-quarter (monsters face −X)
-    this.rig.cut([Math.sin(yaw) * dist, maxH * 0.55 + dist * 0.12, Math.cos(yaw) * dist], [0, maxH * 0.42, 0], 30);
+    const zy = q.get('zoom') ? maxH * 0.5 : maxH * 0.42;
+    this.rig.cut([Math.sin(yaw) * dist, zy + maxH * 0.13 + dist * 0.12, Math.cos(yaw) * dist], [0, zy, 0], 30);
     this.rig.sway = 0;
     this.world = { scene, camera: this.rig.camera, post: {} };
     this.state = q.get('state');

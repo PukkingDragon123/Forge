@@ -36,6 +36,13 @@ export function ramp(pal, v, a, b) {
   return t - i > 0.5 + (bayer(a, b) - 0.5) * 0.4 ? pal[Math.min(i + 1, pal.length - 1)] : pal[i];
 }
 export const P = (arr) => arr.map(C);
+const toneCache = new Map();
+/** Flat (undithered) pick at v∈[0,1] with half-steps mixed between palette entries: big calm colour areas. */
+export function tone(pal, v) {
+  let t = toneCache.get(pal);
+  if (!t) { t = []; for (let i = 0; i < pal.length; i++) { t.push(pal[i]); if (i < pal.length - 1) t.push(mixC(pal[i], pal[i + 1], 0.5)); } toneCache.set(pal, t); }
+  return t[Math.max(0, Math.min(t.length - 1, Math.round(v * (t.length - 1))))];
+}
 
 // ------------------------------------------------------------------ the world
 export class VWorld {
@@ -161,6 +168,7 @@ export function makeLightRig(o) {
     keyDir: kd.map((v) => v / kl),
     lamps: (o.lamps || []).map((l) => ({ x: l.x, y: l.y, z: l.z, r: l.r, i: l.i ?? 1, c: lin(l.c) })),
     bands: o.bands ?? 14,
+    dither: o.dither ?? 0,
     gamma: o.gamma ?? 1,
   };
 }
@@ -186,15 +194,16 @@ function lightAt(R, lamps, px, py, pz, nx, ny, nz, out) {
 
 /**
  * Mesh a world (or the cells inside bounds, voxel ints) into { solid, glow } BufferGeometries.
- * opts: bounds, room (faces whose outside cell leaves this voxel box are culled), light (makeLightRig), skip: Set of 'a,s' face dirs never seen (default back faces '2,-1'),
+ * opts: bounds, room (array of voxel boxes; faces whose outside cell leaves them all are culled), light (makeLightRig), skip: Set of 'a,s' face dirs never seen (default back faces '2,-1'),
  * bottomAbove: only emit downward faces for voxels above this voxel y (ceilings, overhangs).
  */
 export function meshWorld(w, opts = {}) {
   const R = opts.light || makeLightRig({});
+  const SC = opts.scale || S; // world size of one voxel (coarse far shells use 2·S)
   const skip = opts.skip || new Set(['2,-1']);
   const bottomAbove = opts.bottomAbove ?? -1e9;
   const bnd = opts.bounds || null;
-  const room = opts.room || null; // voxel box: faces looking out of it (outer shells) are never seen
+  const room = opts.room || null; // voxel boxes (union): faces looking out of them (outer shells) are never seen
   const out = { solid: new QuadBuf(), glow: new QuadBuf() };
   const L = [0, 0, 0];
   const N2 = CS * CS;
@@ -205,7 +214,7 @@ export function meshWorld(w, opts = {}) {
     const cz = (k % 4096) - 2048, cy = (Math.floor(k / 4096) % 4096) - 2048, cx = Math.floor(k / 16777216) - 2048;
     const ox = cx * CS, oy = cy * CS, oz = cz * CS;
     if (bnd && (ox + CS <= bnd.x0 || ox >= bnd.x1 || oy + CS <= bnd.y0 || oy >= bnd.y1 || oz + CS <= bnd.z0 || oz >= bnd.z1)) continue;
-    const mx = (ox + 16) * S, my = (oy + 16) * S, mz = (oz + 16) * S, half = 16 * S * 1.75;
+    const mx = (ox + 16) * SC, my = (oy + 16) * SC, mz = (oz + 16) * SC, half = 16 * SC * 1.75;
     const lamps = R.lamps.filter((l) => Math.hypot(l.x - mx, l.y - my, l.z - mz) < l.r + half);
     // neighbour fetch: inside this chunk directly, else through the world
     const g = (lx, ly, lz) => (lx >= 0 && ly >= 0 && lz >= 0 && lx < CS && ly < CS && lz < CS ? ch[lx | (ly << 5) | (lz << 10)] : w.get(ox + lx, oy + ly, oz + lz));
@@ -229,7 +238,12 @@ export function meshWorld(w, opts = {}) {
           const x = ox + lx, y = oy + ly, z = oz + lz;
           if (bnd && (x < bnd.x0 || x >= bnd.x1 || y < bnd.y0 || y >= bnd.y1 || z < bnd.z0 || z >= bnd.z1)) continue;
           if (a === 1 && sgn < 0 && y <= bottomAbove) continue;
-          if (room) { const qx = x + nX, qy = y + nY, qz = z + nZ; if (qx < room.x0 || qx >= room.x1 || qy < room.y0 || qy >= room.y1 || qz < room.z0 || qz >= room.z1) continue; }
+          if (room) {
+            const qx = x + nX, qy = y + nY, qz = z + nZ;
+            let inside = false;
+            for (const b of room) if (qx >= b.x0 && qx < b.x1 && qy >= b.y0 && qy < b.y1 && qz >= b.z0 && qz < b.z1) { inside = true; break; }
+            if (!inside) continue;
+          }
           const ax = lx + nX, ay = ly + nY, az = lz + nZ;
           const nb = g(ax, ay, az);
           const glow = (v & GLOW) !== 0;
@@ -237,8 +251,8 @@ export function meshWorld(w, opts = {}) {
           const r8 = (v >> 16) & 255, g8 = (v >> 8) & 255, b8 = v & 255;
           if (glow) { cR[mi] = LIN[r8]; cG[mi] = LIN[g8]; cB[mi] = LIN[b8]; kAo[mi] = 3; kGlow[mi] = 1; }
           else {
-            lightAt(R, lamps, (x + 0.5 + nX * 0.5) * S, (y + 0.5 + nY * 0.5) * S, (z + 0.5 + nZ * 0.5) * S, nX, nY, nZ, L);
-            const dth = bayer(a === 0 ? z : x, a === 1 ? z : y) - 0.5;
+            lightAt(R, lamps, (x + 0.5 + nX * 0.5) * SC, (y + 0.5 + nY * 0.5) * SC, (z + 0.5 + nZ * 0.5) * SC, nX, nY, nZ, L);
+            const dth = R.dither ? (bayer(a === 0 ? z : x, a === 1 ? z : y) - 0.5) * R.dither : 0;
             const qr = Math.max(0, Math.floor(L[0] * tint * bands + 0.5 + dth * 0.5) / bands);
             const qg = Math.max(0, Math.floor(L[1] * tint * bands + 0.5 + dth * 0.5) / bands);
             const qb = Math.max(0, Math.floor(L[2] * tint * bands + 0.5 + dth * 0.5) / bands);
@@ -281,7 +295,7 @@ export function meshWorld(w, opts = {}) {
             const cu = uu + (c === 1 || c === 2 ? wd : 0), cv = vv + (c >= 2 ? ht : 0);
             const lx = a === 0 ? plane : a === 1 ? cv : cu, ly = a === 1 ? plane : a === 0 ? cu : cv, lz = a === 2 ? plane : a === 1 ? cu : cv;
             const aoK = ka >= 0 ? AO_CURVE[ka] : AO_CURVE[((-1 - ka) >> (c * 2)) & 3];
-            B.vert(base + c, (ox + lx) * S, (oy + ly) * S, (oz + lz) * S, nX, nY, nZ, cR[mi] * aoK, cG[mi] * aoK, cB[mi] * aoK);
+            B.vert(base + c, (ox + lx) * SC, (oy + ly) * SC, (oz + lz) * SC, nX, nY, nZ, cR[mi] * aoK, cG[mi] * aoK, cB[mi] * aoK);
           }
           B.tri(base, sgn > 0);
         }

@@ -3,6 +3,7 @@
 // clutter (barrels, rope, sacks…). Painters read the light list set with withLights().
 import { Painter, dither } from './pixel.js';
 import { hash2, fbm2, mixHex, shadeHex, hexToRgb, clamp } from '../core/math.js';
+import { voxify, voxObject, VoxGrid, rgb as hexRgb, mixRgb } from '../ui/vox_ui.js';
 
 export const WARM = '#ffb35a', TEAL = '#10303a';
 const INK = [22, 12, 10];
@@ -71,7 +72,7 @@ export function wobble(a, b, seed, amp = 2.4, step = 7) {
 }
 
 /** Rock chunk sprite for 2D debris and rubble (irregular, lit from above). */
-export function chunkCanvas(col, seed, size = 6) {
+function paint_chunkCanvas(col, seed, size = 6) {
   return memo('c|' + col + seed + size, () => {
     const p = new Painter(size + 3, size + 3);
     const pts = [];
@@ -251,7 +252,7 @@ export function sack(p, x, y, seed) {
 }
 
 /** Iron lantern with a flame frame (0..3). */
-export function lanternCanvas(frame) {
+function paint_lanternCanvas(frame) {
   return memo('lantern|' + frame, () => {
     const p = new Painter(20, 30);
     const iron = [[30, 26, 28], [60, 54, 56], [110, 98, 92]];
@@ -289,7 +290,7 @@ export function glowCanvas(r, col = WARM) {
 }
 
 /** Parchment scrap (small = pinned on the post; large = readable when hovered). */
-export function noteCanvas(w, h, seed = 3) {
+function paint_noteCanvas(w, h, seed = 3) {
   return memo('note|' + w + 'x' + h + seed, () => {
     const p = new Painter(w, h);
     const edge = [];
@@ -311,7 +312,7 @@ export function noteCanvas(w, h, seed = 3) {
 }
 
 /** Paper tag on a string, for hover labels. Text is drawn on top at runtime. */
-export function tagCanvas(w) {
+function paint_tagCanvas(w) {
   return memo('tag|' + w, () => {
     const h = 18;
     const p = new Painter(w + 8, h + 10);
@@ -323,4 +324,54 @@ export function tagCanvas(w) {
     p.ellipse(w + 1, 6 + h / 2, 1.5, 1.5, [60, 40, 24]);
     return p.toCanvas();
   });
+}
+
+// ------------------------------------------------------------------ voxel versions
+// The game draws voxel models of these little objects (ui/vox_ui.js); the painters above stay as designs.
+export const noteCanvas = voxify('noteCanvas', paint_noteCanvas, { relief: 'flat' });
+export const tagCanvas = voxify('tagCanvas', paint_tagCanvas, { relief: 'flat' });
+
+/** Iron lantern (voxel model): cage, glass, a flame that breathes through 4 frames. */
+export function lanternCanvas(frame) {
+  return voxObject('lantern|' + (frame & 3), () => {
+    const g = new VoxGrid(13, 21, 13);
+    const iron = [[34, 28, 34], [62, 54, 60], [104, 92, 96], [150, 132, 120]];
+    const glass = [[255, 196, 110], [255, 168, 80], [236, 128, 60]];
+    const fh = [7, 8, 7, 9][frame & 3], sway = [0, 1, 0, -1][frame & 3];
+    // glass box with a breathing flame inside (bright core voxels show through the panes)
+    g.fill((x, y, z) => x >= 3 && x <= 9 && z >= 3 && z <= 9 && y >= 4 && y <= 14, (x, y, z) => {
+      const dx = x - 6 - sway * (y - 4) / 10, dz = z - 6, dy = y - 6;
+      const core = dx * dx + dz * dz < (1 - dy / fh) * 6 && dy >= 0 && dy < fh;
+      return core ? (dy < fh * 0.4 ? [255, 252, 230] : [255, 226, 150]) : glass[(x + y + z) % 3 === 0 ? 2 : (y > 11 ? 1 : 0)];
+    });
+    // corner posts, top and bottom plates, cap, handle ring
+    for (const [x, z] of [[2, 2], [10, 2], [2, 10], [10, 10]]) g.box(x, 3, z, x, 15, z, iron[1]);
+    g.box(2, 2, 2, 10, 3, 10, (x, y, z) => (y === 3 ? iron[2] : iron[1]));
+    g.box(1, 1, 1, 11, 1, 11, iron[0]);
+    g.box(2, 15, 2, 10, 15, 10, iron[2]);
+    g.box(3, 16, 3, 9, 16, 9, iron[1]);
+    g.box(4, 17, 4, 8, 17, 8, iron[3]);
+    for (let a = 0; a < 16; a++) { const t = (a / 15) * Math.PI; g.set(6 + Math.round(Math.cos(t) * 3), 18 + Math.round(Math.sin(t) * 2), 6, iron[a % 2 ? 1 : 2]); }
+    // window bars across the glass
+    for (const y of [9]) g.box(2, y, 2, 10, y, 2, iron[0]), g.box(2, y, 10, 10, y, 10, iron[0]);
+    return g;
+  }, { w: 20, h: 30, yaw: -0.55, pitch: 0.18, pad: 1 });
+}
+
+/** Rock chunk (voxel model) for debris and rubble. */
+export function chunkCanvas(col, seed, size = 6) {
+  return voxObject('chunk|' + col + '|' + seed + '|' + size, () => {
+    // ~2px voxels so the faceted faces read at debris size
+    const n = Math.max(3, Math.round(size * 0.6));
+    const g = new VoxGrid(n + 2, n + 2, n + 2);
+    const base = hexRgb(col.startsWith('#') ? col : '#7a6a5a');
+    const hi = mixRgb(base, [255, 228, 190], 0.28), lo = mixRgb(base, [40, 36, 70], 0.35);
+    const c = (n + 2) / 2;
+    g.fill((x, y, z) => {
+      const dx = (x + 0.5 - c) / (n / 2), dy = (y + 0.5 - c) / (n / 2 * 0.8), dz = (z + 0.5 - c) / (n / 2);
+      const r = 1.15 - hash2(x * 7 + z, y, seed) * 0.3;
+      return dx * dx + dy * dy + dz * dz < r;
+    }, (x, y, z) => (hash2(x, y + z * 9, seed + 1) > 0.8 ? hi : hash2(z, x + y * 5, seed + 2) > 0.85 ? lo : base));
+    return g;
+  }, { w: size + 3, h: size + 3, yaw: (seed % 7) * 0.5, pitch: 0.4 + (seed % 3) * 0.2, pad: 0 });
 }

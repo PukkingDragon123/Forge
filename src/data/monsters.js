@@ -12,25 +12,25 @@ function mon(id, o) {
 
 // ============================================================ 0 · HOLLOWDEEP MINE
 mon('rustrat', {
-  name: 'Rustrat', region: 0, hp: 42, dmg: 4, interval: 2.4,
-  attacks: [{ name: 'Gnaw', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Frenzy', dmg: 0.5, windup: 0.7, kind: 'multi', hits: 3, weight: 0.4 }],
+  name: 'Rust Gremlin', region: 0, hp: 42, dmg: 4, interval: 2.4,
+  attacks: [{ name: 'Nail Shiv', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Scrap Frenzy', dmg: 0.5, windup: 0.7, kind: 'multi', hits: 3, weight: 0.4 }],
   drops: [{ id: 'rat_tooth', chance: 1 }, { id: 'rat_tail', chance: 0.7 }, { id: 'junk', chance: 0.3 }],
-  model: { arch: 'rat', body: '#8a6a5a', belly: '#c8a890', accent: '#c87a4a', eye: '#ff4a2a', scale: 0.8 },
-  desc: 'Chews through rails, boots, and patience.',
+  model: { arch: 'gremlin', body: '#7c9c5e', belly: '#cace94', accent: '#6c8c52', eye: '#ffd24a', scale: 1 },
+  desc: 'Picks the rails clean of scrap. Its lantern eyes find your coin purse first.',
 });
 mon('cave_bat', {
-  name: 'Cave Bat', region: 0, hp: 36, dmg: 4, interval: 2.2, dodge: 0.12,
-  attacks: [{ name: 'Swoop', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Screech', dmg: 0.6, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.3 }],
+  name: 'Lanternwing', region: 0, hp: 36, dmg: 4, interval: 2.2, dodge: 0.12,
+  attacks: [{ name: 'Lantern Swoop', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Flare Shriek', dmg: 0.6, windup: 0.9, kind: 'special', effect: 'daze', weight: 0.3 }],
   drops: [{ id: 'bat_fang', chance: 1 }, { id: 'bat_wing', chance: 0.6 }],
-  model: { arch: 'bat', body: '#4a3a52', belly: '#7a6a8a', accent: '#c8a0c0', eye: '#ffd24a', scale: 0.7 },
-  desc: 'Flits. Dodges. Bites. 12% chance your swing hits nothing.',
+  model: { arch: 'lanternwing', body: '#a8463e', belly: '#6a3434', accent: '#d8784a', eye: '#ffe04a', scale: 1 },
+  desc: 'An imp that moved into a lost miner\'s lantern. Flits. Dodges. 12% chance your swing hits nothing.',
 });
 mon('ooze', {
-  name: 'Mine Ooze', region: 0, hp: 68, dmg: 5, interval: 3.0, resist: ['bleed'], weak: ['fire'],
-  attacks: [{ name: 'Slam', dmg: 1, windup: 1.0, kind: 'normal' }, { name: 'Engulf', dmg: 1.4, windup: 1.3, kind: 'heavy', weight: 0.4 }],
+  name: 'Tar Ooze', region: 0, hp: 68, dmg: 5, interval: 3.0, resist: ['bleed'], weak: ['fire'],
+  attacks: [{ name: 'Tar Slam', dmg: 1, windup: 1.0, kind: 'normal' }, { name: 'Engulf', dmg: 1.4, windup: 1.3, kind: 'heavy', weight: 0.4 }],
   drops: [{ id: 'slime_gel', chance: 1 }, { id: 'slime_gel', chance: 0.5 }, { id: 'copper', chance: 0.3 }],
-  model: { arch: 'slime', body: '#6ac04a', belly: '#b0f08a', accent: '#3a7a2a', eye: '#1a2a14', scale: 0.9, inside: 'copper' },
-  desc: 'Swallowed a copper vein and liked it.',
+  model: { arch: 'slime', body: '#342c3e', belly: '#8a78a8', accent: '#1c1624', eye: '#ffc24a', scale: 1.05, inside: 'nails' },
+  desc: 'Pit tar that swallowed nails, ore and at least one pickaxe.',
 });
 mon('kobold', {
   name: 'Kobold Digger', region: 0, hp: 55, dmg: 5, interval: 2.6,
@@ -41,19 +41,19 @@ mon('kobold', {
   desc: 'Small, sneaky, smells of lamp oil. Steals coins.',
 });
 mon('rock_beetle', {
-  name: 'Rock Beetle', region: 0, hp: 80, dmg: 5, interval: 3.0, armor: 2, weak: ['shock'],
-  attacks: [{ name: 'Ram', dmg: 1, windup: 0.9, kind: 'normal' }, { name: 'Shell Spin', dmg: 0.5, windup: 1.0, kind: 'multi', hits: 3, weight: 0.4 }],
+  name: 'Pebble Golem', region: 0, hp: 80, dmg: 5, interval: 3.0, armor: 2, weak: ['shock'],
+  attacks: [{ name: 'Boulder Bash', dmg: 1, windup: 0.9, kind: 'normal' }, { name: 'Rockslide Roll', dmg: 0.5, windup: 1.0, kind: 'multi', hits: 3, weight: 0.4 }],
   drops: [{ id: 'beetle_shell', chance: 0.9 }, { id: 'mandible', chance: 0.6 }],
-  model: { arch: 'beetle', body: '#3a4a6a', belly: '#2a2a3a', accent: '#7ab0ff', eye: '#ff7a3a', scale: 0.9 },
-  desc: 'Armor 2: every hit is reduced by 2.',
+  model: { arch: 'pebblegolem', body: '#8e8278', belly: '#6c6058', accent: '#7ae8ff', eye: '#ffb84a', scale: 1 },
+  desc: 'A rolling knot of ore and gravel. Armor 2: every hit is reduced by 2.',
 });
 mon('mole_brute', {
-  name: 'Burrow Brute', region: 0, tier: 'elite', hp: 210, dmg: 7, interval: 3.0, armor: 1,
-  attacks: [{ name: 'Claw Swipe', dmg: 1, windup: 0.8, kind: 'normal' }, { name: 'Ground Pound', dmg: 1.8, windup: 1.4, kind: 'heavy', weight: 0.5 }, { name: 'Burrow', dmg: 1.2, windup: 1.6, kind: 'unblockable', weight: 0.3 }],
+  name: 'Drill Troll', region: 0, tier: 'elite', hp: 210, dmg: 7, interval: 3.0, armor: 1,
+  attacks: [{ name: 'Fist Swipe', dmg: 1, windup: 0.8, kind: 'normal' }, { name: 'Ground Pound', dmg: 1.8, windup: 1.4, kind: 'heavy', weight: 0.5 }, { name: 'Burrow Drill', dmg: 1.2, windup: 1.6, kind: 'unblockable', weight: 0.3 }],
   drops: [{ id: 'mole_claw', chance: 1 }, { id: 'mole_claw', chance: 0.5 }, { id: 'golem_core', chance: 0.25 }, { id: 'silver', chance: 0.4 }],
-  model: { arch: 'mole', body: '#4a3a3a', belly: '#c89a8a', accent: '#e0d0b0', eye: '#1a0a0a', scale: 1.4 },
+  model: { arch: 'drilltroll', body: '#6a8476', belly: '#a8b89c', accent: '#44564e', eye: '#ffb84a', scale: 1 },
   coins: [18, 26],
-  desc: 'It has been digging longer than you have been alive.',
+  desc: 'Traded an arm for a drill. Iron ore grows on its back like moss.',
 });
 mon('rustjaw', {
   name: 'Old Rustjaw', title: 'The Minecart Colossus', region: 0, tier: 'boss', hp: 470, dmg: 8, interval: 3.2, armor: 3, weak: ['shock'],
@@ -73,18 +73,18 @@ mon('rustjaw', {
 
 // ============================================================ 1 · PRISM HOLLOWS
 mon('shard_bat', {
-  name: 'Shard Bat', region: 1, hp: 40, dmg: 4, interval: 2.0, dodge: 0.15, weak: ['shock'],
+  name: 'Shard Sprite', region: 1, hp: 40, dmg: 4, interval: 2.0, dodge: 0.15, weak: ['shock'],
   attacks: [{ name: 'Crystal Dive', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Shard Rain', dmg: 0.4, windup: 0.9, kind: 'multi', hits: 3, weight: 0.4 }],
   drops: [{ id: 'bat_fang', chance: 0.8 }, { id: 'quartz', chance: 0.6 }, { id: 'bat_wing', chance: 0.4 }],
-  model: { arch: 'bat', body: '#5a6aa0', belly: '#9ab0ff', accent: '#e0f0ff', eye: '#7affff', scale: 0.75, crystals: '#9ae8ff' },
-  desc: 'Its wings chime like glass.',
+  model: { arch: 'sprite', body: '#dce6ff', belly: '#a0b4ff', accent: '#ff9af0', eye: '#7affff', scale: 1, crystals: '#8ae8ff' },
+  desc: 'A crystal fairy. Its wings chime like glass when it dives.',
 });
 mon('crystal_crab', {
-  name: 'Prism Crab', region: 1, hp: 70, dmg: 5, interval: 2.8, armor: 3, weak: ['shock'],
-  attacks: [{ name: 'Pinch', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Refract', dmg: 1.4, windup: 1.2, kind: 'heavy', weight: 0.4 }],
+  name: 'Prism Knight', region: 1, hp: 70, dmg: 5, interval: 2.8, armor: 3, weak: ['shock'],
+  attacks: [{ name: 'Prism Slash', dmg: 1, windup: 0.7, kind: 'normal' }, { name: 'Refract', dmg: 1.4, windup: 1.2, kind: 'heavy', weight: 0.4 }],
   drops: [{ id: 'crab_shell', chance: 0.9 }, { id: 'crystal_claw', chance: 0.7 }, { id: 'amethyst', chance: 0.2 }],
-  model: { arch: 'crab', body: '#7a8ad0', belly: '#c0c8ff', accent: '#ff9af0', eye: '#1a1a3a', scale: 0.9, crystals: '#ff9af0' },
-  desc: 'Wears a geode as a hat. Armor 3.',
+  model: { arch: 'prismknight', body: '#8c98dc', belly: '#cad2ff', accent: '#ff9af0', eye: '#e4f6ff', scale: 1, crystals: '#9ae8ff' },
+  desc: 'Empty crystal armour that still keeps its oath. Armor 3.',
 });
 mon('gem_slime', {
   name: 'Gem Slime', region: 1, hp: 62, dmg: 4, interval: 2.6, resist: ['poison'], weak: ['fire'],
@@ -97,7 +97,7 @@ mon('prism_wisp', {
   name: 'Prism Wisp', region: 1, hp: 48, dmg: 5, interval: 2.4, dodge: 0.1, resist: ['bleed', 'poison'],
   attacks: [{ name: 'Flicker', dmg: 1, windup: 0.6, kind: 'normal' }, { name: 'Lance of Light', dmg: 1.5, windup: 1.2, kind: 'unblockable', weight: 0.3 }],
   drops: [{ id: 'wisp_essence', chance: 0.8 }, { id: 'moonstone', chance: 0.2 }],
-  model: { arch: 'wisp', body: '#9af0ff', belly: '#ffffff', accent: '#ff9af0', eye: '#1a2a4a', scale: 0.8 },
+  model: { arch: 'prismwisp', body: '#9af0ff', belly: '#ffffff', accent: '#ff9af0', eye: '#1a2a4a', scale: 1 },
   desc: 'A lost light that forgot how to be kind.',
 });
 mon('crystal_golem', {

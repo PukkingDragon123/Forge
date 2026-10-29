@@ -167,9 +167,29 @@ const slime = {
     for (let i = 0; i < 7; i++) { const a = (i / 7) * PI * 2 + 0.3; m.ell('body', [cos(a) * 0.46, 0.05, sin(a) * 0.42], [0.11, 0.06, 0.1], gel, { k: 0.09 }); }
     m.box('body', [0, -0.25, 0], [1, 0.25, 1], 0.01, null, { op: 'sub', k: 0.03 });
     m.ell('body', [0.05, 0.56, 0], [0.3, 0.13, 0.27], sheen, { op: 'paint' });
-    // a dull little face — eyes are just dark beads suspended in the jelly
-    for (const s of SIDES) beady(m, 'body', [-0.41, 0.38, s * 0.12], 0.026, null);
-    m.ell('body', [-0.47, 0.25, 0], [0.04, 0.022, 0.07], mouthM, { op: 'sub', k: 0.015 });
+    // a dull little face — eyes are beads suspended in the jelly (tar glows through its murk)
+    const tar = md.inside === 'nails';
+    for (const s of SIDES) beady(m, 'body', [-0.41, 0.38, s * 0.12], tar ? 0.04 : 0.032, tar ? md.eye : null, 2.6);
+    m.ell('body', [-0.47, 0.25, 0], [0.04, 0.026, 0.09], mouthM, { op: 'sub', k: 0.015 });
+    if (tar) {
+      // nails, ore chunks and a lost pickaxe stuck in the tar; drips pooling at the base
+      const steel = m.mat('metal', '#9aa2ae', { acc: '#eef2f8' });
+      const ore = [m.mat('metal', '#d27a3a', { acc: '#ffc08a' }), m.mat('metal', '#7c7e8e', { acc: '#e4e8f4' }), m.mat('metal', '#f2c23e', { acc: '#fff4b4' })];
+      const surf = (a, b, out = 0) => { const ca = cos(a), sa = sin(a), cb = cos(b), sb = sin(b); return [[(0.5 + out) * ca * cb, 0.24 + (0.3 + out) * sb, (0.46 + out) * sa * cb], [ca * cb / 0.5, sb / 0.3, sa * cb / 0.46]]; };
+      for (const [a, b] of [[0.6, 0.5], [2.2, 0.7], [3.9, 0.35], [5.0, 0.9], [1.4, 1.15], [2.9, 0.2], [4.6, 0.55]]) {
+        const [p, n] = surf(a, b), l = Math.hypot(...n), d = n.map((v) => v / l);
+        m.cap('body', [p[0] - d[0] * 0.06, p[1] - d[1] * 0.06, p[2] - d[2] * 0.06], [p[0] + d[0] * 0.12, p[1] + d[1] * 0.12, p[2] + d[2] * 0.12], 0.022, 0.018, steel, { k: 0.004 });
+        m.ell('body', [p[0] + d[0] * 0.125, p[1] + d[1] * 0.125, p[2] + d[2] * 0.125], [0.04, 0.014, 0.04], steel, { dir: d, k: 0.003 });
+      }
+      for (const [[a, b], r, i] of [[[1.0, 0.25], 0.075, 0], [[2.6, 0.45], 0.065, 1], [[4.2, 0.8], 0.06, 2], [[5.6, 0.3], 0.07, 0], [[3.3, 1.1], 0.055, 1], [[0.2, 0.9], 0.05, 2]]) {
+        const [p] = surf(a, b, -0.02);
+        m.ell('body', p, [r, r * 0.8, r * 0.9], ore[i], { k: 0.006, noise: r * 0.25, nf: 1.2 / r, rot: [a, b * 2, a * 0.5] });
+      }
+      m.bone('pick', [0.08, 0.58, -0.06], 'body', { rot: [0.35, 0, -0.5] });
+      m.cap('pick', [0, -0.15, 0], [0, 0.32, 0], 0.024, 0.024, m.mat('wood', '#7a5030', { acc: '#4a2e18' }), { k: 0.005 });
+      m.tube('pick', [[-0.2, 0.28, 0], [-0.08, 0.34, 0], [0.04, 0.35, 0], [0.16, 0.3, 0]], (t) => 0.028 * (1 - Math.abs(t - 0.45)) + 0.012, steel, { k: 0.006 });
+      for (let i = 0; i < 9; i++) { const a = (i / 9) * PI * 2 + 0.4; m.ell('body', [cos(a) * 0.56, 0.035, sin(a) * 0.52], [0.06, 0.035, 0.05], gel, { k: 0.04 }); }
+    }
     if (md.inside === 'copper') {
       const cu = m.mat('rust', '#c8743a', { acc: '#3a9a7a' });
       const sunk = m.mat('slime', mix(md.body, '#c8743a', 0.55), { acc: md.accent });
