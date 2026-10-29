@@ -27,9 +27,19 @@ export function makeWorld(set, opts = {}) {
   return { scene, rig, sparks, dust, P: { add: sparks, alpha: dust }, camera: rig.camera, post: opts.post || {} };
 }
 
+/**
+ * A line for the explorer to say, or '' to stay quiet. The explorers are people of few words:
+ * only one line every ~25 s, and even then only sometimes (key moments like shattering always speak).
+ */
+let lastBark = -1e9;
+const ALWAYS = new Set(['shatter', 'start']);
 export function bark(charId, kind, rng = rnd) {
   const lines = CHARACTERS[charId].barks[kind];
-  return lines ? rng.pick(lines) : '';
+  if (!lines) return '';
+  const now = performance.now();
+  if (!ALWAYS.has(kind) && (now - lastBark < 25000 || rng.next() < 0.45)) return '';
+  lastBark = now;
+  return rng.pick(lines);
 }
 
 // ---------------------------------------------------------------------------- HUD

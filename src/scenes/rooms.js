@@ -45,7 +45,7 @@ class RoomBase extends Scene {
     this.game.audio.music(opts.music || REGIONS[run.region].music);
     this.t = 0;
   }
-  say(text, who = 'hero', dur = 2.6) { this.bubble = { text, who, t: dur }; }
+  say(text, who = 'hero', dur = 2.6) { if (text) this.bubble = { text, who, t: dur }; }
   narrate(text) { if (text !== this.narr.text) this.narr = { text, t: 0 }; }
   tick(dt) {
     this.t += dt;
@@ -347,7 +347,6 @@ export class CampScene extends RoomBase {
     this.w.rig.cut([fire.x + 0.3, 1.8, fire.z + 5.4], [fire.x - 0.1, 0.55, fire.z], 38);
     this.crackle = this.game.audio.loop('campfire');
     this.chosen = null;
-    this.say('A safe spot. Finally.');
     this.narrate('A campsite. The embers are still warm. You have time for one thing: rest, temper or smelt.');
     this.picking = null;
   }
