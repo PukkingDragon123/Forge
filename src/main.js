@@ -5,6 +5,9 @@ import { save } from './core/save.js';
 import { registerScenes } from './scenes/index.js';
 import { Run } from './systems/run.js';
 import { CameraRig } from './gfx/camera.js';
+import { icon, iconNames } from './ui/icons.js';
+import { materialSprite } from './art/sprites.js';
+import { CHARACTERS } from './data/characters.js';
 
 save.load();
 const stage = document.getElementById('stage');
@@ -41,3 +44,16 @@ const boot = document.getElementById('boot');
 if (boot) boot.remove();
 game.go(params.get('scene') || 'title', Object.fromEntries(params.entries()), { transition: 'none' });
 game.start();
+
+// Every 2D sprite is rendered from a voxel model on first use. Warm the common ones in idle time
+// (one per idle slice) so the first bag, card or icon never stutters.
+const warm = [
+  ...iconNames().flatMap((n) => [() => icon(n), () => icon(n + ':s')]),
+  ...[...new Set(Object.values(CHARACTERS).flatMap((c) => c.start || []))].flatMap((id) => [() => materialSprite(id, 32), () => materialSprite(id, 48)]),
+];
+const idle = window.requestIdleCallback || ((f) => setTimeout(() => f({ timeRemaining: () => 8 }), 60));
+const pump = (d) => {
+  while (warm.length && d.timeRemaining() > 4) { try { warm.shift()(); } catch (e) { /* skip */ } }
+  if (warm.length) idle(pump);
+};
+setTimeout(() => idle(pump), 2500);
