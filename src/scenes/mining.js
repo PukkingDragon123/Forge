@@ -329,7 +329,7 @@ export class MiningScene extends Scene {
         case 'melt': au.play('sizzle'); ui.float(`${MATERIALS[ev.mat].name} melted!`, sp.x, sp.y - 10, { color: COLORS.bad }); for (let i = 0; i < 8; i++) this.fx.steam(sp.x + rnd.float(-10, 10), sp.y); this.act('shrug'); yield 0.2; break;
         case 'frozen': au.play('ice_crack'); ui.float('Hazard frozen!', sp.x, sp.y - 10, { color: COLORS.ice }); this.burstAt(ev.x, ev.y, ['#e6fbff', '#7fe3ff'], 20); yield 0.15; break;
         case 'gas': au.play('gas'); ui.float('-1 swing', sp.x, sp.y - 12, { color: COLORS.bad }); this.fx.dust(sp.x, sp.y, 22, '#9ad860', 24); this.hero.play('hurt'); this.speak('*cough* *cough*', 1.4); yield 0.35; break;
-        case 'critter': au.play('monster_growl', { pitch: 1.8 }); ui.float('A rat! -3', sp.x, sp.y - 12, { color: COLORS.bad }); this.fx.dust(sp.x, sp.y, 6); this.hurt(ev.dmg); this.hero.play('hurt'); for (const it of this.mr.haul) if (!this.shown.has(it.uid)) { this.shown.add(it.uid); this.flyers.push({ item: it, x0: sp.x, y0: sp.y, t: 0, dur: 0.7, spin: 4 }); } yield 0.3; break;
+        case 'critter': au.play('monster_growl', { pitch: 1.8 }); ui.float('A gremlin! -3', sp.x, sp.y - 12, { color: COLORS.bad }); this.fx.dust(sp.x, sp.y, 6); this.hurt(ev.dmg); this.hero.play('hurt'); for (const it of this.mr.haul) if (!this.shown.has(it.uid)) { this.shown.add(it.uid); this.flyers.push({ item: it, x0: sp.x, y0: sp.y, t: 0, dur: 0.7, spin: 4 }); } yield 0.3; break;
         case 'cavein': yield* this.caveIn(ev); break;
         case 'scan': au.play('sparkle'); yield 0.2; break;
         case 'radar': ui.float('Rare ore located!', sp.x, sp.y - 14, { color: '#9affb0' }); au.play('qte_success'); this.fx.flare(sp.x, sp.y, '#9affb0', 20, 0.8); yield 0.2; break;

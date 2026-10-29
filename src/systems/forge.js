@@ -233,7 +233,7 @@ function evaluatePick(items, ctx, res) {
 
 const ELEMENT_PREFIX = { fire: 'Searing', ice: 'Frostbitten', shock: 'Thundering', poison: 'Venomous', curse: 'Accursed', holy: 'Blessed', bleed: 'Serrated' };
 const METAL_NAME = { iron: 'Iron', copper: 'Copper', tin: 'Tin', silver: 'Silver', gold: 'Golden', mithril: 'Mithril', stariron: 'Star-Iron', magmasteel: 'Magmasteel', bronze_ancient: 'Bronze', lodestone: 'Lodestone', junk: 'Junk', cursedore: 'Cursed', obsidian: 'Obsidian' };
-const PART_SUFFIX = { bat_fang: 'of the Bat', spider_silk: 'of the Spider', golem_core: 'of the Golem', wyrm_scale: 'of the Wyrm', ectoplasm: 'of the Wraith', rat_tooth: 'of the Rat', mimic_teeth: 'of the Mimic', skull: 'of the Grave', beetle_shell: 'of the Beetle', feather: 'of the Owl', wisp_essence: 'of Wisps', moth_dust: 'of Moths', fire_gland: 'of Embers', salamander_scale: 'of the Salamander', hound_fang: 'of the Hound', venom_sac: 'of Venom' };
+const PART_SUFFIX = { bat_fang: 'of the Lanternwing', spider_silk: 'of the Shaman', golem_core: 'of the Golem', wyrm_scale: 'of the Drake', ectoplasm: 'of the Wraith', rat_tooth: 'of the Gremlin', mimic_teeth: 'of the Mimic', skull: 'of the Grave', beetle_shell: 'of the Pebble Golem', feather: 'of the Gargoyle', wisp_essence: 'of Wisps', moth_dust: 'of Glowcaps', fire_gland: 'of Embers', salamander_scale: 'of the Imp', hound_fang: 'of the Ghoul', venom_sac: 'of Venom' };
 
 export function weaponName(bpId, ids, res) {
   const bp = BLUEPRINTS[bpId].name;

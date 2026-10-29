@@ -11,7 +11,7 @@ export const REGIONS = [
     light: { key: 0xffb060, keyI: 6, fill: 0x5a6a9a, fillI: 0.35, ambient: 0x2a2018 },
     props: ['supports', 'rails', 'lanterns', 'carts', 'crates', 'barrels', 'pickaxes'],
     tunnels: ['tunnel', 'minecart', 'bridge', 'elevator', 'crawl'],
-    critters: ['bat', 'rat', 'firefly'],
+    critters: ['lanternwing', 'firefly', 'dust'],
     hazard: 'Cave-ins',
   },
   {
@@ -25,7 +25,7 @@ export const REGIONS = [
     light: { key: 0x6ad8ff, keyI: 5, fill: 0xb08aff, fillI: 0.45, ambient: 0x141a2e },
     props: ['crystals', 'geodes', 'pools', 'stalactites'],
     tunnels: ['tunnel', 'bridge', 'crystalbridge', 'elevator', 'flooded'],
-    critters: ['wisp', 'firefly', 'bat'],
+    critters: ['wisp', 'firefly', 'shard'],
     hazard: 'Shard falls',
   },
   {
@@ -39,7 +39,7 @@ export const REGIONS = [
     light: { key: 0x5af0c8, keyI: 4.5, fill: 0xe0a04a, fillI: 0.4, ambient: 0x10201a },
     props: ['mushrooms', 'roots', 'vines', 'spores'],
     tunnels: ['tunnel', 'rootbridge', 'bridge', 'crawl', 'flooded'],
-    critters: ['spore', 'firefly', 'moth'],
+    critters: ['spore', 'firefly', 'glowcap'],
     hazard: 'Spore clouds',
   },
   {
