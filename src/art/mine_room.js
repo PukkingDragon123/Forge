@@ -52,7 +52,7 @@ function rockWall(p, region, seed) {
     const wet = fbm2(x * 0.16, y * 0.006, 2, seed + 30);
     if (wet > 0.72) v -= (wet - 0.72) * 0.7;
     if (eB < 2.2 && (((wx - B.s1[0]) * dx + (wy - B.s1[1]) * dy) / (B.d1 || 1)) > 0.3) v += 0.35; // rim light on lamp-facing boulder edges
-    v = v * 0.78 + L * 0.38 - 0.1;
+    v = v * 0.8 + L * 0.52 - 0.2;
     p.set(x, y, grade(pk(rmp, v, x, y), L, cool));
   }
   // fossils and pebbles pressed into the wall
@@ -241,11 +241,11 @@ export function paintRoom(region, opts) {
   for (let x = 712; x < W; x++) { p.set(x, 500, [250, 226, 196]); p.set(x, 501, [170, 160, 180]); p.set(x, 502, [110, 100, 130]); p.set(x, 503, OUTLINE); }
 
   // ---- spoil heap at the foot of the face: tumbled stones, a leaning plank, moss
-  for (let k = 0; k < 46; k++) {
-    const t = hash2(k, 61, seed), x = BOARD.x - 6 + t * (BOARD.w + 12), base = FLOOR_Y + 2 - Math.pow(hash2(k, 62, seed), 1.6) * 54;
-    const r = 4 + hash2(k, 63, seed) * 9, col = S[2 + (k % 4)];
-    const pts = [];
-    for (let q = 0; q < 8; q++) { const a = (q / 8) * Math.PI * 2; pts.push([x + Math.cos(a) * r * (0.8 + hash2(q, k, 64) * 0.35), base - r * 0.7 + Math.sin(a) * r * 0.7]); }
+  for (let k = 0; k < 34; k++) {
+    const t = hash2(k, 61, seed), x = BOARD.x - 6 + t * (BOARD.w + 12), base = FLOOR_Y + 2 - Math.pow(hash2(k, 62, seed), 1.8) * 40;
+    const r = 4 + hash2(k, 63, seed) * 8, col = mixHex(S[3 + (k % 4)], '#3a2c5a', 0.35);
+    const pts = [], nv = 5 + (k % 2), a0 = hash2(k, 66, seed) * 3;
+    for (let q = 0; q < nv; q++) { const a = a0 + (q / nv) * Math.PI * 2; pts.push([x + Math.cos(a) * r * (0.7 + hash2(q, k, 64) * 0.5), base - r * 0.6 + Math.sin(a) * r * 0.62]); }
     fill(p, pts, col, (qx, qy) => 0.5 + (base - r * 0.7 - qy) / r * 0.3 - (qx - x) / r * 0.15, { form: 0.8, lit: 0.36 });
     if (hash2(k, 65, seed) > 0.7) for (let m = -2; m <= 2; m++) p.set(Math.round(x + m), Math.round(base - r * 1.35), MOSS[2 + (m & 1)]);
   }

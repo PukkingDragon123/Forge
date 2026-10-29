@@ -1,14 +1,15 @@
-// The four explorers as detailed voxel figures. Every limb is a finely voxelised part (about
-// 1/50 of a body) with baked ambient occlusion, a soft bevel and per-voxel colour variation,
-// hung on a skeleton of joints. Faces are never shown: Bran hides behind a leather forge mask and
-// goggles, Elio's deep hood holds only darkness and two faint glints, Durgan's horned helm is
-// closed, Clover's hood and scarf leave nothing but shadow. Animation is pose-blended with
-// anticipation and follow-through, body-language "expressions", breathing, squash and spring
-// bones (apron, robe, hood tip, braids, ears, scarf, tail, the held weapon).
+// The four explorers as detailed voxel figures on the game's one voxel grid (0.04 world units, the
+// same for weapons and monsters): each limb is painted in fine design units, then re-voxelised onto
+// that grid so a grown explorer stands about 44 voxels tall, with baked ambient occlusion, a soft
+// bevel and per-voxel colour variation, hung on a skeleton of joints. Faces are never shown: Bran
+// hides behind a leather hood and iron welding mask, Elio's deep hood holds only darkness and two
+// faint glints, Durgan's horned helm is closed, Clover's hood and scarf leave nothing but shadow.
+// Animation is pose-blended with anticipation and follow-through, body-language "expressions",
+// breathing, squash and spring bones (apron, robe, hood tip, braids, ears, scarf, tail, the held weapon).
 import * as THREE from 'three';
 import { LAYER_FX } from '../gfx/renderer.js';
 import { CHARACTERS } from '../data/characters.js';
-import { VPart, rgb, mix, mul, hash, ramp, voxToon, voxGlow, meshPart } from './vox_char_kit.js';
+import { VPart, VOX, rgb, mix, mul, hash, ramp, voxToon, voxGlow } from './vox_char_kit.js';
 import { buildWeaponMesh } from './weapons3d.js';
 
 const TAU = Math.PI * 2;
@@ -20,8 +21,9 @@ const outQ = (t) => 1 - (1 - t) * (1 - t);
 const inQ = (t) => t * t;
 const outBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
-/** World size of one character voxel (a grown explorer is ~50 voxels tall). */
+/** World size of one design unit: parts are painted in these, then re-voxelised onto the VOX grid. */
 export const VS = 0.034;
+const RES = VS / VOX;
 
 // ------------------------------------------------------------------ surface recipes (voxel space)
 const fabric = (cols, s = 1) => (x, y, z) => ramp(cols, 0.55 + (hash(x >> 2, y >> 2, z >> 2, s) - 0.5) * 0.1, x, y, z, s);
@@ -56,22 +58,22 @@ const KINDLE_COLORS = {
   shock: ['#d8a010', '#ffe74a', '#fffbd8', 0xffe74a],
   poison: ['#3a9a2a', '#8fe04a', '#e6ffc0', 0x8fe04a],
 };
-const KVS = 0.0135;
 function kindleGeo(el) {
   const key = 'kindle|' + el;
   if (GEO_CACHE.has(key)) return GEO_CACHE.get(key);
   const [a, b, c] = KINDLE_COLORS[el];
+  // a pixel flame on the shared grid: a round 3×3 belly, white-hot at the heart, licking up to a
+  // leaning tip, with two ember-dark eyes set into its front
   const P = new VPart();
-  // a voxel flame: fat round belly, three licking tongues on top
-  P.loft(0, 9, (y) => { const r = 3.6 * Math.sin(Math.PI * (y + 1.5) / 11) + 0.4; return [r, r * 0.92]; }, (x, y, z, { d }) => ({ glow: true, c: d < 0.35 ? c : d < 0.7 ? b : a }));
-  for (const [tx, h, tz] of [[0, 7, 0], [-2.2, 4, 0.6], [2.1, 5, -0.4]]) P.cap([tx, 7.5, tz], [tx * 1.2, 7.5 + h, tz - 0.6], 1.6, 0.35, () => ({ glow: true, c: b }));
-  P.cap([0, 8.5, 0], [0, 12, -0.5], 0.9, 0.3, () => ({ glow: true, c }));
-  const g = P.geometry(KVS, [0, 4, 0], { glowIntensity: 2.1 });
-  // eyes: two ember-dark voxels
-  const E = new VPart();
-  E.set(-2, 4, 3, '#2a0c10'); E.set(1, 4, 3, '#2a0c10'); E.set(-2, 5, 3, '#3a1418'); E.set(1, 5, 3, '#3a1418');
-  const e = E.geometry(KVS, [0, 4, 0]);
-  const out = { glow: g.glow, eyes: e.solid };
+  for (let y = 0; y < 3; y++) for (let x = -1; x < 2; x++) for (let z = -1; z < 2; z++) {
+    if ((y !== 1) && x !== 0 && z !== 0) continue;
+    const core = x === 0 && z >= 0 && y < 2;
+    P.set(x, y, z, { glow: true, c: core ? c : y === 2 || Math.abs(x) + Math.abs(z) > 1 ? a : b });
+  }
+  for (const [x, y, z, col] of [[0, 3, 0, b], [-1, 3, 0, a], [1, 3, -1, a], [0, 4, 0, a], [0, 5, -1, a]]) P.set(x, y, z, { glow: true, c: col });
+  P.set(-1, 1, 1, '#2a0c10'); P.set(1, 1, 1, '#2a0c10');
+  const g = P.geometry(VOX, [0.5, 1.5, 0.5], { glowIntensity: 2.1, jitter: 0 });
+  const out = { glow: g.glow, eyes: g.solid };
   GEO_CACHE.set(key, out);
   return out;
 }
@@ -94,6 +96,7 @@ export class Kindle {
     }
     this.eyes = new THREE.Mesh(kindleGeo('fire').eyes, this.eyeMat);
     this.body.add(this.eyes);
+    this.halo = null;
     const halo = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff7a2a').multiplyScalar(0.6), transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     halo.layers.set(LAYER_FX);
     this.halo = halo;
@@ -127,7 +130,9 @@ export class Kindle {
     this.halo.scale.setScalar(1 + Math.sin(t * 5) * 0.1 + this.excite * 0.4);
     this.blink -= dt;
     if (this.blink < 0) this.blink = 2 + Math.random() * 3;
-    this.eyes.scale.y = this.blink < 0.1 ? 0.2 : this.excite > 0.3 ? 0.6 : 1;
+    // eyes close by catching the flame's colour (they sit in the flame, so they cannot squash)
+    const shut = this.blink < 0.1 ? 1 : this.excite > 0.3 ? 0.45 : 0;
+    this.eyeMat.emissive.set(KINDLE_COLORS[this.element][1]).multiplyScalar(shut * 0.9);
     this.light.intensity = (0.32 + Math.sin(t * 9) * 0.05 + this.excite * 0.5) * this.lightScale;
   }
 }
@@ -496,7 +501,7 @@ export class Character {
     if (!g) {
       const P = new VPart();
       paint(P);
-      g = P.geometry(VS, o.offset || [0, 0, 0], { glowIntensity: o.glow ?? 2.6 });
+      g = P.resample(RES).geometry(VOX, (o.offset || [0, 0, 0]).map((v) => v * RES), { glowIntensity: o.glow ?? 2.6 });
       GEO_CACHE.set(key, g);
     }
     const grp = new THREE.Group();

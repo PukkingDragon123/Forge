@@ -177,7 +177,7 @@ export function stoneCanvas(geom, tile, pal, flags = {}, region = 0) {
         while (y < c.bh - 3) { pts.push([x, y]); y += 4; x += (hash2(Math.round(y), q, s) - 0.5) * 6; }
         for (let i = 0; i + 1 < pts.length; i++) {
           const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
-          for (let t = 0; t <= 4; t++) { const xx = Math.round(x0 + (x1 - x0) * t / 4), yy = Math.round(y0 + (y1 - y0) * t / 4); if (inside(xx, yy)) { p.set(xx, yy, [238, 236, 255]); if (inside(xx + 1, yy)) p.set(xx + 1, yy, rmp[2]); } }
+          for (let t = 0; t <= 4; t++) { const xx = Math.round(x0 + (x1 - x0) * t / 4), yy = Math.round(y0 + (y1 - y0) * t / 4); if (inside(xx, yy)) { p.set(xx, yy, t % 2 ? rmp[6] : [222, 226, 250]); if (inside(xx + 1, yy)) p.set(xx + 1, yy, rmp[2]); } }
         }
       }
     }

@@ -4,6 +4,9 @@
 // shading and per-voxel colour variation. Emissive voxels go to a separate unlit mesh so they bloom.
 import * as THREE from 'three';
 
+/** World size of one voxel for every voxel model at in-game scale (explorers, weapons, monsters, props). */
+export const VOX = 0.04;
+
 const LIN = new Float32Array(256);
 for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
 export const GLOW = 1 << 24;
@@ -128,6 +131,33 @@ export class VPart {
   mirrorX() { for (const e of [...this.m.values()]) if (e.x >= 0) this.m.set(KEY(-e.x - 1, e.y, e.z), { x: -e.x - 1, y: e.y, z: e.z, v: e.v }); return this; }
   add(other, dx = 0, dy = 0, dz = 0) { for (const e of other.m.values()) this.m.set(KEY(e.x + dx, e.y + dy, e.z + dz), { x: e.x + dx, y: e.y + dy, z: e.z + dz, v: e.v }); return this; }
   get count() { return this.m.size; }
+  /**
+   * Re-voxelise onto a coarser grid (k output voxels per voxel, k < 1) so a part painted in fine
+   * design units lands on the shared world grid. Every voxel maps to the output cell holding its
+   * centre; where several share a cell the one that matters most wins: glowing, then exposed, then
+   * the one that stands out from its neighbours (seams, slits, rivets, glints survive the downsample).
+   */
+  resample(k) {
+    if (k === 1) return this;
+    const best = new Map();
+    const N = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    for (const e of this.m.values()) {
+      const ox = Math.floor((e.x + 0.5) * k), oy = Math.floor((e.y + 0.5) * k), oz = Math.floor((e.z + 0.5) * k);
+      const key = KEY(ox, oy, oz);
+      let s = e.v & GLOW ? 1e6 : 0, open = false, diff = 0;
+      for (const n of N) {
+        const ne = this.m.get(KEY(e.x + n[0], e.y + n[1], e.z + n[2]));
+        if (!ne) { open = true; continue; }
+        diff += Math.abs(((e.v >> 16) & 255) - ((ne.v >> 16) & 255)) + Math.abs(((e.v >> 8) & 255) - ((ne.v >> 8) & 255)) + Math.abs((e.v & 255) - (ne.v & 255));
+      }
+      s += (open ? 1e4 : 0) + diff / 6;
+      const b = best.get(key);
+      if (!b || s > b.s) best.set(key, { s, x: ox, y: oy, z: oz, v: e.v });
+    }
+    const out = new VPart();
+    for (const [key, b] of best) out.m.set(key, { x: b.x, y: b.y, z: b.z, v: b.v });
+    return out;
+  }
 
   /**
    * Mesh into { solid, glow } BufferGeometries (vertex colours, linear). vs: voxel size;

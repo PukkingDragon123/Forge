@@ -2,7 +2,9 @@
 // that sculpt into fine voxels (~1/40 of the creature's height), paints every voxel with a hue-shifted pixel-art
 // palette and a per-material 3D pattern (fur tufts, scale rows, chitin bands, cracked stone, rivets, runes, lava
 // seams…), and meshes one rigid voxel part per bone with baked AO, bevel highlights and emissive voxels.
-//   voxelizeMonster(m, div) → { parts: [{bone, solid, glow, layers}], bbox, samples, cell }
+//   voxelizeMonster(m, cell) → { parts: [{bone, solid, glow, layers}], bbox, samples, cell }
+// Every monster uses the same WORLD-space voxel size (0.04 m at its in-game scale), so a boss is built from many
+// voxels and a critter from few, and pixel density matches the characters and environments.
 import * as THREE from 'three';
 import { hash3, clamp } from '../core/math.js';
 import { ADD, SUB, PAINT, BIND, TILE } from './monster_kit.js';
@@ -121,18 +123,17 @@ const AO = [0.46, 0.66, 0.84, 1.0];
 const FACE_SHADE = [0.9, 0.9, 1.0, 0.68, 0.96, 0.82];
 
 /**
- * Voxelize a Monster's sculpt. div: voxels per creature height. Returns cached geometry data per bone
- * (bone-local positions, so each part rides its bone rigidly).
+ * Voxelize a Monster's sculpt. cellRoot: voxel size in the monster's root space (world size / monster scale).
+ * Returns cached geometry data per bone (bone-local positions, so each part rides its bone rigidly).
  */
-export function voxelizeMonster(m, div = 40) {
+export function voxelizeMonster(m, cellRoot = 0.04) {
   const sc = m.sculpt;
   const P = sc.prims.filter((p) => p.op !== BIND), binds = sc.prims.filter((p) => p.op === BIND);
   const adds = P.filter((p) => p.op === ADD);
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
   for (const p of adds) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p.lo[i] - p.noise); hi[i] = Math.max(hi[i], p.hi[i] + p.noise); }
-  const height = Math.max(0.2, hi[1] - Math.max(lo[1], 0));
   const ext = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
-  const cell = Math.max(height / div, ext / 230);
+  const cell = Math.max(cellRoot, ext / 300);
   for (let i = 0; i < 3; i++) { lo[i] -= cell * 2; hi[i] += cell * 2; }
   const nx = Math.ceil((hi[0] - lo[0]) / cell), ny = Math.ceil((hi[1] - lo[1]) / cell), nz = Math.ceil((hi[2] - lo[2]) / cell);
   const sxy = nx * ny, NC = sxy * nz, f0 = cell * 3;

@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { hash3, hexToRgb } from '../core/math.js';
 
-export const S = 0.05;            // voxel size in world units
+export const S = 0.04;            // voxel size in world units (matches characters & monsters)
 export const GLOW = 1 << 24;      // emissive voxel: unlit, separate bloom mesh
 export const NOAO = 1 << 25;      // skip AO darkening (thin things: rope, glass)
 const CS = 32, CM = 31;           // chunk size (voxels)
@@ -186,7 +186,7 @@ function lightAt(R, lamps, px, py, pz, nx, ny, nz, out) {
 
 /**
  * Mesh a world (or the cells inside bounds, voxel ints) into { solid, glow } BufferGeometries.
- * opts: bounds, light (makeLightRig), skip: Set of 'a,s' face dirs never seen (default back faces '2,-1'),
+ * opts: bounds, room (faces whose outside cell leaves this voxel box are culled), light (makeLightRig), skip: Set of 'a,s' face dirs never seen (default back faces '2,-1'),
  * bottomAbove: only emit downward faces for voxels above this voxel y (ceilings, overhangs).
  */
 export function meshWorld(w, opts = {}) {
@@ -194,7 +194,8 @@ export function meshWorld(w, opts = {}) {
   const skip = opts.skip || new Set(['2,-1']);
   const bottomAbove = opts.bottomAbove ?? -1e9;
   const bnd = opts.bounds || null;
-  const out = { solid: { p: [], n: [], c: [], i: [] }, glow: { p: [], n: [], c: [], i: [] } };
+  const room = opts.room || null; // voxel box: faces looking out of it (outer shells) are never seen
+  const out = { solid: new QuadBuf(), glow: new QuadBuf() };
   const L = [0, 0, 0];
   const N2 = CS * CS;
   const kCol = new Float64Array(N2), kAo = new Int16Array(N2), kGlow = new Uint8Array(N2);
@@ -228,6 +229,7 @@ export function meshWorld(w, opts = {}) {
           const x = ox + lx, y = oy + ly, z = oz + lz;
           if (bnd && (x < bnd.x0 || x >= bnd.x1 || y < bnd.y0 || y >= bnd.y1 || z < bnd.z0 || z >= bnd.z1)) continue;
           if (a === 1 && sgn < 0 && y <= bottomAbove) continue;
+          if (room) { const qx = x + nX, qy = y + nY, qz = z + nZ; if (qx < room.x0 || qx >= room.x1 || qy < room.y0 || qy >= room.y1 || qz < room.z0 || qz >= room.z1) continue; }
           const ax = lx + nX, ay = ly + nY, az = lz + nZ;
           const nb = g(ax, ay, az);
           const glow = (v & GLOW) !== 0;
@@ -274,32 +276,53 @@ export function meshWorld(w, opts = {}) {
           }
           for (let h2 = 0; h2 < ht; h2++) for (let q = 0; q < wd; q++) kCol[mi + q + h2 * CS] = 0;
           const B = kg ? out.glow : out.solid;
-          const base = B.p.length / 3;
+          const base = B.quad();
           for (let c = 0; c < 4; c++) {
             const cu = uu + (c === 1 || c === 2 ? wd : 0), cv = vv + (c >= 2 ? ht : 0);
             const lx = a === 0 ? plane : a === 1 ? cv : cu, ly = a === 1 ? plane : a === 0 ? cu : cv, lz = a === 2 ? plane : a === 1 ? cu : cv;
-            B.p.push((ox + lx) * S, (oy + ly) * S, (oz + lz) * S);
-            B.n.push(nX, nY, nZ);
             const aoK = ka >= 0 ? AO_CURVE[ka] : AO_CURVE[((-1 - ka) >> (c * 2)) & 3];
-            B.c.push(cR[mi] * aoK, cG[mi] * aoK, cB[mi] * aoK);
+            B.vert(base + c, (ox + lx) * S, (oy + ly) * S, (oz + lz) * S, nX, nY, nZ, cR[mi] * aoK, cG[mi] * aoK, cB[mi] * aoK);
           }
-          if (sgn > 0) B.i.push(base, base + 1, base + 2, base, base + 2, base + 3);
-          else B.i.push(base, base + 2, base + 1, base, base + 3, base + 2);
+          B.tri(base, sgn > 0);
         }
       }
     }
   }
-  const geo = (B) => {
-    if (!B.i.length) return null;
+  return { solid: out.solid.geometry(), glow: out.glow.geometry(), faces: out.solid.n + out.glow.n };
+}
+
+/** Growable quad buffers: float positions & linear colours, byte normals, 16/32-bit indices. */
+class QuadBuf {
+  constructor() { this.n = 0; this.cap = 0; this.grow(4096); }
+  grow(cap) {
+    const p = new Float32Array(cap * 12), c = new Float32Array(cap * 12), nn = new Int8Array(cap * 12), f = new Uint8Array(cap);
+    if (this.p) { p.set(this.p); c.set(this.c); nn.set(this.nn); f.set(this.f); }
+    this.p = p; this.c = c; this.nn = nn; this.f = f; this.cap = cap;
+  }
+  quad() { if (this.n >= this.cap) this.grow(this.cap * 2); return this.n++ * 4; }
+  vert(i, x, y, z, nx, ny, nz, r, g, b) {
+    const k = i * 3;
+    this.p[k] = x; this.p[k + 1] = y; this.p[k + 2] = z;
+    this.nn[k] = nx * 127; this.nn[k + 1] = ny * 127; this.nn[k + 2] = nz * 127;
+    this.c[k] = r; this.c[k + 1] = g; this.c[k + 2] = b;
+  }
+  tri(base, front) { this.f[base >> 2] = front ? 0 : 1; }
+  geometry() {
+    if (!this.n) return null;
+    const nv = this.n * 4, idx = nv > 65535 ? new Uint32Array(this.n * 6) : new Uint16Array(this.n * 6);
+    for (let q = 0; q < this.n; q++) {
+      const b = q * 4, o = q * 6;
+      if (!this.f[q]) { idx[o] = b; idx[o + 1] = b + 1; idx[o + 2] = b + 2; idx[o + 3] = b; idx[o + 4] = b + 2; idx[o + 5] = b + 3; }
+      else { idx[o] = b; idx[o + 1] = b + 2; idx[o + 2] = b + 1; idx[o + 3] = b; idx[o + 4] = b + 3; idx[o + 5] = b + 2; }
+    }
     const gg = new THREE.BufferGeometry();
-    gg.setAttribute('position', new THREE.Float32BufferAttribute(B.p, 3));
-    gg.setAttribute('normal', new THREE.Float32BufferAttribute(B.n, 3));
-    gg.setAttribute('color', new THREE.Float32BufferAttribute(B.c, 3));
-    gg.setIndex(new THREE.Uint32BufferAttribute(B.i, 1));
+    gg.setAttribute('position', new THREE.BufferAttribute(this.p.slice(0, nv * 3), 3));
+    gg.setAttribute('normal', new THREE.BufferAttribute(this.nn.slice(0, nv * 3), 3, true));
+    gg.setAttribute('color', new THREE.BufferAttribute(this.c.slice(0, nv * 3), 3));
+    gg.setIndex(new THREE.BufferAttribute(idx, 1));
     gg.computeBoundingSphere();
     return gg;
-  };
-  return { solid: geo(out.solid), glow: geo(out.glow), faces: (out.solid.i.length + out.glow.i.length) / 6 };
+  }
 }
 
 let envMat = null;

@@ -161,7 +161,7 @@ export function crystals(w, x, y, z, h = 14, col = '#6ae8ff', seed = 1, n = 5) {
     const hh = h * (0.45 + n3(k, 3, seed, 3) * 0.65), r = 1.4 + n3(k, 4, seed, 3) * 1.8;
     const bx = x + Math.cos(a) * r * 1.2, bz = z + Math.sin(a) * r * 0.8;
     const tx = bx + Math.cos(a) * hh * lean, tz = bz + Math.sin(a) * hh * lean * 0.6;
-    seg(w, bx, y, bz, tx, y + hh, tz, r, (px, py, pz, t) => (t > 0.86 ? glowC('#ffffff') : (px + py) % 4 === 0 ? hi : t < 0.2 ? lo : (n3(px, py, pz, seed) > 0.55 ? glowC(col) : c)));
+    seg(w, bx, y, bz, tx, y + hh, tz, r, (px, py, pz, t) => (t > 0.9 ? glowC(col) : (px + py) % 4 === 0 ? hi : t < 0.25 ? lo : (n3(px, py, pz, seed) > 0.82 ? glowC(col) : t > 0.6 ? hi : c)));
   }
   ell(w, x + 0.5, y, z + 0.5, 3.5, 1.5, 3, (px, py) => ramp(IRON, 0.2 + bayer(px, py) * 0.2, px, py));
 }

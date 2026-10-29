@@ -35,11 +35,11 @@ export function pk(rmp, v, x, y) {
 
 // ------------------------------------------------------------------ light model (screen space)
 export const MINE_LIGHTS = [
-  { x: 298, y: 74, r: 430, k: 1, warm: 1 }, // lantern on the left post
-  { x: 702, y: 74, r: 430, k: 1, warm: 1 }, // lantern on the right post
-  { x: 92, y: -10, r: 360, k: 0.8, warm: 0.4 }, // daylight through the crack in the ceiling
-  { x: 870, y: 300, r: 240, k: 0.5, warm: 1 }, // the lamp over the shelves
-  { x: 150, y: 330, r: 160, k: 0.35, warm: 1 }, // the platform lamp
+  { x: 298, y: 74, r: 340, k: 1, warm: 1 }, // lantern on the left post
+  { x: 702, y: 74, r: 340, k: 1, warm: 1 }, // lantern on the right post
+  { x: 110, y: -10, r: 300, k: 0.55, warm: 0.4 }, // daylight through the crack in the ceiling
+  { x: 870, y: 300, r: 210, k: 0.65, warm: 1 }, // the lamp over the shelves
+  { x: 150, y: 330, r: 150, k: 0.5, warm: 1 }, // the platform lamp
 ];
 /** Light at a screen pixel: L (0..1), direction toward the strongest source, and how cool the spot is. */
 export function light(x, y) {
@@ -159,7 +159,7 @@ export function shaftCanvas(w, w2, h, col = '#fff0c8') {
         const u = Math.abs(x - W / 2) / half;
         if (u >= 1) continue;
         const a = (1 - u * u) * (1 - t) ** 1.2 * (0.6 + 0.4 * Math.sin(x * 0.7 + y * 0.05) ** 2);
-        if (a > 0.02) p.set(x, y, c, Math.round(a * 150));
+        if (a > 0.02) p.set(x, y, c, Math.round(a * 175));
       }
     }
     return p.toCanvas();

@@ -91,9 +91,15 @@ function rockWall(B, x0, x1, z, y0, y1, o = {}) {
   const R = B.R, seed = (o.seed || 1) + B.seed;
   const amp = o.amp ?? 7, cell = o.cell ?? 24, th = o.thick ?? 4;
   const site = (i, j) => [i * cell + h3(i, j, seed, 1) * cell, j * cell * 0.75 + h3(i, j, seed, 2) * cell * 0.75, h3(i, j, seed, 3)];
-  B.op(x0, x1, (w) => {
+  // face: 'z+' (default, a back wall facing the camera), 'z-', 'x+' (left wall facing right), 'x-'.
+  // x0..x1 run along the wall (z for side walls); z is the wall's plane.
+  const face = o.face || 'z+', side = face[0] === 'x', sgnF = face[1] === '+' ? 1 : -1;
+  const reach = (th + amp + 3) * S;
+  const ox0 = side ? (sgnF > 0 ? z - reach : z - amp * S) : x0, ox1 = side ? (sgnF > 0 ? z + amp * S + S * 3 : z + reach) : x1;
+  B.op(ox0, ox1, (w) => {
     const X0 = vx(x0), X1 = vx(x1), Y0 = vx(y0), Y1 = vx(y1), Z = vx(z);
-    const [xa, xb] = w.rx(X0, X1);
+    const [xa, xb] = side ? [X0, X1] : w.rx(X0, X1);
+    const put = side ? (u, y, k, c) => w.set(Z + sgnF * k, y, u, c) : sgnF > 0 ? (u, y, k, c) => w.set(u, y, Z + k, c) : (u, y, k, c) => w.set(u, y, Z - k, c);
     for (let x = xa; x < xb; x++) for (let y = Y0; y < Y1; y++) {
       const gi = Math.floor(x / cell), gj = Math.floor(y / (cell * 0.75));
       let d1 = 1e9, d2 = 1e9, s1 = null;
@@ -111,17 +117,18 @@ function rockWall(B, x0, x1, z, y0, y1, o = {}) {
       const band = Math.floor((y + noise2(x * 0.02, y * 0.04) * 10) / 16);
       const tint = R.strata[((band % 3) + 3) % 3];
       const wet = noise2(x * 0.18, y * 0.012 + seed) > 0.72;
-      for (let zz = Z - th; zz <= Z + dz; zz++) {
-        const surf = zz === Z + dz;
-        let v = 0.3 + bulge * 0.42 + (s1[2] - 0.5) * 0.22 + (h3(x, y, zz, seed) - 0.5) * 0.06 - Math.max(0, y * S - 2.6) * 0.09;
+      // solid down to a flat back plane at -th (the room cull drops that plane's faces)
+      for (let k = -th; k <= dz; k++) {
+        const surf = k === dz;
+        let v = 0.3 + bulge * 0.42 + (s1[2] - 0.5) * 0.22 + (h3(x, y, k, seed) - 0.5) * 0.06 - Math.max(0, y * S - 2.6) * 0.09;
         if (edge < 1.8) v -= 0.25;
         if (wet) v -= 0.12;
         if (!surf) v -= 0.1;
-        let c = ramp(R.rock, v, x + zz, y);
+        let c = ramp(R.rock, v, x + k, y);
         if (band % 2 === 0) c = mixC(c, tint, 0.16);
         if (surf && h3(x, y, 7, seed) > 0.993) c = R.oreGlow && h3(x, y, 8, seed) > 0.4 ? glowC(R.ore[Math.abs(x + y) % R.ore.length]) : C(R.ore[Math.abs(x + y) % R.ore.length]);
         else if (surf && o.moss !== false && y - s1[1] > cell * 0.12 + (1 - bulge) * cell * 0.3 && noise2(x * 0.09 + seed, y * 0.11) > 0.5 && y < Y0 + 80) c = ramp(R.moss, 0.25 + bulge * 0.5 + h3(x, y, 2, seed) * 0.25, x, y);
-        w.set(x, y, zz, c);
+        put(x, y, k, c);
       }
     }
   });
@@ -415,20 +422,34 @@ export class Stage {
 function mixHex(a, b, t) { const A = new THREE.Color(a), Bc = new THREE.Color(b); return '#' + A.lerp(Bc, t).getHexString(); }
 
 // ---------------------------------------------------------------------------- baking
-const geoCache = new Map();
-function bake(st, plan, key, bounds = null, skip = null) {
-  const cacheKey = key && key + (bounds ? '|' + bounds.x0 + ':' + bounds.x1 : '');
+const geoCache = new Map(); // key -> {solid, glow, faces}; small LRU of whole stages (title, arenas, rooms)
+const BIG = 1e6;
+/**
+ * Paint the plan into a voxel world and mesh it. o: { bounds (voxel x-range, corridor segments),
+ * room (world box: faces looking out of it are culled), skip (Set of 'a,s' dirs), bottomAbove (world y), cache }
+ */
+function bake(st, plan, key, bounds = null, o = {}) {
+  const cacheKey = o.cache !== false && !bounds && key;
   let res = cacheKey && geoCache.get(cacheKey);
-  if (!res) {
-    const clip = bounds ? { x0: bounds.x0 - 2, x1: bounds.x1 + 2, y0: -100000, y1: 100000, z0: -100000, z1: 100000 } : null;
+  if (res) { geoCache.delete(cacheKey); geoCache.set(cacheKey, res); }
+  else {
+    const clip = bounds ? { x0: bounds.x0 - 2, x1: bounds.x1 + 2, y0: -BIG, y1: BIG, z0: -BIG, z1: BIG } : null;
     const w = new VWorld(clip);
-    for (const o of plan.ops) if (!bounds || (o.x1 >= clip.x0 && o.x0 <= clip.x1)) o.fn(w);
+    for (const op of plan.ops) if (!bounds || (op.x1 >= clip.x0 && op.x0 <= clip.x1)) op.fn(w);
     const rig = makeLightRig({ amb: plan.R.amb, ambI: 1.15, sky: plan.R.sky, skyI: 0.3, key: plan.R.key, keyI: plan.R.keyI, lamps: plan.lamps.map((l) => ({ ...l, i: l.i * 1.35 })), bands: 16 });
-    res = meshWorld(w, { light: rig, bounds: bounds ? { x0: bounds.x0, x1: bounds.x1, y0: -100000, y1: 100000, z0: -100000, z1: 100000 } : null, skip: skip || new Set(['2,-1']), bottomAbove: vx(1.0) });
-    for (const g of [res.solid, res.glow]) if (g) g.userData.keep = true;
-    if (cacheKey) { geoCache.set(cacheKey, res); if (geoCache.size > 40) geoCache.delete(geoCache.keys().next().value); }
+    const rm = o.room && { x0: vx(o.room.x0), x1: vx(o.room.x1), y0: vx(o.room.y0), y1: vx(o.room.y1), z0: vx(o.room.z0), z1: vx(o.room.z1) };
+    res = meshWorld(w, { light: rig, room: rm, bounds: bounds ? { x0: bounds.x0, x1: bounds.x1, y0: -BIG, y1: BIG, z0: -BIG, z1: BIG } : null, skip: o.skip || new Set(['2,-1']), bottomAbove: vx(o.bottomAbove ?? 1.0) });
+    if (cacheKey) {
+      for (const g of [res.solid, res.glow]) if (g) g.userData.keep = true;
+      geoCache.set(cacheKey, res);
+      if (geoCache.size > 8) {
+        const [k0, old] = geoCache.entries().next().value;
+        geoCache.delete(k0);
+        for (const g of [old.solid, old.glow]) if (g) g.dispose();
+      }
+    }
   }
-  const g = worldMeshes(res, 2.4);
+  const g = worldMeshes(res, 1.6);
   for (const m of g.children) { m.matrixAutoUpdate = false; m.updateMatrix(); }
   st.env.add(g);
   st.faces = (st.faces || 0) + res.faces;

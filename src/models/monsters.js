@@ -23,6 +23,8 @@ const _Y = new THREE.Vector3(0, 1, 0), _D = new THREE.Vector3();
 /** Voxel parts per monster id (voxelizing is the expensive part; rigs/materials are rebuilt per instance). */
 const GEO_CACHE = new Map();
 const GLOW_I = 1.9;
+/** One voxel size for every creature, in world metres at in-game scale (shared with characters/environments). */
+export const VOXEL = 0.04;
 export const MONSTER_STATS = { builds: 0, meshed: 0, ms: 0 };
 
 let SEED = 1;
@@ -160,8 +162,7 @@ export class Monster {
   _buildMesh() {
     let g = GEO_CACHE.get(this.id);
     if (!g) {
-      const div = this.boss ? 48 : this.res >= 80 ? 46 : 40;
-      g = voxelizeMonster(this, div);
+      g = voxelizeMonster(this, VOXEL / this.scale);
       GEO_CACHE.set(this.id, g);
       MONSTER_STATS.meshed++;
     }
