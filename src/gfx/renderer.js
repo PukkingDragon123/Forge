@@ -1,6 +1,7 @@
 // Low-resolution 3D renderer + pixel-art post pipeline + UI canvas compositor.
 import * as THREE from 'three';
 import { makeBrightPass, makeBlur, makeComposite } from './post.js';
+import { bindSpriteRenderer } from './voxsprite.js';
 
 export const LAYER_SOLID = 0;
 export const LAYER_FX = 1;
@@ -17,6 +18,7 @@ export class Renderer {
     this.gl.shadowMap.type = THREE.BasicShadowMap;
     this.gl.outputColorSpace = THREE.LinearSRGBColorSpace; // composite shader converts to sRGB itself
     this.gl.toneMapping = THREE.NoToneMapping;
+    bindSpriteRenderer(this.gl); // 2D sprites are rendered from voxel models on this context
     this.canvas3d = this.gl.domElement;
     this.canvasUI = document.createElement('canvas');
     stage.appendChild(this.canvas3d);
