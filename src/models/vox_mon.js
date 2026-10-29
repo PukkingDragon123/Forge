@@ -29,7 +29,8 @@ const lerpHue = (a, b, t) => { let d = b - a; if (d > 0.5) d -= 1; if (d < -0.5)
 function shadeCol(hsl, s) {
   const d = s - 0.5;
   const h = lerpHue(hsl[0], d > 0 ? 0.13 : 0.7, Math.min(0.4, Math.abs(d) * (d > 0 ? 0.5 : 0.7)));
-  const l = clamp(hsl[2] + d * 0.58, 0.035, 0.95);
+  const base = hsl[2] < 0.26 ? hsl[2] + (0.26 - hsl[2]) * 0.4 : hsl[2]; // keep dark creatures readable in dim caves
+  const l = clamp(base + d * 0.58, 0.04, 0.95);
   const sat = clamp(hsl[1] * 1.22 + (d < 0 ? -d * 0.25 : -d * 0.3) + 0.04, 0, 1);
   return hsl2rgb(h, sat, l);
 }
@@ -74,8 +75,8 @@ function pattern(tile, x, y, z, seed) {
     case 'cap': return [0.56 + j, H(x >> 1, y >> 1, z >> 1, seed) > 0.84 ? 1 : 0, 0];
     case 'slime': return [h > 0.94 ? 0.92 : 0.54 + j, H(x >> 2, y >> 2, z >> 2, seed) > 0.8 ? 1 : 0, 0];
     case 'crust': case 'lava': {
-      const n = vn(x / 3, y / 4, z / 3, seed);
-      const seam = Math.abs(n - 0.5) < 0.06;
+      const n = vn(x / 4.5, y / 5.5, z / 4.5, seed);
+      const seam = Math.abs(n - 0.5) < 0.045; // fewer, longer glowing seams between dark crust plates
       return [seam ? 0.75 : 0.32 + (H(x >> 1, y >> 1, z >> 1, seed) - 0.5) * 0.2, seam ? 1 : 0, seam ? 1 : 0];
     }
     case 'flesh': return [0.5 + (h - 0.5) * 0.18, vn(x / 3, y / 3, z / 3, seed) > 0.66 ? 1 : 0, 0];

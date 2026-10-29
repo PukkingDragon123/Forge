@@ -186,7 +186,7 @@ export class Monster {
     this.mesh = this.root;
     this.layers = this.layerMeshes.map((ml) => ml.userData.layer).filter(Boolean);
     // chunks that pop off: sample voxels kept in bone space so they spawn where the part is right now
-    this.burst = new VoxelBurst(this.boss ? 260 : 140, g.cell * 0.95);
+    this.burst = new VoxelBurst(this.boss ? 260 : 140, g.cell * 0.95 * this.scale);
     this.group.add(this.burst.mesh);
     this.group.updateMatrixWorld(true);
     const rootInv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
