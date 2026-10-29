@@ -12,7 +12,7 @@ import { voxSprite } from '../gfx/voxsprite.js';
 import { meshVoxels } from '../gfx/voxel.js';
 import { buildOreModel, flatVoxelMaterial } from '../models/ore_voxel.js';
 import { buildWeaponMesh } from '../models/weapons3d.js';
-import { Sculpt, ramp, tone, lit, metal, spec, glow, C, cyl, torus, box, cap, sphere, rotB, noisy } from '../models/vox_sculpt.js';
+import { Sculpt, ramp, tone, lit, metal, spec, glow, cyl, torus, box, cap, sphere, rotB } from '../models/vox_sculpt.js';
 import { hash2 } from '../core/math.js';
 
 const cache = new Map();

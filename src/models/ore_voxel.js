@@ -8,7 +8,7 @@ import { MATERIALS } from '../data/materials.js';
 import { noise3, hash3 } from '../core/math.js';
 import {
   Sculpt, rng, norm, dot, add3, basis, rotB, clamp01, lit, spec, vu, setLight, light, C, glow, mixC, ramp, tone, metal,
-  sphere, ell, box, cap, cyl, torus, tube, curve, poly, rockPlanes, prismPlanes, gemPlanes, slab, d2poly, d2seg, d2union, d2circle, noisy, minus, halfspace,
+  sphere, ell, box, cap, cyl, torus, tube, curve, poly, rockPlanes, prismPlanes, gemPlanes, slab, d2poly, d2seg, d2union, d2circle, noisy,
 } from './vox_sculpt.js';
 
 /** World size of one voxel (game-wide standard). */
@@ -17,7 +17,7 @@ export const ORE_VS = 0.04;
 const SPAN = 28;
 
 // ------------------------------------------------------------------ shared painters
-const ROCK = { default: '#8695a2', junk: '#8a7466', lodestone: '#4a4c66', magmasteel: '#3a2a2e', cursedore: '#4e4466', iron: '#7e8896', copper: '#8a98a4', stariron: '#2a2c52', geode: '#8a7666', fossil: '#d8c8a8', runestone: '#5a6a8a' };
+const ROCK = { default: '#6a7888', junk: '#7a6250', lodestone: '#4a4c66', magmasteel: '#3a2a2e', cursedore: '#4e4466', iron: '#56627a', copper: '#6e6458', stariron: '#2a2c52', geode: '#8a7666', fossil: '#d8c8a8', runestone: '#5a6a8a' };
 const n3 = (x, y, z, f, s) => noise3(x * f + 11.3, y * f + 3.1, z * f + 7.7, s);
 
 /** Faceted stone: flat-shaded facets, lit ridges, cool crevices, speckle and hairline cracks. */
@@ -92,15 +92,15 @@ STYLES.chunk = (S, m, r) => {
   const main = boulder(S, [0, 9, 0], [12, 9.5, 11], 3 + m.id.length, R);
   boulder(S, [-10, 4.2, 6], [5.8, 4.8, 5.6], 17, R, { n: 11 });
   boulder(S, [9.5, 3.2, 7], [4.5, 3.6, 4.2], 29, R, { n: 10 });
-  const M = ramp(m.color, 7, 1.2), M2 = ramp(m.color2 || m.color, 7, 1.15);
+  const M = ramp(m.id === 'iron' ? '#a8b4c8' : m.color, 7, 1.2), M2 = ramp(m.color2 || m.color, 7, 1.15);
   const id = m.id;
   if (id === 'copper') {
     // native copper blobs bursting from the rock + malachite crust
-    for (const [x, y, z, s] of [[3, 15, 7, 3.6], [-5, 13, 8, 2.8], [7, 10, 9, 2.6], [-1, 18, 3, 2.4], [-8, 8, 9, 2.0]]) nugget(S, [x, y, z], [s, s * 0.85, s], x * 7 + y, (x2, y2, z2, n, h) => metal(M, n, h, { bias: 1 }));
+    for (const [x, y, z, s] of [[3, 15, 7, 4.6], [-5, 13, 8, 3.8], [7, 10, 9, 3.4], [-1, 18.5, 3, 3.4], [-8, 8, 9, 2.8], [9, 15, 2, 2.6]]) nugget(S, [x, y, z], [s, s * 0.85, s], x * 7 + y, (x2, y2, z2, n, h) => metal(M, n, h, { bias: 1 }));
     S.parts[0].paint = (() => { const base = rockPaint(R, main); return (x, y, z, n, h) => { const v = n3(x, y, z, 0.2, 5); if (v > 0.6) return tone(M2, Math.sin(v * 60) * 0.6 + lit(n) * 0.6, 1, 5, h); return base(x, y, z, n, h); }; })();
   } else if (id === 'iron' || id === 'junk') {
     // cubic metal crystals (pyrite-like) wedged in the rock, rust stains
-    const cubes = id === 'iron' ? [[2, 16, 6, 3.4, 0.5, 0.7], [-6, 13, 7, 2.6, 0.9, 0.2], [7, 11, 7, 2.2, 0.2, 1.1], [-2, 19, 0, 2.4, 1.2, 0.4]] : [[3, 15, 6, 2.6, 0.4, 0.9], [-6, 12, 7, 2.0, 1.1, 0.3]];
+    const cubes = id === 'iron' ? [[2, 16, 6, 4.2, 0.5, 0.7], [-6, 13, 7, 3.3, 0.9, 0.2], [7, 11, 7, 2.8, 0.2, 1.1], [-2, 19, 0, 3.0, 1.2, 0.4], [-9, 9, 3, 2.2, 0.3, 0.8]] : [[3, 15, 6, 2.6, 0.4, 0.9], [-6, 12, 7, 2.0, 1.1, 0.3]];
     for (const [x, y, z, s, a, b] of cubes) {
       const F = poly([x, y, z], [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].map((nn) => ({ n: nn, o: 1 })), [s, s, s], rotB(a, b, a * 0.7));
       S.add(F, (x2, y2, z2, n, h) => { const f = F.facet(x2, y2, z2); if (f.gap < vu() * 0.9) return M[6]; return metal(M, f.n, h, { st: 0.6 }); });
