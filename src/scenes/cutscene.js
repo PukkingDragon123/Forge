@@ -458,6 +458,20 @@ export class Cine {
   }
 }
 
+/**
+ * Warm the voxel stage cache for a cutscene ahead of time (stages take seconds to bake the first
+ * time; cached ones come back fast). Call it while a menu is idle, e.g. before the prologue.
+ */
+export function prepareCutscene(id) {
+  const [kind, arg] = parseId(id);
+  const need = {
+    prologue: [['tomb', 5]], dive: [['campfire', 0]], victory: [['tomb', 5], ['campfire', 0]],
+    descend: [[arg >= REGIONS.length - 1 ? 'tomb' : 'arena', arg | 0]],
+    boss: [[arg === 'cursed_lord' ? 'tomb' : 'arena', MONSTERS[arg] ? MONSTERS[arg].region : 0]],
+  }[kind] || [];
+  for (const [k, r] of need) { try { buildStage(k, r); } catch (e) { /* built on demand instead */ } }
+}
+
 // ================================================================== the scene wrapper
 export class CutsceneScene extends Scene {
   get freezesBelow() { return true; }

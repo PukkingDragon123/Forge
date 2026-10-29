@@ -710,7 +710,7 @@ export class CombatScene extends Scene {
     this.sfx('monster_die');
     this.W.sparks.emit({ pos: [hw.x, hw.y, hw.z], radial: [2, 6], count: 120, life: [0.4, 1.2], size: [1, 2], color: ['#ffffff', '#ffd25e', '#ff8a3a'], glow: 3, gravity: 4, drag: 1.5 });
     const post = this.world.post, sp = this.screen(hw);
-    post.exposure = 1.45; post.bloom = 1.7;
+    post.exposure = 1.3; post.bloom = 1.45;
     this.tw.to(post, { exposure: 1, bloom: 0.75 }, 1.5, { ease: 'outCubic' });
     this.fx2d.rays(sp.x, sp.y, '#fff0c0', { n: 18, len: 560, a: 0.32, life: 1.2 });
     this.fx2d.ring(sp.x, sp.y, '#ffffff', { r1: 240, w: 5, life: 0.6 });
@@ -722,7 +722,7 @@ export class CombatScene extends Scene {
     this.heroAct('victory');
     {
       const hx = this.hero.group.position.x, hh = this.heroHead().y;
-      rig.moveTo([hx + 1.5, hh * 0.45, this.heroHome.z + 2.5], [hx + 0.3, hh * 0.72, 0], 32, 1.8, 'inOutSine');
+      rig.moveTo([hx + 1.7, hh * 0.45, this.heroHome.z + 3.3], [hx + 0.35, hh * 0.68, 0], 33, 1.8, 'inOutSine');
       const hp = this.screen(this.heroHead());
       this.fx2d.burst('sparkle', hp.x, hp.y, 14);
       if (this.boss) { this.fx2d.burst('confetti', hp.x, hp.y + 20, 60); this.fx2d.ring(hp.x, hp.y, '#ffd25e', { r1: 300, w: 4, life: 0.9 }); this.fx2d.wash('#ffd25e', 0.18, 0.8); }
