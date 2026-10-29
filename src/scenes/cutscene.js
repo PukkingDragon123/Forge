@@ -592,7 +592,9 @@ SCRIPTS.prologue = (c) => {
           c.tick((dt, t) => {
             wave.material.uniforms.uTime.value = wallW.material.uniforms.uTime.value = t;
             const r = wave.scale.x;
-            for (let i = 0; i < 6; i++) { const a = rnd(Math.PI * 0.1, Math.PI * 0.9); c.P.add.emit({ pos: [Math.cos(a) * r, 0.1, -3.2 + Math.sin(a) * r], vel: [Math.cos(a) * 1.4, rnd(0.6, 1.8), Math.sin(a) * 1.4], spread: 0.2, life: [0.3, 0.8], size: [1, 2], color: ['#c86bff', '#ff5af0', '#ffffff'], glow: 3 }); }
+            const op = wave.material.uniforms.uOp.value;
+            for (let i = 0; i < 6 * op; i++) { const a = rnd(Math.PI * 0.1, Math.PI * 0.9); c.P.add.emit({ pos: [Math.cos(a) * r, 0.1, -3.2 + Math.sin(a) * r], vel: [Math.cos(a) * 1.4, rnd(0.6, 1.8), Math.sin(a) * 1.4], spread: 0.2, life: [0.3, 0.8], size: [1, 2], color: ['#c86bff', '#ff5af0', '#ffffff'], glow: 3 }); }
+            return op > 0.01;
           }, true);
           for (const id of CHARACTER_ORDER) F[id].setExpression('surprised');
           F.bran.play('block', { loop: true }); F.bran.setExpression('determined');
