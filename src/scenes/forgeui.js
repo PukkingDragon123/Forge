@@ -439,7 +439,7 @@ class ForgeController {
     ui.text(`${this.sel.length}/${this.slots()}`, this.moldXY().x - 30, this.moldXY().y + 22, { align: 'center', color: CHALK, outline: '#140c10' });
     if (!save.data.seen.tips.forge && this.mode === 'weapon') {
       const s = scrap(268, 52, { seed: 5, nails: 1 });
-      const tx = 480 - 134, ty = y0 - 112;
+      const tx = 480 - 134, ty = y0 - 172; // above the mould, between the book and the slate
       ui.img(s, tx, ty);
       ui.text('Lay ore & part cards in the mould. Each adds\n{chips}Chips{/} or {mult}Mult{/}. Mix them for synergies,\nthen pull the FORGE plaque!', tx + s.inner.x + 2, ty + s.inner.y, { color: INK, maxW: s.inner.w });
       if (this.sel.length) { save.data.seen.tips.forge = true; save.write(); }
