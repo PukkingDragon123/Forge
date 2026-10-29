@@ -785,8 +785,8 @@ function buildCorridor(st, B, ri, opts) {
   // foreground: hanging rock fangs and boulders close to the lens
   for (let x = X0; x < X1; x += 2.6 + r() * 2.4) {
     if (r() < 0.45) continue;
-    const z = 2.4 + r() * 0.8;
-    B.op(x - 0.5, x + 0.5, (w) => PR.stalactite(w, vx(x), vx(crawl ? 2.6 : 4.3), vx(z), 14 + Math.floor(r() * 26), R.rock.map((c) => mixC(c, 0x0a0812, 0.35)), vx(x)));
+    const z = 1.7 + r() * 0.6;
+    B.op(x - 0.5, x + 0.5, (w) => PR.stalactite(w, vx(x), vx(crawl ? 2.6 : 4.3), vx(z), 10 + Math.floor(r() * 18), R.rock.map((c) => mixC(c, 0x0a0812, 0.12)), vx(x), r() < 0.4 ? (R.drip || '#5ae8d8') : null));
   }
   // low dark boulders close to the lens frame the walk (kept under knee height so feet stay visible)
   for (let x = X0 + 1; x < X1; x += 4.5 + r() * 4) {

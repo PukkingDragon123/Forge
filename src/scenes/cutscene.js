@@ -513,8 +513,8 @@ function layerBands(from = 0, to = 5, h = 5) {
 SCRIPTS.prologue = (c) => {
   const who = c.p.char && CHARACTERS[c.p.char] ? c.p.char : 'bran';
   const T = c.stageSet('tomb', 'tomb', 5);
-  c.envTo(0.38, 0.36, 0.52, 0.55, 0);
-  T.lightK = 0.32;
+  c.envTo(0.5, 0.46, 0.68, 0.75, 0);
+  T.lightK = 0.48;
   const seal = buildSealWall();
   seal.group.position.set(0, 0, -0.8);
   T.group.add(seal.group);
@@ -534,7 +534,7 @@ SCRIPTS.prologue = (c) => {
   CHARACTER_ORDER.forEach((id) => { F[id] = c.char(id, 'tomb', spots[id].clone().add(V(0, 0, 1.8)), Math.PI, 'walk'); });
   const lan = buildProp('lantern', { light: false });
   F.durgan.hold(lan, 'left');
-  const lanL = c.light(lan, 'point', '#ffc070', 2.8, V(0, 0.15, 0), { dist: 6.5, decay: 1.3, fl: 0.18 });
+  const lanL = c.light(lan, 'point', '#ffc070', 4.2, V(0, 0.15, 0), { dist: 8, decay: 1.2, fl: 0.18 });
   const sword = buildWeaponMesh(SWORD);
   F.bran.hold(sword, 'right');
   F.bran.showBackItem && F.bran.showBackItem(false);

@@ -1,17 +1,18 @@
 // The four explorers' designs, painted voxel by voxel on the party's fine grid (0.02 world units).
 // Heroic, slightly exaggerated proportions (broad shoulders, big hands, chunky boots), bold colour
 // blocks with one accent each, oversized signature gear, and real detail: folds, stitching,
-// rivets, buckles, pouches, tatters, fur trim, engraved metal, glowing runes. Faces stay hidden.
+// rivets, buckles, pouches, tatters, fur trim, engraved metal, glowing runes. No human faces.
 //   Bran   — blacksmith: giant smith's hammer, a forge-gauntlet with coals glowing through its
 //            vents, chain-and-leather apron, a welding mask with a glowing slit, scarf tails.
-//   Elio   — elemental mage: tall pointed hood with darkness inside, layered tattered robes,
-//            orbiting rune stones, a crystal staff, and Kindle.
+//   Elio   — elemental mage: tall pointed hood with a magical visage in its dark (eyes of arcane
+//            light, a brow mark, drifting stars), layered tattered robes, orbiting rune stones, a
+//            crystal staff, and Kindle.
 //   Durgan — gnome warrior: squat and massive, layered pauldrons, a tower shield made from a
 //            minecart door, a horned closed helm, a braided beard, an ore-studded maul.
-//   Clover — rabbit rogue: a hood with long ears through it, a long trailing scarf, twin daggers,
-//            a coin belt and lucky charms, a light springy build.
+//   Clover — rabbit rogue: a cute porcelain rabbit mask under a hood with long ears through it, a
+//            long trailing scarf, twin daggers, a coin belt and lucky charms, a light springy build.
 import * as THREE from 'three';
-import { VPart, hash, voxGlow } from './vox_char_kit.js';
+import { VPart, VOX_PARTY, hash, voxGlow } from './vox_char_kit.js';
 import { Kindle } from './vox_char_kindle.js';
 
 const TAU = Math.PI * 2;
@@ -120,7 +121,7 @@ const PAL = {
     sash: ['#460c20', '#66142e', '#8a203e', '#b03a58'], stone: ['#26243a', '#383650', '#504e6a', '#6e6c8c'],
     glove: ['#120e16', '#1c1622', '#282030', '#382e42'], wood: ['#1e100a', '#341e12', '#4c2e1c', '#664026'],
     crystal: ['#1a5a9a', '#32a0e0', '#7ae0ff', '#e4fbff'], paper: ['#b8a888', '#d8ccae', '#efe6d0'],
-    rune: '#78f0ff', void: '#040308', glint: '#c4faff',
+    rune: '#78f0ff', void: '#040308', glint: '#c4faff', eye: ['#3ad8ff', '#bdf6ff', '#ffffff', '#c890ff'],
   },
   durgan: {
     steel: ['#20242c', '#363c48', '#56606e', '#94a0b2'], bronze: ['#56300e', '#8c5420', '#c88634', '#f2c066'],
@@ -139,7 +140,8 @@ const PAL = {
     boot: ['#28180e', '#3c2616', '#543820', '#6e4c2e'], fur: ['#a49484', '#c8bcac', '#e6ded2', '#ffffff'],
     inner: ['#b4606a', '#d68088', '#eca0a6', '#ffc6cc'], gold: ['#7a5010', '#b8841e', '#f0c03a', '#fff0a0'],
     silver: ['#5a6070', '#8a94a4', '#c0c8d4', '#eef2f8'], clover: ['#1a5a1e', '#2a8a2e', '#46b848', '#8ae88a'],
-    shadow: '#07060b',
+    shadow: '#07060b', rose: '#a8546a', porcelain: ['#b8aa9c', '#ddd2c6', '#f4eee6', '#ffffff'], paint: '#3a2232', nose: ['#e86a86', '#ffaabb'],
+    blush: '#f6a2ae', ribbon: ['#7a1430', '#b42448', '#e04a6c', '#ff8aa4'],
   },
 };
 
@@ -334,7 +336,6 @@ export const BUILD = {
     c.rigFrom({ footH: 3, legLo: 16, legUp: 16, torsoH: 23, neckH: 1, shX: 10, shY: 19, armUp: 14, armLo: 13, hipX: 4, grip: 3.5 });
     const R = c.rig;
     c.runeMat = voxGlow();
-    c.glintMat = voxGlow();
     const robe = cloth(C.robe, 8), inner = cloth(C.inner, 9);
 
     // sash with a rune-stone clasp, tails on springs
@@ -385,7 +386,7 @@ export const BUILD = {
       P.loft(21, 27, (y) => [6.8 + (y - 21) * 0.1, 6.2], (x, y) => (y === 26 ? C.trim[3] : C.trim[1]), { shell: 1.2 });
     }, { glowMat: c.runeMat });
 
-    // hood: deep, nothing in it but dark; its tall point flops back on a spring
+    // hood: deep and dark, a magical visage within; its tall point flops back on a spring
     c.part(R.head, (P) => {
       P.ell(0, 9, -1, 8.6, 9.8, 9.4, robe);
       P.loft(-3, 3, (y) => [8.6 + (3 - y) * 0.7, 8 + (3 - y) * 0.6, 0, -1], robe);
@@ -395,8 +396,65 @@ export const BUILD = {
         if (!(open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) || open(x, y - 1, z) || open(x, y, z + 1))) return undefined;
         return P.has(x, y, z + 1) || z <= 4 ? C.void : C.trim[(y & 3) === 0 ? 3 : 2];
       });
-      P.set(-3, 9, 1, G(C.glint)); P.set(2, 9, 1, G(C.glint));
-    }, { glowMat: c.glintMat, glow: 1.6 });
+    });
+    // the face: no flesh, only eyes of arcane light that blink and change with his mood, a mark
+    // on the brow, a line of light for a smile, and star motes drifting in the dark
+    c.eyeMat = voxGlow();
+    const face = c.joint(R.head, 0, 0, 0);
+    const EYES = {
+      neutral: ['....', '.oo.', 'oiwo', '.oo.'], wide: ['.oo.', 'oiwo', 'oiio', '.oo.'], happy: ['....', '.oo.', 'o..o', '....'],
+      narrow: ['....', '....', 'oiwo', '....'], angry: ['o...', '.oo.', '.iwo', '....'], sad: ['....', '....', '.oo.', 'oiio'],
+      smug: ['....', 'oooo', 'oiwo', '....'], hurt: ['o...', '.oo.', '.oo.', 'o...'], blink: ['....', '....', 'oooo', '....'],
+    };
+    c.faceParts = {};
+    for (const [key, rows] of Object.entries(EYES)) {
+      c.faceParts[key] = c.part(face, (P) => {
+        rows.forEach((r, row) => { for (let i = 0; i < 4; i++) {
+          const ch = r[i];
+          if (ch === '.') continue;
+          const col = G(ch === 'o' ? C.eye[0] : ch === 'i' ? C.eye[1] : C.eye[2]);
+          P.set(-5 + i, 10 - row, 5, col); P.set(4 - i, 10 - row, 5, col);
+        } });
+      }, { glowMat: c.eyeMat, glow: 2.2 });
+      c.faceParts[key].visible = key === 'neutral';
+    }
+    c.smile = c.part(face, (P) => { for (const [x, y] of [[-3, 5], [-2, 4], [-1, 4], [0, 4], [1, 4], [2, 5]]) P.set(x, y, 5, G(C.eye[0])); }, { glowMat: c.eyeMat, glow: 1.8 });
+    c.smile.visible = false;
+    c.part(face, (P) => { for (const [x, y] of [[-1, 14], [0, 14], [-2, 13], [1, 13], [-1, 12], [0, 12]]) P.set(x, y, 4, G(C.eye[3])); }, { glowMat: c.runeMat, glow: 1.6 });
+    // star motes and a faint constellation strung between them
+    const moteGeo = new THREE.BoxGeometry(VOX_PARTY * 0.55, VOX_PARTY * 0.55, VOX_PARTY * 0.55);
+    const motes = [];
+    for (let i = 0; i < 7; i++) {
+      const m = new THREE.Mesh(moteGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(i % 3 ? '#9adcff' : '#d8b4ff').multiplyScalar(1.6), toneMapped: false, fog: false }));
+      m.castShadow = false;
+      face.add(m);
+      motes.push({ m, x: (hash(i, 1, 71) - 0.5) * 8.5 - 0.5, y: 3.5 + hash(i, 2, 71) * 9.5, z: 2.5 + hash(i, 3, 71) * 2, p: hash(i, 4, 71) * TAU });
+    }
+    const LINKS = [[0, 2], [2, 4], [4, 1], [1, 5], [5, 3], [3, 6]];
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(LINKS.length * 6), 3));
+    const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color: new THREE.Color('#8a7aff').multiplyScalar(0.8), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false }));
+    lines.frustumCulled = false;
+    face.add(lines);
+    const SHAPE = { neutral: 'neutral', happy: 'happy', angry: 'angry', surprised: 'wide', sad: 'sad', smug: 'smug', determined: 'narrow', hurt: 'hurt', sleepy: 'blink' };
+    c.faceShape = 'neutral'; c.blinkT = 2;
+    c.updateFace = (dt, fl) => {
+      const t = c.time;
+      c.blinkT -= dt;
+      if (c.blinkT < -0.12) c.blinkT = 2.2 + hash(Math.floor(t * 10), 9) * 3;
+      const shape = fl > 0.65 ? 'wide' : c.blinkT < 0 ? 'blink' : c.faceShape;
+      for (const key in c.faceParts) c.faceParts[key].visible = key === shape;
+      c.smile.visible = c.faceShape === 'happy' || (fl > 0.65 && c.faceShape !== 'hurt');
+      c.eyeMat.color.setScalar((c.faceShape === 'blink' ? 0.45 : 1) + fl * 1.5 + Math.sin(t * 2.3) * 0.06);
+      const pos = lineGeo.attributes.position.array;
+      motes.forEach((o, i) => {
+        o.m.position.set((o.x + Math.sin(t * 0.4 + o.p) * 0.8) * VOX_PARTY, (o.y + Math.sin(t * 0.3 + o.p * 2) * 0.7) * VOX_PARTY, (o.z + Math.sin(t * 0.5 + o.p) * 0.4) * VOX_PARTY);
+        o.m.scale.setScalar(0.6 + Math.max(0, Math.sin(t * 2.1 + o.p * 3)) * 0.8 + fl * 0.6);
+      });
+      LINKS.forEach(([a, b], i) => { motes[a].m.position.toArray(pos, i * 6); motes[b].m.position.toArray(pos, i * 6 + 3); });
+      lineGeo.attributes.position.needsUpdate = true;
+      lines.material.opacity = 0.25 + fl * 0.5 + Math.sin(t * 0.9) * 0.08;
+    };
     const tip = c.joint(R.head, ...c.v(0, 16, -3));
     c.part(tip, (P) => {
       P.path([[0, 0, 0, 6.2], [0, 6, -2.5, 4.3], [0, 11, -6, 2.5], [0, 15, -10.5, 1.2]], (x, y, z, t) => (t > 0.5 && t < 0.56 ? C.trim[2] : robe(x, y, z)));
@@ -487,8 +545,7 @@ export const BUILD = {
         g.rotation.set(Math.sin(t + i) * 0.3, -a + Math.PI / 2, Math.sin(t * 0.7 + i) * 0.25);
       });
       c.runeMat.color.setScalar(0.65 + fl * 1.2 + Math.sin(t * 3) * 0.08);
-      // the darkness in the hood stays dark, until the power wells up
-      c.glintMat.color.setScalar(clamp(fl - 0.3, 0, 1) * 1.5);
+      c.updateFace(dt, fl);
       // Kindle circles the hood unless sent somewhere
       if (c.kindleTarget) kp.copy(c.kindleTarget);
       else {
@@ -497,7 +554,7 @@ export const BUILD = {
       }
       k.group.position.lerp(kp, 1 - Math.exp(-5 * dt));
     };
-    c.onExpression = (e) => { if (e === 'surprised' || e === 'happy') k.excite = 1; };
+    c.onExpression = (e) => { c.faceShape = SHAPE[e] || 'neutral'; if (e === 'surprised' || e === 'happy') k.excite = 1; };
   },
 
   // ================================================================ DURGAN, the gnome warrior
@@ -735,20 +792,72 @@ export const BUILD = {
     // the long scarf, trailing behind
     c.chain(R.spine, c.v(2, 15, -6), 5, 6, (P, i) => P.box(-2.5, -6, -1, 2.5, 0, 1, (x, y) => (i === 4 && y < -3 ? (x & 1 ? C.scarf[3] : C.lining[2]) : (y + 60) % 6 === 0 ? C.scarf[1] : C.scarf[2])), { rot: [0.75, 0, 0.25], gain: 0.8, k: 42, d: 5, wobble: 0.07, phase: 0.4 });
 
-    // hood: a dark opening above the scarf, rimmed with pale lining; the scarf up over the nose
+    // hood: an opening framed in teal, and in it a little porcelain rabbit mask tied on with a ribbon
     const hoodC = cloth(C.hood, 7);
     c.part(R.head, (P) => {
       P.ell(0, 7.5, 0, 7.6, 8, 7.8, hoodC);
       P.loft(-2, 3, (y) => [7 + (3 - y) * 0.4, 6.6 + (3 - y) * 0.3], hoodC);
-      const open = (x, y, z) => z > 2 && Math.abs(x + 0.5) < 4.6 && y > 5 && y < 11.5;
+      const open = (x, y, z) => z > 1 && Math.abs(x + 0.5) < 6.2 && y > 0.5 && y < 12.6;
       P.carve(open);
       P.paint((x, y, z) => {
         if (!(open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) || open(x, y - 1, z) || open(x, y, z + 1))) return undefined;
-        return P.has(x, y, z + 1) || z <= 4 ? C.shadow : C.lining[(x + y) % 4 === 0 ? 3 : 2];
+        return P.has(x, y, z + 1) || z <= 4 ? C.shadow : C.hood[3];
       });
-      P.ell(0, 3, 1.6, 8, 3.9, 7.4, (x, y, z) => (y === 5 ? C.scarf[3] : y === 2 ? C.scarf[1] : C.scarf[2]));
+      // the ribbon runs from the mask back under the hood, tied in a bow at the nape
+      for (const sx of [-1, 1]) for (let z = 1; z <= 4; z++) P.set(sx < 0 ? -7 : 6, 8, z, C.ribbon[2]);
+      for (const sx of [-1, 1]) P.ell(sx * 2.4 - 0.5, 0, -8.6, 2, 1.5, 1, (x, y) => C.ribbon[y > 0 ? 3 : 2]);
+      P.ell(-0.5, 0, -9, 1, 1, 1, C.ribbon[1]);
       stitch(P, (x, y) => (x === -1 || x === 0) && y > 12, C.hood[3]);
     });
+    c.chain(R.head, c.v(0, -1, -9), 2, 4, (P, i) => { P.box(-2, -4, -0.5, 0, 0, 0.5, C.ribbon[i ? 3 : 2]); P.box(0, -4, -0.5, 2, 0, 0.5, C.ribbon[2]); }, { rot: [0.2, 0, 0], gain: 0.5, k: 50, wobble: 0.05, twist: false });
+    // the mask: rounded cheeks, a button nose, painted whiskers, blush, a tiny smile; its painted
+    // eyes change with the mood (and the whole mask tilts)
+    const MASK = [
+      '...swwwws...', '..swwwwwws..', '.swwwwwwwws.', 'seeeewweeees', 'seeeewweeees', 'seeeewweeees',
+      'swbbwnnwbbws', 'kwbbwppwbbwk', 'kwwwwmmwwwwk', 'swwwmwwmwwws', '.swwwwwwwws.', '..sswwwwss..',
+    ];
+    const cell = (x, y) => { const r = MASK[12 - y]; return r ? r[x + 6] || '.' : '.'; };
+    const zf = (x, y) => Math.round(8.4 - (x + 0.5) ** 2 / 18 - (y - 7) ** 2 / 40 + (y < 5.5 && Math.abs(x + 0.5) > 2.5 && Math.abs(x + 0.5) < 5.5 ? 0.6 : 0));
+    const mj = c.joint(R.head, ...c.v(0, 6, 6));
+    const MO = { offset: [0, 6, 6] };
+    c.part(mj, (P) => {
+      for (let y = 1; y <= 12; y++) for (let x = -6; x < 6; x++) {
+        const ch = cell(x, y);
+        if (ch === '.') continue;
+        const z = zf(x, y), base = C.porcelain[y > 9 && Math.abs(x + 0.5) < 3 ? 3 : 2];
+        P.set(x, y, z - 1, C.porcelain[1]);
+        if (ch === 'e') continue; // the painted eyes are their own pieces
+        P.set(x, y, z, ch === 's' ? C.porcelain[1] : ch === 'k' || ch === 'm' ? C.rose : ch === 'b' ? C.blush : ch === 'p' ? C.nose[0] : ch === 'n' ? C.nose[1] : base);
+        if (ch === 'p' || ch === 'n') P.set(x, y, z + 1, ch === 'n' ? C.nose[1] : C.nose[0]); // a little button nose
+      }
+    }, MO);
+    // painted eyes, outer edge first: little shiny dots, ^ ^ when happy, O O surprised, > < hurt
+    const EYES = {
+      neutral: ['....', '.##.', '.##.'], happy: ['....', '.##.', '#..#'], surprised: ['.##.', '#..#', '.##.'],
+      sad: ['.##.', '#..#', '....'], angry: ['#...', '.##.', '.##.'], sleepy: ['....', '....', '####'],
+      determined: ['....', '####', '.##.'], smug: ['....', '####', '....'], hurt: ['#...', '.##.', '#...'],
+    };
+    c.maskEyes = {};
+    for (const [key, rows] of Object.entries(EYES)) {
+      c.maskEyes[key] = c.part(mj, (P) => {
+        rows.forEach((r, row) => { for (let i = 0; i < 4; i++) {
+          const ch = r[i], y = 9 - row, col = ch === '#' ? C.paint : C.porcelain[2];
+          P.set(-5 + i, y, zf(-5 + i, y), col); P.set(4 - i, y, zf(4 - i, y), col);
+          // a highlight catches the top-left of each round painted eye
+          if (key === 'neutral' && row === 1 && i === 1) { P.set(-4, y, zf(-4, y), C.porcelain[3]); P.set(2, y, zf(2, y), C.porcelain[3]); }
+        } });
+      }, MO);
+      c.maskEyes[key].visible = key === 'neutral';
+    }
+    const TILT = { happy: [0.16, -0.06], surprised: [0, -0.12], sad: [-0.1, 0.14], angry: [0, 0.08], smug: [0.2, 0], hurt: [-0.18, 0.1], sleepy: [0.22, 0.12] };
+    c.maskTilt = [0, 0];
+    c.addSpring(mj, 'z', { base: 0, src: 'vx', gain: -0.06, k: 70, d: 6, wobble: 0.015, extra: (h) => h.maskTilt[0] });
+    c.addSpring(mj, 'x', { base: 0, src: 'vy', gain: 0.05, k: 70, d: 6, extra: (h) => h.maskTilt[1] });
+    c.onExpression = (e) => {
+      const key = c.maskEyes[e] ? e : 'neutral';
+      for (const k in c.maskEyes) c.maskEyes[k].visible = k === key;
+      c.maskTilt = TILT[e] || [0, 0];
+    };
     c.headTop = 15 * 0.02;
     // the long ears, through slits in the hood; the right one flops at the tip
     const earC = (x, y, z) => (z >= 0 && Math.abs(x + 0.5) < 1.9 && y > 1 && y < 12 ? C.inner[y > 7 ? 2 : 1] : fur(C.fur, 8)(x, y, z));
