@@ -20,6 +20,8 @@ export class Renderer {
     this.gl.toneMapping = THREE.NoToneMapping;
     bindSpriteRenderer(this.gl); // 2D sprites are rendered from voxel models on this context
     this.canvas3d = this.gl.domElement;
+    // a phone that runs short of graphics memory drops the context: say so instead of going black
+    this.canvas3d.addEventListener('webglcontextlost', (e) => { e.preventDefault(); window.__forgliteFail && window.__forgliteFail('the phone ran out of graphics memory. Close other apps or tabs and try again.', true); });
     this.canvasUI = document.createElement('canvas');
     stage.appendChild(this.canvas3d);
     stage.appendChild(this.canvasUI);
@@ -75,7 +77,12 @@ export class Renderer {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const area = this.safe ? this.safe.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
     const AW = area.width || window.innerWidth, AH = area.height || window.innerHeight;
-    const fit = Math.min(AW / BASE_W, AH / BASE_H);
+    // A touchscreen held upright (or an app view that never rotates) gets the stage turned 90°:
+    // turn the phone and the game fills the screen the right way up.
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    this.rot = coarse && AH > AW * 1.05;
+    const FW = this.rot ? AH : AW, FH = this.rot ? AW : AH;
+    const fit = Math.min(FW / BASE_W, FH / BASE_H);
     const whole = Math.floor(fit * dpr) / dpr;
     const s = whole >= 1 && fit - whole < 0.12 ? whole : fit;
     const vw = BASE_W, vh = BASE_H;
@@ -92,6 +99,7 @@ export class Renderer {
     this.stage.style.left = Math.floor((area.left || 0) + (AW - cssW) / 2) + 'px';
     this.stage.style.top = Math.floor((area.top || 0) + (AH - cssH) / 2) + 'px';
     this.stage.style.width = cssW + 'px'; this.stage.style.height = cssH + 'px';
+    this.stage.style.transform = this.rot ? 'rotate(90deg)' : '';
     this.rtScene.setSize(vw, vh);
     this.rtNormal.setSize(vw, vh);
     const hw = Math.max(1, vw >> 1), hh = Math.max(1, vh >> 1);
@@ -105,6 +113,11 @@ export class Renderer {
   /** Convert client (CSS) coordinates into virtual pixel coordinates. */
   toVirtual(cx, cy) {
     const r = this.canvasUI.getBoundingClientRect();
+    if (this.rot) {
+      // turned 90° clockwise: a screen offset (dx, dy) from the centre is (dy, -dx) on the stage
+      const dx = cx - (r.left + r.width / 2), dy = cy - (r.top + r.height / 2);
+      return { x: (dy / r.height + 0.5) * this.vw, y: (-dx / r.width + 0.5) * this.vh };
+    }
     return { x: ((cx - r.left) / r.width) * this.vw, y: ((cy - r.top) / r.height) * this.vh };
   }
 

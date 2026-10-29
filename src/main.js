@@ -40,10 +40,29 @@ if (params.get('char')) {
   const r = +(params.get('region') || 0);
   for (let i = 0; i < r; i++) game.run.nextRegion();
 }
+// Let the loading screen paint first (the first scenes are built from voxels and take a moment on a
+// phone), then start, and lift the loading screen once real frames are flowing.
 const boot = document.getElementById('boot');
-if (boot) boot.remove();
-game.go(params.get('scene') || 'title', Object.fromEntries(params.entries()), { transition: 'none' });
-game.start();
+const begin = () => {
+  try {
+    // a first launch opens on the prologue and builds the camp only after it (half the first wait)
+    const intro = !params.get('scene') && !save.data.seen.intro;
+    if (intro) game.go('cutscene', { id: 'prologue', onDone: () => { save.data.seen.intro = true; save.write(); game.go('title', { skipintro: 1 }, { transition: 'fade' }); } }, { transition: 'none' });
+    else game.go(params.get('scene') || 'title', Object.fromEntries(params.entries()), { transition: 'none' });
+  } catch (e) {
+    if (window.__forgliteFail) window.__forgliteFail(e && e.message ? e.message : String(e), true);
+    throw e;
+  }
+  game.start();
+  let n = 0;
+  const lift = () => {
+    if (++n < 4) { requestAnimationFrame(lift); return; }
+    window.__forgliteBooted = true;
+    if (boot) boot.remove();
+  };
+  requestAnimationFrame(lift);
+};
+requestAnimationFrame(() => setTimeout(begin, 40));
 
 // Every 2D sprite is rendered from a voxel model on first use. Warm the common ones in idle time
 // (one per idle slice) so the first bag, card or icon never stutters.
@@ -51,9 +70,12 @@ const warm = [
   ...iconNames().flatMap((n) => [() => icon(n), () => icon(n + ':s')]),
   ...[...new Set(Object.values(CHARACTERS).flatMap((c) => c.start || []))].flatMap((id) => [() => materialSprite(id, 32), () => materialSprite(id, 48)]),
 ];
-const idle = window.requestIdleCallback || ((f) => setTimeout(() => f({ timeRemaining: () => 8 }), 60));
+// Safari has no requestIdleCallback: the stand-in gives each slice a real 6 ms budget.
+const idle = window.requestIdleCallback || ((f) => setTimeout(() => { const end = performance.now() + 6; f({ timeRemaining: () => Math.max(0, end - performance.now()) }); }, 90));
 const pump = (d) => {
-  while (warm.length && d.timeRemaining() > 4) { try { warm.shift()(); } catch (e) { /* skip */ } }
+  // at least one sprite per slice, never more than a few: each one waits on the GPU
+  let n = 0;
+  do { try { warm.shift()(); } catch (e) { /* skip */ } } while (warm.length && ++n < 3 && d.timeRemaining() > 4);
   if (warm.length) idle(pump);
 };
-setTimeout(() => idle(pump), 2500);
+setTimeout(() => idle(pump), 6000);

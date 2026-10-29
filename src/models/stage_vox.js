@@ -447,6 +447,8 @@ function mixHex(a, b, t) { const A = new THREE.Color(a), Bc = new THREE.Color(b)
 
 // ---------------------------------------------------------------------------- baking
 const geoCache = new Map(); // key -> {solid, glow, faces}; small LRU of whole stages (title, arenas, rooms)
+// a whole stage holds 30–75 MB of vertex data; phones keep fewer of them around
+const GEO_CACHE_MAX = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 3 : 8;
 const BIG = 1e6;
 /**
  * Paint the plan into a voxel world and mesh it. o: { bounds (voxel x-range, corridor segments),
@@ -474,7 +476,7 @@ function bake(st, plan, key, bounds = null, o = {}) {
     if (cacheKey) {
       for (const g of [res.solid, res.glow, res.far && res.far.solid, res.far && res.far.glow]) if (g) g.userData.keep = true;
       geoCache.set(cacheKey, res);
-      if (geoCache.size > 8) {
+      if (geoCache.size > GEO_CACHE_MAX) {
         const [k0, old] = geoCache.entries().next().value;
         geoCache.delete(k0);
         for (const g of [old.solid, old.glow, old.far && old.far.solid, old.far && old.far.glow]) if (g) g.dispose();

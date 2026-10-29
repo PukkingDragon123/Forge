@@ -21,22 +21,59 @@ const shell = (body) => `<!doctype html>
   html, body { margin: 0; height: 100%; background: #07060b; overflow: hidden; }
   body { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
          -webkit-tap-highlight-color: transparent; overscroll-behavior: none; position: fixed; inset: 0; }
-  #turn { display: none; position: fixed; inset: 0; z-index: 9; background: #07060b; color: #e8d8b8;
-          flex-direction: column; align-items: center; justify-content: center; gap: 18px;
-          font: 15px/1.4 monospace; letter-spacing: 1px; text-align: center; padding: 24px; }
-  #turn svg { width: 92px; height: 92px; animation: tilt 2.4s ease-in-out infinite; }
-  @keyframes tilt { 0%, 35% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
-  @media (orientation: portrait) and (pointer: coarse) { #turn { display: flex; } }
   #stage { position: fixed; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
   #stage canvas { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
-  #boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-          color: #c9a36a; font: 14px monospace; letter-spacing: 2px; }
+  /* loading screen: sits above the stage until real frames flow; its sparks animate on the
+     compositor, so they keep moving while the first voxel scenes are being built */
+  #boot { position: fixed; inset: 0; z-index: 8; background: #07060b; display: flex; align-items: center; justify-content: center; }
+  #boot .in { display: flex; flex-direction: column; align-items: center; gap: 14px; color: #c9a36a;
+              font: 14px monospace; letter-spacing: 2px; text-align: center; }
+  #boot .anvil { position: relative; width: 64px; height: 40px; }
+  #boot .anvil i { position: absolute; bottom: 8px; width: 6px; height: 6px; background: #ffd27a;
+                   box-shadow: 0 0 8px 2px #ff9a3a; animation: spark 1.1s ease-out infinite; opacity: 0; }
+  #boot .anvil i:nth-child(1) { left: 22px; animation-delay: 0s; } #boot .anvil i:nth-child(2) { left: 30px; animation-delay: .36s; }
+  #boot .anvil i:nth-child(3) { left: 38px; animation-delay: .72s; }
+  #boot .anvil b { position: absolute; left: 10px; right: 10px; bottom: 0; height: 8px; background: #5a4a52; box-shadow: 0 -3px 0 #8a7a82; }
+  @keyframes spark { 0% { transform: translate(0, 0); opacity: 1; } 100% { transform: translate(var(--dx, 14px), -30px); opacity: 0; } }
+  #boot .anvil i:nth-child(1) { --dx: -16px; } #boot .anvil i:nth-child(3) { --dx: 18px; }
+  #boot small { color: #8a7a6a; font-size: 11px; letter-spacing: 1px; }
+  #boot .turn { display: none; }
+  @media (orientation: portrait) and (pointer: coarse) { #boot .in { transform: rotate(90deg); } #boot .turn { display: block; } }
+  #err { display: none; position: fixed; inset: 0; z-index: 9; background: rgba(7, 6, 11, .94); color: #f0d8b0;
+         align-items: center; justify-content: center; padding: 24px; white-space: pre-wrap; text-align: center;
+         font: 13px/1.5 monospace; }
+  #err.toast { inset: auto 8px 8px 8px; padding: 8px 10px; font-size: 11px; border: 1px solid #6a3a2a; background: rgba(20, 8, 8, .9); }
 </style>
 </head>
 <body>
-<div id="boot">KINDLING THE FORGE…</div>
-<div id="turn"><svg viewBox="0 0 64 64" fill="none" stroke="#e8b86a" stroke-width="3" stroke-linejoin="round"><rect x="20" y="6" width="24" height="44" rx="4"/><path d="M28 44h8"/><path d="M50 30c6 6 6 16 0 22M54 48l-4 4-4-4" stroke="#c9a36a"/></svg><div>Turn your phone sideways<br><span style="color:#9a8a72">the mine is wider than it is tall</span></div></div>
+<div id="boot"><div class="in"><div class="anvil"><i></i><i></i><i></i><b></b></div><div>KINDLING THE FORGE…</div><small>carving the caverns, voxel by voxel</small><small class="turn">turn your phone sideways</small></div></div>
+<div id="err"></div>
 <div id="stage"></div>
+<script>
+// Problems show on screen instead of a silent black page (before the game starts: full screen;
+// afterwards: one small note at the bottom).
+(function () {
+  var shown = false;
+  function fail(msg, fatal) {
+    if (shown) return; shown = true;
+    var e = document.getElementById('err'); if (!e) return;
+    var early = fatal || !window.__forgliteBooted;
+    e.className = early ? '' : 'toast';
+    e.textContent = (early ? 'FORGLITE could not start on this device.\\n\\n' : 'FORGLITE hit a snag: ') + msg + (early ? '\\n\\nTap to try again.' : '');
+    e.style.display = 'flex';
+    e.onclick = early ? function () { location.reload(); } : function () { e.style.display = 'none'; };
+    if (!early) setTimeout(function () { e.style.display = 'none'; }, 9000);
+  }
+  window.__forgliteFail = fail;
+  window.addEventListener('error', function (ev) { fail((ev.message || 'script error') + (ev.lineno ? ' (line ' + ev.lineno + ')' : '')); });
+  window.addEventListener('unhandledrejection', function (ev) { var r = ev.reason; fail(String(r && r.message || r)); });
+  try {
+    var c = document.createElement('canvas'), g = c.getContext('webgl2');
+    if (!g) fail('This browser has no WebGL 2 (needed for the 3D caverns). Updating the browser or OS usually fixes it.', true);
+    else { var l = g.getExtension('WEBGL_lose_context'); l && l.loseContext(); }
+  } catch (x) { /* checked again when the game starts */ }
+})();
+</script>
 ${body}
 </body>
 </html>
@@ -85,7 +122,7 @@ if (serve) {
   console.log(`\n  FORGLITE dev server: http://localhost:${port}\n`);
 } else {
   mkdirSync('dist', { recursive: true });
-  const result = await esbuild.build({ ...common, write: false, minify: true, outfile: 'dist/game.js', define: { DEV: 'false' } });
+  const result = await esbuild.build({ ...common, write: false, minify: !process.env.NOMIN, outfile: 'dist/game.js', define: { DEV: 'false' } });
   const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
   writeFileSync('dist/index.html', shell(`<script>${js}</script>`));
   // claude.ai artifact flavour: the host supplies the document skeleton, so only head content + body

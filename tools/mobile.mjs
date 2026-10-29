@@ -15,8 +15,8 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push('[pageerror] ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('[console] ' + m.text()); });
-await page.goto('file://' + resolve('dist/index.html') + '?' + query);
-await page.waitForTimeout(2500);
+await page.goto('file://' + resolve(process.env.PAGE || 'dist/index.html') + '?' + query);
+await page.waitForTimeout(+(process.env.WAIT0 || 2500));
 const touchAt = async (x, y, ms = 60) => {
   const cdp = await ctx.newCDPSession(page);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });

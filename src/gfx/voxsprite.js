@@ -47,9 +47,14 @@ function dispose(obj) {
  *   opts: { w, h, yaw, pitch, roll, pad, ppu (px per world unit; default fits), light, outline, outline2,
  *           keep, bg, fov (0 = orthographic) }
  */
+/** Count and time of sprite renders (read by the boot probe in tools/). */
+export const spriteStats = { n: 0, ms: 0, px: 0 };
+if (typeof window !== 'undefined') window.__voxSprites = spriteStats;
+
 export function voxSprite(key, build, opts = {}) {
   const hit = cache.get(key);
   if (hit) return hit;
+  const t0 = performance.now();
   const w = Math.max(1, opts.w || 64), h = Math.max(1, opts.h || opts.w || 64);
   const r = renderer();
   const scene = new THREE.Scene();
@@ -115,8 +120,9 @@ export function voxSprite(key, build, opts = {}) {
   }
   ctx.putImageData(img, 0, 0);
   out.ppu = ppu;
+  spriteStats.n++; spriteStats.ms += performance.now() - t0; spriteStats.px += w * h;
   cache.set(key, out);
-  if (cache.size > 1500) cache.delete(cache.keys().next().value);
+  if (cache.size > 1500) { const k0 = cache.keys().next().value; const c0 = cache.get(k0); spriteStats.px -= c0.width * c0.height; cache.delete(k0); }
   return out;
 }
 
