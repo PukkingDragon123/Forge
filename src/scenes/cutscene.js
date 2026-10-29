@@ -748,7 +748,7 @@ SCRIPTS.descend = (c, p) => {
       { set: 'land', dur: 6.2, dip: 0.5,
         cam: { pos: [[-5.6, 6.0, 9.4], [-2.6, 3.2, 7.2], [-1.4, 1.45, 5.4]], look: [[1.0, 1.4, -1.6], [0.4, 1.3, -1.0], [-0.8, 1.0, 0]], fov: [46, 38] },
         enter: (c) => {
-          c.envTo(0.08, 0.08, 0.1, 0.25, 0); L.lightK = 0.08; L.flameK = 0;
+          c.envTo(0.24, 0.23, 0.3, 0.4, 0); L.lightK = 0.22; L.flameK = 0.15;
           c.later(0.5, () => { c.envTo(1, 1, 1, 1, 2.6); c.to(L, { lightK: 1, flameK: 1 }, 2.4); c.sfx('fire_whoosh', { vol: 0.6 }); c.flash(0.12, rgb(to.pal.glow)); });
           c.walk(hero, hp, 4.6, { then: 'idle' });
           c.titleCard(to.name, to.sub, { at: 1.6, dur: 3.6, bottom: to.pal.glow, line: to.pal.glow });

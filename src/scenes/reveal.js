@@ -131,8 +131,9 @@ export class RevealOverlay extends Scene {
     const back = cardBack(this.isWeapon ? 'forge' : MATERIALS[this.item.id] && MATERIALS[this.item.id].kind === 'part' ? 'part' : 'ore');
     const ft = clamp((t - 0.45) / 0.5);
     if (ft > 0) {
-      const scale = 2;
-      const fx = Math.round(ui.w * 0.7), fy = Math.round(cy - (card.height * scale) / 2 + (1 - ease.outCubic(clamp(ft * 2))) * 60);
+      // as large as fits (phones get the biggest card so its text stays readable)
+      const scale = Math.max(2, Math.min(3, Math.floor((ui.h - 150) / card.height), Math.floor((ui.w * 0.26) / card.width)));
+      const fx = Math.round(ui.w * 0.72), fy = Math.round(cy - (card.height * scale) / 2 + (1 - ease.outCubic(clamp(ft * 2))) * 60);
       const flip = Math.cos(ft * Math.PI); // 1 → -1
       const face = flip < 0 ? card : back;
       const sw = Math.max(1, Math.round(Math.abs(flip) * face.width * scale));
