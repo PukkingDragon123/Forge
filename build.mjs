@@ -45,11 +45,11 @@ ${body}
 // Until an art module exists, fall back to its stand-in under tools/stubs (lets scenes be built in parallel).
 import { existsSync } from 'node:fs';
 import { resolve as resolvePath, dirname as dirOf, basename as baseOf } from 'node:path';
-const STUBBED = ['src/art/sprites.js', 'src/ui/cards.js', 'src/models/characters.js', 'src/models/weapons3d.js', 'src/models/monsters.js', 'src/models/props.js', 'src/models/environments.js'];
+const STUBBED = ['src/art/sprites.js', 'src/ui/cards.js', 'src/models/characters.js', 'src/models/weapons3d.js', 'src/models/monsters.js', 'src/models/props.js'];
 const stubPlugin = {
   name: 'stubs',
   setup(b) {
-    b.onResolve({ filter: /(sprites|cards|characters|weapons3d|monsters|props|environments|audio)\.js$/ }, (args) => {
+    b.onResolve({ filter: /(sprites|cards|characters|weapons3d|monsters|props|audio)\.js$/ }, (args) => {
       if (args.importer.includes('tools/stubs')) {
         const real = resolvePath(dirOf(args.importer), args.path);
         if (existsSync(real)) return { path: real };
