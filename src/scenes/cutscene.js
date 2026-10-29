@@ -16,7 +16,7 @@ import { buildMonster } from '../models/monsters.js';
 import { buildProp } from '../models/props.js';
 import { buildWeaponMesh, shatterPieces, updateShards, crackWeapon } from '../models/weapons3d.js';
 import { ParticleSystem, Debris } from '../gfx/particles.js';
-import { fxify, glowSprite, beam, aimBeam, waveRing, waveWall, shockSphere, stoneify, buildShaft, buildSealWall } from '../art/cutscene_art.js';
+import { glowSprite, beam, aimBeam, waveRing, waveWall, shockSphere, stoneify, buildShaft, buildSealWall } from '../art/cutscene_art.js';
 import { tagCanvas } from '../art/handpaint.js';
 import { REGIONS } from '../data/regions.js';
 import { MONSTERS } from '../data/monsters.js';
