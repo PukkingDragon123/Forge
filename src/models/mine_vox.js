@@ -426,7 +426,11 @@ export class RockFace {
     for (const row of tiles) for (const t of row) {
       const id = t.x + ',' + t.y;
       let s = this.stones.get(id);
-      if (t.broken) { if (s) { this.drop(s); this.stones.delete(id); } continue; }
+      if (t.broken) {
+        // keep a just-broken stone a moment so the break burst can read its voxels, then let it go
+        if (s) { s.brokenAt = s.brokenAt || performance.now(); if (performance.now() - s.brokenAt > 600) this.remove(t.x, t.y); }
+        continue;
+      }
       const f = flagsOf(t);
       const key = [t.t, t.mat, t.hits, t.crack, JSON.stringify(t.veins || {}), t.glint, t.revealed ? 1 : 0, t.marked ? 1 : 0, f.exposed ? 1 : 0, f.flare ? 1 : 0, s ? s.chips.size : 0].join('|');
       if (s && s.key === key) continue;
@@ -437,6 +441,7 @@ export class RockFace {
       this.stones.set(id, s);
     }
   }
+  remove(x, y) { const id = x + ',' + y, s = this.stones.get(id); if (s) { this.drop(s); this.stones.delete(id); } }
   drop(s) { this.group.remove(s.group); disposeVox(s.mesh); if (s.ore) s.ore.traverse((o) => o.isMesh && o.geometry.dispose()); }
   /** Material tint for dim / hover / flash, and a little shake offset. */
   look(x, y, mul, dx = 0) {

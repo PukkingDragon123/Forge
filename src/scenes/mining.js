@@ -1,24 +1,24 @@
-// Mining spot: a hand-painted mine workshop. Your explorer (3D) stands at a rock face of chiselled
-// stones whose strata colour with depth; strike the stones from the top down, read the clues in the
-// rock, and watch the ore burst out and tumble into the minecart. Swings are chalked on a slate,
-// tools wait in a crate, the anvil forges a pick. No panels: everything you touch is part of the room.
-// The room is alive with 2D light and particles: lamp cones, a daylight shaft, motes, drips, steam,
-// glitter on veins, sparks, dust and flares.
+// Mining spot: a voxel mine workshop seen through an oblique "3/4" camera. Your explorer stands at a
+// rock face of sculpted voxel stones whose strata colour with depth; strike the stones from the top
+// down, read the clues carved into the rock, and watch the stones lose cubes, burst into tumbling
+// debris that piles on the floor, and give up their ore, which flies into the minecart. Swings are
+// chalked on a slate, tools wait in a crate, the anvil forges a pick. No panels: everything you touch
+// is part of the room. On top, 2D light and particles: lamp glows, a daylight shaft, motes, drips,
+// steam, glitter on veins, sparks, dust and flares.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
-import { ParticleSystem } from '../gfx/particles.js';
-import { pixelTexture } from '../gfx/materials.js';
 import { generateMine, MiningRun, MINE_W, MINE_H } from '../systems/mining.js';
 import { REGIONS } from '../data/regions.js';
 import { MATERIALS, RARITY } from '../data/materials.js';
 import { matOf } from '../systems/items.js';
-import { materialSprite } from '../art/sprites.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildWeaponMesh, crackWeapon, shatterPieces, updateShards } from '../models/weapons3d.js';
+import { BOARD, LANTERNS, rockFace, cellAt, tagCanvas, noteCanvas } from './mining_art.js';
 import {
-  SCREEN_W, SCREEN_H, FLOOR_Y, BOARD, LANTERNS, PROPS, DRIPS, rockFace, cellAt, stoneCanvas, cavityCanvas, faceRim, chunkCanvas,
-  chamberCanvas, lanternCanvas, cartCanvas, crateCanvas, anvilCanvas, slateCanvas, noteCanvas, tagCanvas, oreArt,
-} from './mining_art.js';
+  mineCamera, mineLamps, toWorld, toScreen, screenRect, buildChamber, RockFace, Debris, anvilProp, crateProp, cartProp, cartSlot,
+  slateProp, noteProp, oreModel, oreSprite, disposeVox, FLOOR_W, DRIP_POINTS, PROP_AT, VOXEL,
+} from '../models/mine_vox.js';
+import { voxRelief } from '../ui/vox_ui.js';
 import { STRATA, glow, shaftCanvas } from '../art/mine_kit.js';
 import { MineFX } from '../art/mine_fx.js';
 import { openForge } from './forgeui.js';
@@ -26,15 +26,16 @@ import { hud, speech, prompt, ring, dim, bark } from './common.js';
 import { finish, openBag, gameOver } from './flow.js';
 import { COLORS } from '../ui/font.js';
 import { save } from '../core/save.js';
-import { clamp, ease, hash2 } from '../core/math.js';
+import { clamp, ease } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
 
-const PX = 0.01;
 const TOOL_IDS = ['blast', 'drill', 'scanner', 'radar', 'flare'];
 const TOOL_USE = { blast: 'blast', drill: 'drill', scanner: 'scan', radar: 'radar', flare: 'flare' };
 const ORE_SFX = ['ore_common', 'ore_common', 'ore_rare', 'ore_epic', 'ore_legendary'];
 const RARITY_WORD = ['', 'Uncommon', 'Rare!', 'EPIC!', 'LEGENDARY!'];
-const HERO = { x: 168, y: FLOOR_Y + 4 };
+const HERO_W = { x: (168 - 480) / 100, z: 0.6 };
+const HERO = toScreen(HERO_W.x, FLOOR_W, HERO_W.z);
+const FX_FLOOR = toScreen(0, FLOOR_W, 0.5).y;
 const PICK_TEXT = {
   strikes: (v) => `+${v} swing${v > 1 ? 's' : ''}`, magnetic: () => 'Magnetic: pulls adjacent metals', gemDupe: () => 'Crystal: first gem doubled',
   cursed: () => 'Cursed: 3×3 swings, -1 quality', lucky: () => 'Lucky: better ores', smelt: () => 'Smelt: metals +1 quality',
@@ -43,14 +44,14 @@ const PICK_TEXT = {
   preserve: () => 'Preserve: no quality loss', unlock: () => 'Opens treasure pockets', archaeo: () => 'Fossils +1 quality', seehaz: () => 'Reveals hazards',
   quality: () => 'Gems +1 quality', melt: () => 'Melts ice ores!',
 };
-const toWorld = (x, y) => ({ x: (x - SCREEN_W / 2) * PX, y: (SCREEN_H / 2 - y) * PX });
+const plankTag = (w) => voxRelief('mine-tag|' + w, () => tagCanvas(w));
+const notePanel = (w, h) => voxRelief('mine-note|' + w + '|' + h, () => noteCanvas(w, h, 11), { relief: 'flat' });
 
 export class MiningScene extends Scene {
   enter(params = {}) {
     const game = this.game, run = game.run;
     this.node = params.node;
     this.region = run.region;
-    this.pal = REGIONS[this.region].pal;
     this.strata = STRATA[this.region] || STRATA[0];
     this.luck = run.char === 'clover' ? 1 : 0;
     this.genSeed = 'mine' + run.map.current + ':' + run.stats.floors;
@@ -63,8 +64,6 @@ export class MiningScene extends Scene {
     this.tool = null;
     this.tray = [];
     this.flyers = [];
-    this.parts = [];
-    this.rubble = [];
     this.cracks = [];
     this.flashes = {};
     this.shakes = {};
@@ -77,8 +76,8 @@ export class MiningScene extends Scene {
     this.cartBump = 0;
     this.noteOpen = !save.data.seen.tips.mining;
     this.shown = new Set();
-    this.fx = new MineFX(FLOOR_Y + 2);
-    this.dripT = DRIPS.map(() => rnd.float(0.5, 4));
+    this.fx = new MineFX(FX_FLOOR);
+    this.dripT = DRIP_POINTS.map(() => rnd.float(0.5, 4));
     this.buildWorld();
     const au = game.audio;
     au.music(REGIONS[this.region].music);
@@ -90,53 +89,61 @@ export class MiningScene extends Scene {
   buildWorld() {
     const run = this.game.run;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#1a1426');
-    const bg = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN_W * PX, SCREEN_H * PX), new THREE.MeshBasicMaterial({ map: pixelTexture(chamberCanvas(this.region)) }));
-    scene.add(bg);
-    const cam = new THREE.OrthographicCamera(-4.8, 4.8, 2.7, -2.7, 0.1, 50);
-    cam.userData.viewHeight = SCREEN_H * PX;
-    cam.position.set(0, 0, 10); cam.lookAt(0, 0, 0);
-    // the painted backdrop stays exactly as painted; the 3D explorer gets inked outlines and warm lamp light
-    this.world = { scene, camera: cam, post: { tone: 0, saturation: 1, contrast: 1, lift: [0, 0, 0], gain: [1, 1, 1], vignette: 0.2, dither: 0, bloom: 0.5, threshold: 0.82, outline: 0.75, edge: 0.35 } };
-    scene.add(new THREE.HemisphereLight(0xb8a8e0, 0x5a3a4a, 0.85));
-    const lamp = new THREE.PointLight(0xffc27a, 4.2, 9, 1.2);
-    const lw = toWorld(LANTERNS[0].x, LANTERNS[0].y + 10);
-    lamp.position.set(lw.x, lw.y, 1.8);
-    scene.add(lamp);
-    this.lamp = lamp;
-    const sun = new THREE.DirectionalLight(0xfff0d0, 0.9); // daylight from the crack above
-    sun.position.set(-2, 4, 2);
+    scene.background = new THREE.Color('#140e1c');
+    const cam = mineCamera();
+    // voxel room with baked light; the explorer and the ore get matching real-time lamps
+    this.world = { scene, camera: cam, post: { tone: 0, saturation: 1.06, contrast: 1.02, lift: [0, 0, 0], gain: [1, 1, 1], vignette: 0.28, dither: 0, bloom: 0.55, threshold: 0.8, outline: 0.6, edge: 0.3 } };
+    scene.add(buildChamber(this.region, BOARD));
+    scene.add(new THREE.HemisphereLight(0xd8c8f8, 0x5a3a4a, 1.05));
+    const lamps = mineLamps(this.region);
+    this.lamps = lamps.slice(0, 2).map((l) => { const p = new THREE.PointLight(0xffc27a, 3.4, 7, 1.2); p.position.set(l.x, l.y, l.z + 0.6); scene.add(p); return p; });
+    const sun = new THREE.DirectionalLight(0xfff0d0, 1.0); // daylight from the crack above
+    sun.position.set(-2, 4, 3);
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0x8a9ad8, 0.5);
+    const fill = new THREE.DirectionalLight(0x8a9ad8, 0.45);
     fill.position.set(3, -0.5, 3);
     scene.add(fill);
-    this.dust = new ParticleSystem(200);
-    scene.add(this.dust.object);
+    this.face = new RockFace(this.geom, this.region, BOARD, scene);
+    this.debris = new Debris(1700);
+    scene.add(this.debris.mesh);
+    // the things you touch
+    this.props = { anvil: anvilProp(this.region), crate: crateProp(this.region), cart: cartProp(this.region), note: noteProp(this.region) };
+    for (const p of Object.values(this.props)) scene.add(p);
+    this.rects = {};
+    for (const [k, p] of Object.entries(this.props)) this.rects[k] = screenRect(p, 2);
+    this.slate = null; this.slateKey = '';
+    this.toolModels = new Map();
+    this.cartOre = [];
+    // the explorer
     const hero = buildCharacter(run.char);
     const box = new THREE.Box3().setFromObject(hero.group);
-    const h = Math.max(0.3, box.max.y - box.min.y);
-    const scale = (run.char === 'durgan' ? 150 : run.char === 'clover' ? 165 : 196) * PX / h;
-    hero.group.scale.setScalar(scale);
-    const hw = toWorld(HERO.x, HERO.y);
-    hero.group.position.set(hw.x, hw.y - box.min.y * scale, 1);
+    // the explorer keeps scale 1: it shares the room's 0.04 voxel grid (1 unit = 100 px here)
+    hero.group.position.set(HERO_W.x, FLOOR_W - box.min.y, HERO_W.z);
     hero.group.rotation.y = 1.0;
     hero.play('idle', { loop: true });
     scene.add(hero.group);
     this.hero = hero;
-    this.heroH = h * scale;
+    this.heroH = Math.max(0.3, box.max.y - box.min.y);
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.5, 20), new THREE.MeshBasicMaterial({ color: 0x1a1028, transparent: true, opacity: 0.4, depthWrite: false }));
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.scale.set(1, 0.55, 1);
+    shadow.position.set(HERO_W.x, FLOOR_W + 0.006, HERO_W.z);
+    scene.add(shadow);
     this.equipPick();
     this.shards = null;
+    this.face.sync(this.wall.tiles, (t) => this.stoneFlags(t));
   }
   equipPick() {
     const mesh = buildWeaponMesh({ bp: 'pickaxe', ids: this.pickIds, el: {}, grade: this.pickName ? 2 : 0 });
     this.pickMesh = mesh;
     this.hero.hold && this.hero.hold(mesh);
   }
-  headScreen() { return { x: HERO.x + 6, y: HERO.y - this.heroH / PX - 6 }; }
+  headScreen() { return toScreen(HERO_W.x + 0.06, FLOOR_W + this.heroH + 0.06, HERO_W.z); }
   /** Body language instead of words: play an animation if the explorer has it. */
   act(name, fallback) { this.hero.play(name); if (this.hero.anim !== name && fallback) this.hero.play(fallback); }
 
   exposed(x, y) { return this.mr ? this.mr.exposed(x, y) : y === 0 && !this.wall.tiles[0][x].broken; }
+  stoneFlags(t) { return { exposed: this.exposed(t.x, t.y), flare: this.flareT > 0 }; }
   speak(text, dur = 2) { if (text) this.say = { text, t: dur }; }
   shake(p = 1) { this.shakeT = Math.max(this.shakeT, 0.25 * p); }
   stoneCenter(x, y) { const c = this.geom.cells[y][x]; return { x: BOARD.x + c.cx, y: BOARD.y + c.cy }; }
@@ -183,8 +190,8 @@ export class MiningScene extends Scene {
     this.game.audio.play('sword_swing', { pitch: 0.75 });
     this.co.start(function* () {
       yield Math.max(0.12, hero.impactTime ? hero.impactTime('mine') : 0.4);
-      const res = this.mr.strike(x, y);
       this.impact(x, y);
+      const res = this.mr.strike(x, y);
       this.combo = 0;
       yield 0.06; // let the crack run across the stone before it gives
       yield* this.playEvents(res.events);
@@ -207,7 +214,7 @@ export class MiningScene extends Scene {
         for (let i = 0; i < 8; i++) { this.fx.sparks(c.x, c.y, 2, ['#ffd27a', '#ff8a3a'], 60); yield 0.05; }
         this.game.renderer.doFlash(0.5, [1, 0.8, 0.5]); this.shake(2.5); this.game.hitStop(0.08); au.play('cave_in', { vol: 0.6 });
         this.fx.flare(c.x, c.y, '#ffb35a', 34, 0.7); this.fx.ring(c.x, c.y, '#ffe0a0', 60); this.fx.sparks(c.x, c.y, 50, ['#ffd27a', '#ff8a3a', '#fff0b0'], 260); this.fx.dust(c.x, c.y, 18, '#c8a0a0', 30);
-      } else if (use === 'drill') { au.play('hard_clang', { pitch: 1.4 }); for (let i = 0; i < 6; i++) { const yy = Math.min(MINE_H - 1, y + (i >> 1)); const cc = this.stoneCenter(x, yy); this.fx.sparks(cc.x, cc.y, 8, ['#ffe08a', '#ffffff'], 160); this.fx.dust(cc.x, cc.y, 2); this.shake(0.6); yield 0.07; } }
+      } else if (use === 'drill') { au.play('hard_clang', { pitch: 1.4 }); for (let i = 0; i < 6; i++) { const yy = Math.min(MINE_H - 1, y + (i >> 1)); const cc = this.stoneCenter(x, yy); this.fx.sparks(cc.x, cc.y, 8, ['#ffe08a', '#ffffff'], 160); this.fx.dust(cc.x, cc.y, 2); this.chipFx(x, yy, cc.x, cc.y, 3); this.shake(0.6); yield 0.07; } }
       else if (use === 'scan') { au.play('zap', { pitch: 1.6 }); for (let i = 0; i < 24; i++) this.fx.glitter(c.x + rnd.float(-60, 60), c.y + rnd.float(-60, 60), '#9affd0', 2); }
       else if (use === 'radar') { au.play('blip'); this.fx.ring(c.x, c.y, '#9affb0', 120); yield 0.15; au.play('blip', { pitch: 1.3 }); this.fx.ring(c.x, c.y, '#9affb0', 160); }
       else if (use === 'flare') { au.play('fire_whoosh', { pitch: 1.3 }); this.flareT = 8; this.fx.flare(BOARD.x + BOARD.w / 2, BOARD.y + 20, '#ff8ab0', 40, 1.4); }
@@ -242,12 +249,22 @@ export class MiningScene extends Scene {
         const nx = px + Math.cos(a) * 3, ny = py + Math.sin(a) * 3;
         if (!inside(nx, ny)) break;
         px = nx; py = ny; pts.push([px, py]);
-        if (s === 5 && rnd.chance(0.5)) lines.push({ pts: [[px, py], [px + Math.cos(a + 1.2) * 6, py + Math.sin(a + 1.2) * 6]], delay: 0.06 });
       }
       lines.push({ pts, delay: 0 });
     }
-    this.cracks.push({ x, y, lines, t: 0, life: 0.7 });
+    this.cracks.push({ x, y, lines, t: 0, life: 0.45 });
   }
+  /** Spray debris cubes from voxels (u, v, z ints in room voxel space) away from a screen point. */
+  spray(vox, cx, cy, power = 1) {
+    const o = toWorld(cx, cy, 0);
+    for (const q of vox) {
+      const x = (q.u + 0.5) * VOXEL, y = (q.v + 0.5) * VOXEL, z = (q.z + 0.5) * VOXEL;
+      const dx = x - o.x, dy = y - o.y, d = Math.hypot(dx, dy) || 0.01;
+      const sp = rnd.float(0.6, 1.8) * power;
+      this.debris.spawn(x, y, z + 0.02, q.c, (dx / d) * sp + rnd.float(-0.4, 0.4), (dy / d) * sp * 0.8 + rnd.float(0.4, 1.8) * power, rnd.float(0.5, 2.0) * power, 0.95);
+    }
+  }
+  chipFx(x, y, sx, sy, n) { this.spray(this.face.chip(x, y, sx, sy, n), sx, sy, 0.8); }
   impact(x, y) {
     const c = this.stoneCenter(x, y);
     const ix = c.x + rnd.float(-8, 8), iy = c.y + rnd.float(-8, 8);
@@ -256,6 +273,7 @@ export class MiningScene extends Scene {
     this.game.audio.play('pick_strike', { pitch: 0.9 + rnd.next() * 0.2 });
     this.flashes[x + ',' + y] = 0.18;
     this.growCrack(x, y, ix, iy);
+    this.chipFx(x, y, ix, iy, rnd.int(4, 8));
     this.fx.ring(ix, iy, '#fff2d6', 18);
     this.fx.sparks(ix, iy, 18);
     this.fx.dust(ix, iy, 4, this.stoneCols(x, y)[0], 6);
@@ -266,15 +284,11 @@ export class MiningScene extends Scene {
     else for (let i = 0; i < n; i++) this.fx.glitter(c.x + rnd.float(-14, 14), c.y + rnd.float(-14, 14), rnd.pick(colors), 2);
   }
   breakFx(x, y) {
-    const t = this.wall.tiles[y][x];
     const c = this.stoneCenter(x, y);
     const cols = this.stoneCols(x, y);
-    if (t.t === 'hard') cols.push('#8a96c0', '#6a76a0');
-    if (t.t === 'ore' && MATERIALS[t.mat]) cols.push(MATERIALS[t.mat].color, MATERIALS[t.mat].color);
-    for (let i = 0; i < 16; i++) {
-      const a = rnd.float(-Math.PI, 0), sp = rnd.float(60, 220);
-      this.parts.push({ x: c.x + rnd.float(-16, 16), y: c.y + rnd.float(-14, 14), vx: Math.cos(a) * sp - 30, vy: Math.sin(a) * sp * 0.7, rot: 0, vr: rnd.float(-12, 12), img: chunkCanvas(rnd.pick(cols), rnd.int(1, 9), rnd.int(4, 11)), t: 0, floor: FLOOR_Y + rnd.float(2, 40) });
-    }
+    // the stone bursts into its own voxels, which tumble down and pile at the foot of the face
+    this.spray(this.face.voxels(x, y), c.x, c.y, 1);
+    this.face.remove(x, y);
     this.fx.dust(c.x, c.y, 10, cols[0], 16);
     this.fx.dust(c.x, c.y + 10, 6, '#b8a4b8', 20);
     this.fx.sparks(c.x, c.y, 10, ['#fff6c8', '#ffd27a'], 140);
@@ -287,7 +301,7 @@ export class MiningScene extends Scene {
     for (const ev of events) {
       const sp = ev.x !== undefined ? this.stoneCenter(ev.x, ev.y) : { x: BOARD.x + BOARD.w / 2, y: BOARD.y + BOARD.h / 2 };
       switch (ev.type) {
-        case 'crack': this.shakes[ev.x + ',' + ev.y] = 0.3; au.play('hard_clang'); this.fx.sparks(sp.x, sp.y, 14, ['#ffffff', '#c8d8ff'], 200); ui.float('Crack!', sp.x, sp.y - 8, { color: '#f4eaff', vy: -18, life: 0.8 }); yield 0.1; break;
+        case 'crack': this.shakes[ev.x + ',' + ev.y] = 0.3; au.play('hard_clang'); this.fx.sparks(sp.x, sp.y, 14, ['#ffffff', '#c8d8ff'], 200); this.chipFx(ev.x, ev.y, sp.x, sp.y, 5); ui.float('Crack!', sp.x, sp.y - 8, { color: '#f4eaff', vy: -18, life: 0.8 }); yield 0.1; break;
         case 'break': this.breakFx(ev.x, ev.y); yield ev.how.chain || ev.how.magnet ? 0.09 : 0.05; if (ev.how.chain) this.burstAt(ev.x, ev.y, ['#ffe74a', '#ffffff', '#9a7aff'], 14, 'spark'); if (ev.how.magnet) this.burstAt(ev.x, ev.y, ['#ff5a5a', '#9ab0ff'], 10, 'spark'); break;
         case 'ore': case 'pocket': case 'dupe': {
           const it = ev.item;
@@ -341,20 +355,24 @@ export class MiningScene extends Scene {
     au.play('rumble');
     this.shake(2);
     this.speak('The ceiling!!', 1.2);
-    for (let i = 0; i < 28; i++) this.parts.push({ x: rnd.float(60, 700), y: rnd.float(-60, -10), vx: rnd.float(-20, 20), vy: rnd.float(40, 140), rot: 0, vr: rnd.float(-6, 6), img: chunkCanvas(rnd.pick(this.strata.slice(0, 4)), rnd.int(1, 9), rnd.int(6, 13)), t: 0, floor: FLOOR_Y + rnd.float(0, 40) });
+    // chunks of the ceiling come down as real voxel debris
+    for (let i = 0; i < 70; i++) {
+      const c = parseInt(this.strata[rnd.int(0, 3)].slice(1), 16);
+      this.debris.spawn(rnd.float(-4.4, 2.2), rnd.float(2.5, 3.2), rnd.float(0.05, 1.1), c, rnd.float(-0.3, 0.3), rnd.float(-1.5, 0), rnd.float(-0.1, 0.4), 0.9);
+    }
     for (let i = 0; i < 10; i++) this.fx.dust(rnd.float(80, 680), rnd.float(0, 40), 2, '#c8b0b8', 20);
     this.qte = { t: 0, win: 0.9, done: false, ok: false };
     au.play('qte_prompt');
     yield () => this.qte.done;
     const ok = this.qte.ok;
     this.qte = null;
-    if (ok) { au.play('qte_success'); this.hero.play('dodge'); ui.float('Dodged!', HERO.x + 40, HERO.y - 150, { big: true, scale: 3, top: '#e8ffe0', bottom: '#5fd17a' }); this.fx.dust(HERO.x, FLOOR_Y, 8, '#c8b0b8', 30); }
+    if (ok) { au.play('qte_success'); this.hero.play('dodge'); ui.float('Dodged!', HERO.x + 40, HERO.y - 150, { big: true, scale: 3, top: '#e8ffe0', bottom: '#5fd17a' }); this.fx.dust(HERO.x, HERO.y, 8, '#c8b0b8', 30); }
     else {
       au.play('cave_in'); au.play('hurt');
       this.shake(3);
       this.game.renderer.doFlash(0.35, [1, 0.3, 0.2]);
       this.hero.play('hurt');
-      this.fx.dust(HERO.x, FLOOR_Y - 60, 16, '#c8b0b8', 40);
+      this.fx.dust(HERO.x, HERO.y - 60, 16, '#c8b0b8', 40);
       ui.float(`-${ev.dmg}`, HERO.x + 30, HERO.y - 150, { big: true, scale: 3, top: '#ffd0c0', bottom: '#ff4d4d' });
       this.hurt(ev.dmg);
     }
@@ -383,7 +401,7 @@ export class MiningScene extends Scene {
         save.data.stats.weaponsShattered++; save.write();
         yield 1.5;
       }
-      if (this.tray.length) { au.play('coins'); this.hero.play('cheer'); this.cartBump = 1; const c = PROPS.cart; for (let i = 0; i < 14; i++) this.fx.glitter(c.x + rnd.float(10, 120), c.y + rnd.float(0, 30), '#ffe6a0', 2); yield 0.6; }
+      if (this.tray.length) { au.play('coins'); this.hero.play('cheer'); this.cartBump = 1; const r = this.rects.cart; for (let i = 0; i < 14; i++) this.fx.glitter(r.x + rnd.float(10, r.w - 10), r.y + rnd.float(0, 30), '#ffe6a0', 2); yield 0.6; }
       this.phase = 'leaving';
       this.collect();
     }.bind(this));
@@ -402,13 +420,13 @@ export class MiningScene extends Scene {
   ambience(dt) {
     const fx = this.fx;
     // motes in the daylight shaft and around the lamps
-    if (rnd.chance(dt * 9)) { const t = rnd.next(); fx.mote(60 + t * 150 + rnd.float(-30, 30), 20 + t * 440); }
+    if (rnd.chance(dt * 9)) { const t = rnd.next(); fx.mote(70 + t * 170 + rnd.float(-30, 30), 20 + t * 440); }
     if (rnd.chance(dt * 4)) { const l = rnd.pick(LANTERNS); fx.mote(l.x + rnd.float(-50, 50), l.y + rnd.float(-10, 120)); }
-    // drips from the stalactites
-    this.dripT = this.dripT.map((t, i) => { t -= dt; if (t <= 0) { fx.drip(DRIPS[i][0], DRIPS[i][1]); return rnd.float(2.5, 6); } return t; });
-    // steam from the pipe vent, fireflies over the ferns
-    if (rnd.chance(dt * 3)) fx.steam(944 + rnd.float(-3, 3), 420);
-    if (rnd.chance(dt * 1.5)) fx.spore(rnd.pick([20, 250, 700, 940]) + rnd.float(-12, 12), FLOOR_Y - rnd.float(4, 30), this.region === 2 ? '#9affd0' : '#fff0a0');
+    // drips from the stalactites and the wet beam
+    this.dripT = this.dripT.map((t, i) => { t -= dt; if (t <= 0) { fx.drip(DRIP_POINTS[i][0], DRIP_POINTS[i][1]); return rnd.float(2.5, 6); } return t; });
+    // steam from the pipe vent, fireflies over the moss
+    if (rnd.chance(dt * 3)) { const v = toScreen(4.64, FLOOR_W + 0.1, -0.16); fx.steam(v.x + rnd.float(-3, 3), v.y); }
+    if (rnd.chance(dt * 1.5)) fx.spore(rnd.pick([20, 250, 700, 940]) + rnd.float(-12, 12), FX_FLOOR - rnd.float(10, 40), this.region === 2 ? '#9affd0' : '#fff0a0');
     // the rock face glitters: glints, veins and exposed ore
     for (let y = 0; y < MINE_H; y++) for (let x = 0; x < MINE_W; x++) {
       const t = this.wall.tiles[y][x];
@@ -423,6 +441,22 @@ export class MiningScene extends Scene {
     }
   }
 
+  /** Tools waiting in the crate are their own voxel models, sunk in the straw. */
+  syncTools(tools) {
+    const keep = new Set(tools.map((it) => it.uid));
+    for (const [uid, m] of this.toolModels) if (!keep.has(uid)) { this.props.crate.remove(m); this.toolModels.delete(uid); }
+    tools.forEach((it, i) => {
+      let m = this.toolModels.get(it.uid);
+      if (!m) {
+        m = oreModel(it.id, 0.3, 16);
+        m.rotation.set(0.2, -0.5 + i * 0.3, (i - 1.5) * 0.18);
+        this.props.crate.add(m);
+        this.toolModels.set(it.uid, m);
+      }
+      const p = toWorld(PROP_AT.crate.sx - 30 + i * 20, 0, 0);
+      m.userData.home = { x: p.x, y: FLOOR_W + 0.46, z: (PROP_AT.crate.z + 1) * VOXEL };
+    });
+  }
   update(dt) {
     const inp = this.game.input;
     this.shakeT = Math.max(0, this.shakeT - dt);
@@ -433,22 +467,15 @@ export class MiningScene extends Scene {
     for (const k in this.flashes) { this.flashes[k] -= dt; if (this.flashes[k] <= 0) delete this.flashes[k]; }
     for (let i = this.cracks.length - 1; i >= 0; i--) { this.cracks[i].t += dt; if (this.cracks[i].t > this.cracks[i].life || this.wall.tiles[this.cracks[i].y][this.cracks[i].x].broken) this.cracks.splice(i, 1); }
     if (this.reveal) { this.reveal.t += dt; if (this.reveal.t > 1.35) this.reveal = null; }
-    for (let i = this.parts.length - 1; i >= 0; i--) {
-      const p = this.parts[i];
-      p.t += dt; p.vy += 620 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
-      if (p.y > p.floor && p.vy > 0) {
-        if (p.vy > 90) { p.y = p.floor; p.vy *= -0.32; p.vx *= 0.55; p.vr *= 0.5; if (rnd.chance(0.3)) this.fx.dust(p.x, p.floor, 1, '#b8a4b8', 2); }
-        else { this.parts.splice(i, 1); this.rubble.push({ x: Math.round(p.x), y: Math.round(p.floor), img: p.img }); if (this.rubble.length > 140) this.rubble.shift(); continue; }
-      }
-      if (p.t > 4) this.parts.splice(i, 1);
-    }
+    const tgt = this.cartTarget();
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i];
       f.t += dt;
-      if (rnd.chance(0.5)) { const k = ease.inOutCubic(Math.min(1, f.t / f.dur)); const tx = PROPS.cart.x + 66, ty = PROPS.cart.y + 14; this.fx.glitter(f.x0 + (tx - f.x0) * k, f.y0 + (ty - f.y0) * k - Math.sin(k * Math.PI) * 90, '#fff6c8', 1); }
+      if (rnd.chance(0.5)) { const k = ease.inOutCubic(Math.min(1, f.t / f.dur)); this.fx.glitter(f.x0 + (tgt.x - f.x0) * k, f.y0 + (tgt.y - f.y0) * k - Math.sin(k * Math.PI) * 90, '#fff6c8', 1); }
       if (f.t >= f.dur) {
         this.flyers.splice(i, 1); this.tray.push(f.item); this.cartBump = 0.6; this.game.audio.play('card_place', { vol: 0.5, pitch: 0.7 });
-        const c = PROPS.cart; this.fx.dust(c.x + 66, c.y + 18, 3, '#d8c0a8', 10); this.fx.glitter(c.x + 66, c.y + 8, matOf(f.item).color, 2);
+        this.addCartOre(f.item);
+        this.fx.dust(tgt.x, tgt.y + 6, 3, '#d8c0a8', 10); this.fx.glitter(tgt.x, tgt.y - 4, matOf(f.item).color, 2);
       }
     }
     if (this.qte) {
@@ -458,13 +485,43 @@ export class MiningScene extends Scene {
     }
     if (this.forge) this.forge.update(dt);
     const fl = Math.sin(this.time * 7.3) * 0.25 + Math.sin(this.time * 17.1) * 0.15;
-    this.lamp.intensity = 4.2 + fl;
+    for (const l of this.lamps) l.intensity = 3.4 + fl;
     this.flicker = fl;
+    // voxel world upkeep: stones follow their clue state, the slate its chalk, the cart its bump
+    this.face.sync(this.wall.tiles, (t) => this.stoneFlags(t));
+    const total = this.mr ? this.mr.strikes + this.mr.used : 3 + (this.pick.strikes || 0), left = this.mr ? this.mr.strikes : total;
+    if (this.slateKey !== total + '|' + left) {
+      if (this.slate) { this.world.scene.remove(this.slate); disposeVox(this.slate); }
+      this.slate = slateProp(this.region, total, left);
+      this.world.scene.add(this.slate);
+      this.slateKey = total + '|' + left;
+      this.rects.slate = screenRect(this.slate, 2);
+    }
+    this.slate.position.x = Math.sin(this.time * 1.3) * 0.006;
+    this.props.cart.position.y = Math.abs(Math.sin(this.cartBump * 30)) * this.cartBump * 0.04;
+    this.syncTools(this.game.run.bag.all().filter((it) => TOOL_IDS.includes(it.id)).slice(0, 4));
+    for (const [uid, m] of this.toolModels) {
+      const h = m.userData.home, sel = this.tool && this.tool.uid === uid, hov = this.hoverTool === uid;
+      const lift = sel ? 0.42 + Math.sin(this.time * 4) * 0.03 : hov ? 0.08 : 0;
+      m.position.set(h.x, h.y + lift, h.z + (sel ? 0.2 : 0));
+      if (sel) m.rotation.y += dt * 1.5;
+    }
     this.hero.update(dt);
-    if (this.shards) updateShards(this.shards, dt, toWorld(0, FLOOR_Y + 6).y);
-    this.dust.update(dt);
+    if (this.shards) updateShards(this.shards, dt, FLOOR_W);
+    this.debris.update(dt);
     this.ambience(dt);
     this.fx.update(dt);
+  }
+  cartTarget() { const r = this.rects.cart; return { x: r.x + r.w / 2, y: r.y + 14 }; }
+  addCartOre(item) {
+    const i = this.cartOre.length;
+    if (i >= 20) return;
+    const m = oreModel(item.id, 0.2, 14);
+    const s = cartSlot(i);
+    m.position.set(s.x, s.y, s.z);
+    m.rotation.set(rnd.float(-0.4, 0.4), rnd.float(0, 6), rnd.float(-0.4, 0.4));
+    this.props.cart.add(m);
+    this.cartOre.push(m);
   }
 
   // ------------------------------------------------------------------ draw
@@ -480,7 +537,7 @@ export class MiningScene extends Scene {
   }
   tag(ui, x, y, text, color = '#3a2214') {
     const w = ui.measure(text) + 16;
-    const c = tagCanvas(w);
+    const c = plankTag(w);
     const bx = Math.round(clamp(x - c.width / 2, 4, ui.w - c.width - 4)), by = Math.round(y);
     ui.img(c, bx, by);
     ui.text(text, bx + 10, by + 11, { color });
@@ -491,6 +548,8 @@ export class MiningScene extends Scene {
     const ctx = ui.ctx, inp = this.game.input;
     const sx = this.shakeT > 0 ? Math.round((Math.random() - 0.5) * this.shakeT * 16) : 0;
     const sy = this.shakeT > 0 ? Math.round((Math.random() - 0.5) * this.shakeT * 10) : 0;
+    const cam = this.world.camera;
+    cam.position.x = -sx / 100; cam.position.y = sy / 100;
     const busyUI = this.forge || this.qte || this.reveal || this.phase === 'shatter' || this.phase === 'leaving';
     ctx.save();
     ctx.translate(sx, sy);
@@ -498,41 +557,34 @@ export class MiningScene extends Scene {
     // daylight spilling through the ceiling crack, slanting across the left of the room
     this.additive(ctx, () => {
       const sh = shaftCanvas(70, 230, 470, '#fff0c8');
-      ctx.globalAlpha = 0.95 + Math.sin(this.time * 0.6) * 0.05;
-      ctx.translate(92, 0); ctx.rotate(-0.34);
+      ctx.globalAlpha = 0.85 + Math.sin(this.time * 0.6) * 0.08;
+      ctx.translate(96, 0); ctx.rotate(-0.3);
       ctx.drawImage(sh, -sh.width / 2, 0);
     });
 
-    // ---- rock face
-    ui.img(faceRim(this.geom), BOARD.x - 8, BOARD.y - 8);
+    // ---- rock face: the voxel stones take their tint (dim when out of reach, lit on hover, flash on hit)
     const canDig = (this.phase === 'dig' || this.phase === 'prep') && !this.busy && !busyUI && !this.dead;
     const hb = ui.hit('rockface', BOARD.x, BOARD.y, BOARD.w, BOARD.h, { sound: false, cursor: false });
     const hover = hb.hover ? cellAt(this.geom, inp.x - BOARD.x, inp.y - BOARD.y) : null;
     for (let y = 0; y < MINE_H; y++) for (let x = 0; x < MINE_W; x++) {
       const t = this.wall.tiles[y][x];
-      const c = this.geom.cells[y][x];
-      if (t.broken) { ui.img(cavityCanvas(this.geom, x, y, this.pal, this.region), BOARD.x + c.bx, BOARD.y + c.by); continue; }
-      const exp = this.exposed(x, y);
+      if (t.broken) continue;
+      const exp = this.exposed(x, y) || this.phase === 'intro';
       const isHover = hover && hover.x === x && hover.y === y && canDig && (exp || (this.tool && TOOL_USE[this.tool.id] === 'scan'));
-      const sk = this.shakes[x + ',' + y] ? Math.round(Math.sin(this.time * 90) * 2) : 0;
-      const img = stoneCanvas(this.geom, t, this.pal, { exposed: exp, dim: !exp, flare: this.flareT > 0, hover: isHover }, this.region);
-      const dx = BOARD.x + c.bx + sk, dy = BOARD.y + c.by - (isHover ? 1 : 0);
-      ui.img(img, dx, dy);
-      const fl = this.flashes[x + ',' + y];
-      if (fl > 0) this.additive(ctx, () => { ctx.globalAlpha = Math.min(1, fl / 0.18) * 0.85; ctx.drawImage(img, dx, dy); ctx.drawImage(img, dx, dy); });
+      const k = (exp ? 1 : 0.8) + (isHover ? 0.16 : 0) + Math.max(0, (this.flashes[x + ',' + y] || 0) / 0.18) * 1.6;
+      this.face.look(x, y, exp ? [k, k, k] : [k * 0.92, k * 0.9, k * 1.02], this.shakes[x + ',' + y] ? Math.round(Math.sin(this.time * 90) * 2) : 0);
     }
-    // cracks racing across struck stones: white-hot at the tip, cooling to dark plum
+    // cracks racing across struck stones: white-hot at the tip
     for (const cr of this.cracks) {
       for (const ln of cr.lines) {
-        const k = clamp((cr.t - ln.delay) / 0.14, 0, 1), n = Math.floor(k * (ln.pts.length - 1));
-        const fade = cr.t > cr.life - 0.25 ? (cr.life - cr.t) / 0.25 : 1;
+        const k = clamp(cr.t / 0.12, 0, 1), n = Math.floor(k * (ln.pts.length - 1));
+        const fade = cr.t > cr.life - 0.2 ? (cr.life - cr.t) / 0.2 : 1;
         for (let i = 0; i < n; i++) {
           const [x0, y0] = ln.pts[i], [x1, y1] = ln.pts[i + 1];
           const hot = i >= n - 2 && k < 1;
-          ctx.globalAlpha = fade;
-          ctx.fillStyle = hot ? '#fff4d8' : '#2a1838';
+          ctx.globalAlpha = fade * (hot ? 1 : 0.7);
+          ctx.fillStyle = hot ? '#fff4d8' : '#ffd8a0';
           for (let q = 0; q <= 3; q++) ctx.fillRect(Math.round(x0 + (x1 - x0) * q / 3), Math.round(y0 + (y1 - y0) * q / 3), 1, 1);
-          if (!hot) { ctx.fillStyle = '#ffd8b0'; ctx.globalAlpha = fade * 0.5; ctx.fillRect(Math.round(x0) - 1, Math.round(y0), 1, 1); }
         }
       }
       ctx.globalAlpha = 1;
@@ -554,38 +606,26 @@ export class MiningScene extends Scene {
     // warm lamp cones washing down over the face
     LANTERNS.forEach((l, i) => this.additive(ctx, () => {
       const cone = shaftCanvas(14, 150, 200, '#ffcf96');
-      ctx.globalAlpha = 0.55 + (this.flicker || 0) * 0.12;
+      ctx.globalAlpha = 0.5 + (this.flicker || 0) * 0.12;
       ctx.drawImage(cone, Math.round(l.x - cone.width / 2 + (i ? -16 : 16)), l.y + 6);
     }));
 
-    // ---- props
+    // ---- props: voxel models in the room; here only their hit areas, hover tags and glows
     this.drawAnvil(ui);
     this.drawCrate(ui);
     this.drawCart(ui);
     this.drawSlate(ui);
-    for (const r of this.rubble) ui.img(r.img, r.x - (r.img.width >> 1), r.y - r.img.height + 2);
-    for (const p of this.parts) {
-      ctx.save();
-      ctx.translate(Math.round(p.x), Math.round(p.y));
-      ctx.rotate(Math.round(p.rot * 4) / 4);
-      ctx.drawImage(p.img, -p.img.width / 2, -p.img.height / 2);
-      ctx.restore();
-    }
-    // lanterns and their warm pools
-    LANTERNS.forEach((l, i) => {
-      const f = Math.floor(this.time * 9 + i * 2) % 4;
-      this.additive(ctx, () => { ctx.globalAlpha = 0.6 + (this.flicker || 0) * 0.3; const g = glow(72, '#ffb35a'); ctx.drawImage(g, l.x - 72, l.y - 62); });
-      ui.img(lanternCanvas(f), l.x - 9, l.y - 14);
-    });
+    LANTERNS.forEach((l) => this.additive(ctx, () => { ctx.globalAlpha = 0.55 + (this.flicker || 0) * 0.3; const g = glow(72, '#ffb35a'); ctx.drawImage(g, l.x - 72, l.y - 62); }));
+    for (const l of mineLamps(this.region).slice(2, 4)) { const p = toScreen(l.x, l.y, l.z); this.additive(ctx, () => { ctx.globalAlpha = 0.4 + (this.flicker || 0) * 0.2; const g = glow(40, '#ffc27a'); ctx.drawImage(g, p.x - 40, p.y - 36); }); }
     this.fx.draw(ctx);
     ctx.restore();
 
-    // ore flying into the cart
+    // ore flying into the cart: voxel renders of the ore
+    const tgt = this.cartTarget();
     for (const f of this.flyers) {
       const k = ease.inOutCubic(Math.min(1, f.t / f.dur));
-      const tx = PROPS.cart.x + 66, ty = PROPS.cart.y + 14;
-      const x = f.x0 + (tx - f.x0) * k, y = f.y0 + (ty - f.y0) * k - Math.sin(k * Math.PI) * 90;
-      const art = oreArt(f.item.id, 30);
+      const x = f.x0 + (tgt.x - f.x0) * k, y = f.y0 + (tgt.y - f.y0) * k - Math.sin(k * Math.PI) * 90;
+      const art = oreSprite(f.item.id, 34);
       ui.img(art, x - art.width / 2, y - art.height / 2, { rot: Math.round(f.t * f.spin * 4) / 4 });
     }
     if (this.say) { const h = this.headScreen(); speech(ui, h.x, h.y, this.say.text, { maxW: 180, alpha: clamp(this.say.t * 3, 0, 1) }); }
@@ -596,7 +636,8 @@ export class MiningScene extends Scene {
     }
     this.drawNote(ui);
     if (this.tool && !busyUI) {
-      if (ui.touch) this.tag(ui, PROPS.crate.x + 48, PROPS.crate.y - 92, `${MATERIALS[this.tool.id].name}: tap a stone`, '#14503a');
+      const r = this.rects.crate;
+      if (ui.touch) this.tag(ui, r.x + r.w / 2, r.y - 100, `${MATERIALS[this.tool.id].name}: tap a stone`, '#14503a');
       else this.tag(ui, inp.x + 4, inp.y + 14, `${MATERIALS[this.tool.id].name}: click a stone`, '#14503a');
       ui.touchButton('back', ui.w - 52, ui.h - 150, 26, { icon: 'cross', label: 'CANCEL', style: 'iron' });
       if ((inp.rpressed && !inp.longPress) || inp.actionPressed('back')) this.tool = null;
@@ -606,15 +647,18 @@ export class MiningScene extends Scene {
     if (this.forge) this.forge.draw(ui);
   }
 
+  /** Tint a prop's voxel mesh (hover glow). */
+  tint(group, k) { group.traverse((o) => { if (o.isMesh && o.name === 'vox') o.material.color.setScalar(k); }); }
+
   drawAnvil(ui) {
-    const { x, y } = PROPS.anvil;
+    const r = this.rects.anvil;
     const can = this.phase === 'prep' && !this.pickName && !this.forge;
     const canForge = can && this.game.run.bag.items.some((it) => matOf(it).pick && Object.keys(matOf(it).pick).length && matOf(it).kind !== 'tool');
-    const h = ui.hit('anvil', x, y, 72, 58, { sound: false, cursor: canForge ? 'hand' : 'arrow' });
-    ui.img(anvilCanvas(h.hover && canForge), x, y - (h.hover && canForge ? 1 : 0));
-    if (canForge && rnd.chance(0.12)) this.fx.sparks(x + 34 + rnd.float(-12, 12), y + 10, 1, ['#ffd27a', '#fff0b0'], 60);
+    const h = ui.hit('anvil', r.x, r.y, r.w, r.h, { sound: false, cursor: canForge ? 'hand' : 'arrow' });
+    this.tint(this.props.anvil, h.hover && canForge ? 1.18 : 1);
+    if (canForge && rnd.chance(0.12)) this.fx.sparks(r.x + r.w / 2 + rnd.float(-12, 12), r.y + 8, 1, ['#ffd27a', '#fff0b0'], 60);
     if (h.hover && !this.forge) {
-      this.tag(ui, x + 36, y - 26, this.pickName ? this.pickName : canForge ? 'Forge a pickaxe' : can ? 'No pick materials' : 'Busy digging');
+      this.tag(ui, r.x + r.w / 2, r.y - 26, this.pickName ? this.pickName : canForge ? 'Forge a pickaxe' : can ? 'No pick materials' : 'Busy digging');
       if (this.pickName) { const effs = Object.entries(this.pick).filter(([k, v]) => v && PICK_TEXT[k]).map(([k, v]) => PICK_TEXT[k](v)); if (effs.length) ui.tooltip({ title: this.pickName, body: effs.join('\n'), w: 170 }); }
       else if (canForge) ui.tooltip({ body: 'Spend materials on a pickaxe: more swings and wild effects. The curse shatters it when you leave.', w: 180 });
     }
@@ -622,69 +666,57 @@ export class MiningScene extends Scene {
   }
 
   drawCrate(ui) {
-    const { x, y } = PROPS.crate;
+    const r = this.rects.crate;
+    this.hoverTool = null;
     const tools = this.game.run.bag.all().filter((it) => TOOL_IDS.includes(it.id)).slice(0, 4);
-    ui.img(crateCanvas('back'), x, y);
-    tools.forEach((it, i) => {
+    tools.forEach((it) => {
       if (this.tool === it) return;
-      const tx = x + 8 + i * 20, ty = y - 6 + (i % 2) * 3;
-      const h = ui.hit('tool' + it.uid, tx, ty, 24, 28, { sound: false });
-      const lift = h.hover ? 5 : 0;
-      ui.img(materialSprite(it.id, 32), tx - 4, ty - lift, { rot: (i - 1.5) * 0.12 });
-      if (h.hover) this.tag(ui, tx + 12, ty - 30, MATERIALS[it.id].name);
+      const m = this.toolModels.get(it.uid);
+      if (!m) return;
+      const p = toScreen(m.userData.home.x, m.userData.home.y, m.userData.home.z);
+      const h = ui.hit('tool' + it.uid, p.x - 12, p.y - 22, 24, 30, { sound: false });
+      if (h.hover) { this.hoverTool = it.uid; this.tag(ui, p.x, p.y - 52, MATERIALS[it.id].name); }
       if (h.clicked) {
         if ((this.phase === 'dig' || this.phase === 'prep') && !this.busy) { this.tool = it; this.game.audio.play('card_pick'); this.hero.play('point'); }
         else this.game.audio.play('deny');
       }
     });
-    ui.img(crateCanvas('front'), x, y);
-    if (!tools.length && ui.hit('crate', x, y + 18, 96, 44, { sound: false, cursor: false }).hover) this.tag(ui, x + 48, y - 8, 'No tools packed');
+    if (!tools.length && ui.hit('crate', r.x, r.y, r.w, r.h, { sound: false, cursor: false }).hover) this.tag(ui, r.x + r.w / 2, r.y - 26, 'No tools packed');
     if (this.tool) {
-      const bob = Math.sin(this.time * 4) * 3;
-      this.additive(ui.ctx, () => { ui.ctx.globalAlpha = 0.6; ui.ctx.drawImage(glow(20, '#9affc8'), x + 28, y - 48 + bob); });
-      ui.img(materialSprite(this.tool.id, 32), x + 32, y - 42 + bob);
+      const m = this.toolModels.get(this.tool.uid);
+      if (m) { const p = toScreen(m.position.x, m.position.y, m.position.z); this.additive(ui.ctx, () => { ui.ctx.globalAlpha = 0.6; ui.ctx.drawImage(glow(22, '#9affc8'), p.x - 22, p.y - 22); }); }
     }
   }
 
   drawCart(ui) {
-    const { x, y } = PROPS.cart;
-    const bump = Math.round(Math.sin(this.cartBump * 30) * this.cartBump * 3);
+    const r = this.rects.cart;
     const canLeave = (this.phase === 'dig' || this.phase === 'done') && !this.busy;
-    const h = ui.hit('cart', x, y, 132, 86, { sound: false, cursor: canLeave ? 'hand' : 'arrow' });
-    ui.img(cartCanvas('back'), x, y + bump);
-    this.tray.forEach((it, i) => {
-      const row = Math.floor(i / 4), col = i % 4;
-      const px = x + 14 + col * 24 + (row % 2) * 12 - row, py = y + bump + 2 - row * 8 + ((i * 7) % 5);
-      ui.img(oreArt(it.id, 30), px, py, { rot: ((i * 37) % 7 - 3) * 0.08 });
-    });
-    ui.img(cartCanvas('front'), x, y + bump);
-    if (this.phase === 'done' && Math.sin(this.time * 5) > 0) this.additive(ui.ctx, () => { ui.ctx.globalAlpha = 0.35; ui.ctx.drawImage(glow(30, '#ffd27a'), x + 36, y + 2); });
+    const h = ui.hit('cart', r.x, r.y, r.w, r.h, { sound: false, cursor: canLeave ? 'hand' : 'arrow' });
+    this.tint(this.props.cart, h.hover && canLeave ? 1.16 : 1);
+    if (this.phase === 'done' && Math.sin(this.time * 5) > 0) this.additive(ui.ctx, () => { ui.ctx.globalAlpha = 0.35; ui.ctx.drawImage(glow(30, '#ffd27a'), r.x + r.w / 2 - 30, r.y - 10); });
     if (h.hover) {
       const worth = this.tray.reduce((a, it) => a + Math.round(matOf(it).value * [0.6, 0.8, 1, 1.25, 1.5][it.q]), 0);
-      this.tag(ui, x + 66, y - 30, canLeave ? (this.phase === 'done' ? 'Push off with the haul' : 'Pack up early?') : this.tray.length ? 'The haul' : 'Empty cart');
+      this.tag(ui, r.x + r.w / 2, r.y - 30, canLeave ? (this.phase === 'done' ? 'Push off with the haul' : 'Pack up early?') : this.tray.length ? 'The haul' : 'Empty cart');
       if (this.tray.length) ui.tooltip({ title: `Haul · ${worth} coins`, body: this.tray.map((it) => `{${matOf(it).rarity}}${matOf(it).name}{/}`).join('\n'), w: 160 });
       if (h.clicked && canLeave) this.packUp();
     }
   }
 
   drawSlate(ui) {
-    const { x, y } = PROPS.slate;
-    const total = this.mr ? this.mr.strikes + this.mr.used : 3 + (this.pick.strikes || 0);
-    const left = this.mr ? this.mr.strikes : total;
-    const sway = Math.round(Math.sin(this.time * 1.3) * 1);
-    ui.img(slateCanvas(total, left), x + sway, y);
-    if (ui.hit('slate', x, y + 10, 104, 62, { sound: false, cursor: false }).hover) this.tag(ui, x + 52, y + 74, `${left} swing${left === 1 ? '' : 's'} left`);
+    const r = this.rects.slate;
+    const left = this.mr ? this.mr.strikes : 3 + (this.pick.strikes || 0);
+    if (ui.hit('slate', r.x, r.y, r.w, r.h, { sound: false, cursor: false }).hover) this.tag(ui, r.x + r.w / 2, r.y + r.h + 4, `${left} swing${left === 1 ? '' : 's'} left`);
   }
 
   drawNote(ui) {
-    const { x, y } = PROPS.note;
-    const h = ui.hit('note', x, y, 48, 40, { sound: false });
-    ui.img(noteCanvas(48, 40, 7), x, y, { rot: -0.08 });
-    for (let i = 0; i < 4; i++) ui.rect(x + 9, y + 14 + i * 6, 22 + ((i * 7) % 9), 1, '#7a5634', 0.8);
+    const r = this.rects.note;
+    const h = ui.hit('note', r.x, r.y, r.w, r.h, { sound: false });
+    this.props.note.position.y = h.hover ? 0.02 : 0;
+    this.tint(this.props.note, h.hover ? 1.15 : 1);
     if (h.clicked) { if (this.noteOpen) this.closeNote(); else this.noteOpen = true; this.game.audio.play('page'); }
     if (!(h.hover || this.noteOpen) || this.forge) return;
-    const W = 250, H = 168, nx = ui.w - W - 6, ny = y + 34;
-    ui.img(noteCanvas(W, H, 11), nx, ny);
+    const W = 250, H = 168, nx = ui.w - W - 6, ny = r.y + 34;
+    ui.img(notePanel(W, H), nx, ny);
     ui.text('Notes on the rock', nx + W / 2, ny + 14, { align: 'center', color: '#6a2a10' });
     ui.text('Swing at the {#7a3a10}top row{/} first, then\nany stone that borders a hole.\n\n{#2a6a5a}Coloured veins{/} lead toward hidden ore.\nA {#8a6a10}glint{/} means something rare.\n{#a02020}Red hairline cracks{/}: hazard next door.\n{#5a5a6a}Hard rock{/} needs two swings.\nThe {#7a3a10}deeper{/} the stone, the better the ore.', nx + 14, ny + 30, { color: '#4a2c16', maxW: W - 28 });
     if (this.noteOpen && !h.hover) ui.text(ui.touch ? '(tap the note to put it away)' : '(click the note to put it away)', nx + W / 2, ny + H - 14, { align: 'center', font: 'small', color: '#7a5634' });
@@ -707,8 +739,8 @@ export class MiningScene extends Scene {
       ctx.globalAlpha = (1 - out);
       const g = glow(70, col); ctx.drawImage(g, cx - 70, cy - 70);
     });
-    const s = Math.max(1, Math.round(ease.outBack(k) * 3));
-    const art = oreArt(r.item.id, 34);
+    const s = ease.outBack(k);
+    const art = oreSprite(r.item.id, 104);
     ui.img(art, cx - (art.width * s) / 2, cy - (art.height * s) / 2 + Math.sin(r.t * 3) * 3, { scale: s, alpha: 1 - out });
     if (rnd.chance(0.5)) this.fx.glitter(cx + rnd.float(-60, 60), cy + rnd.float(-60, 60), rnd.pick([col, '#ffffff', m.color]), 2);
     ui.big(RARITY_WORD[r.r], cx, cy - 84, { scale: 3, top: '#ffffff', bottom: col, alpha: 1 - out });
@@ -726,4 +758,3 @@ export class MiningScene extends Scene {
     prompt(ui, cx - 40, cy + 50, 'SPACE', 'or click!', this.time, { mouse: 'mouseL' });
   }
 }
-void hash2;
