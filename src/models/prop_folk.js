@@ -94,16 +94,15 @@ export function miner(o) {
     }
     // the fallen beam pinning the pile
     seg(w, -20, 4, 4, 22, 14, -3, 1.9, (px, py, pz) => tone(palOf('#6a4428'), 0.4 + ((px + 40) % 9 === 0 ? -0.12 : 0) + (py > 9 ? 0.08 : 0)));
-    // the miner's head poking out: round face, red beard, brass helmet with a lamp
-    const hx = -8.75, hy = 7.5, hz = 13.75;
-    ell(w, hx + 0.5, hy + 0.5, hz + 0.5, 3, 3, 2.9, (px, py, pz) => tone(palOf('#f0bc94'), 0.5 + (px < hx ? 0.12 : 0)));
-    ell(w, hx + 0.5, hy - 1.6, hz + 2.2, 3, 2.2, 1.8, (px, py, pz) => tone(palOf('#8a5a3a'), 0.4 + ((px + py) & 1) * 0.12));
-    w.set(Math.round(hx), Math.round(hy), Math.round(hz + 3), tone(palOf('#f0bc94'), 0.7));
-    for (const sx of [-1, 1]) w.set(Math.round(hx + sx * 1.1), Math.round(hy + 1), Math.round(hz + 2.8), C('#140c10'));
-    ell(w, hx + 0.5, hy + 2.6, hz + 0.3, 3.6, 2.3, 3.5, (px, py, pz) => (py < hy + 2 ? undefined : tone(palOf('#c8902a'), 0.5 + (px < hx ? 0.15 : 0))));
-    cyl(w, hx + 0.5, hz + 0.5, hy + 2, hy + 3, 4.2, 4.2, (px, py, pz, d) => (d < 0.7 ? undefined : tone(palOf('#c8902a'), 0.4)));
-    box(w, hx - 1, hy + 3, hz + 3, hx + 2, hy + 5, hz + 4, IRON[1]);
-    w.set(Math.round(hx), Math.round(hy + 4), Math.round(hz + 4), glowC('#fff0b0'));
+    // the miner's head poking out: round face, rosy nose, big ginger beard, a yellow hard hat and its lamp
+    const hx = -9, hy = 8, hz = 14, SKIN = palOf('#f0bc94'), BEARD = palOf('#c86a3a'), HATP = palOf('#e8b040');
+    ell(w, hx + 0.5, hy + 0.5, hz + 0.5, 3.2, 3.2, 3, (px, py, pz) => tone(SKIN, 0.5 + (px < hx ? 0.12 : 0)));
+    ell(w, hx + 0.5, hy - 1.8, hz + 2, 3.4, 2.6, 2, (px, py, pz) => tone(BEARD, 0.4 + ((px + py) & 1) * 0.12));
+    for (const sx of [-1, 1]) { w.set(hx + sx * 2 + (sx < 0 ? 0 : 0), hy - 1, hz + 3, tone(BEARD, 0.6)); w.set(hx + sx, hy + 1, hz + 3, C('#140c10')); }
+    w.set(hx, hy, hz + 4, C('#e87a6a'));
+    ell(w, hx + 0.5, hy + 2.8, hz + 0.5, 3.7, 2.6, 3.6, (px, py) => (py < hy + 2 ? undefined : tone(HATP, 0.5 + (px < hx ? 0.15 : 0) + (py > hy + 4 ? 0.1 : 0))));
+    cyl(w, hx + 0.5, hz + 0.5, hy + 2, hy + 3, 4.6, 4.6, (px, py, pz, d) => (d < 0.62 ? undefined : tone(HATP, 0.38)));
+    w.set(hx, hy + 4, hz + 4, IRON[2]); w.set(hx, hy + 4, hz + 5, glowC('#fff0b0'));
   }));
   const arm = new THREE.Group();
   arm.add(voxModel('minerArm', (w) => {
@@ -121,21 +120,21 @@ export function miner(o) {
 export function snail(o) {
   const grp = new THREE.Group();
   const body = voxModel('snail', (w) => {
-    const SK = palOf('#a8c880'), SH = palOf('#d8c0a8'), SU = palOf('#6a4432');
+    const SK = palOf('#86d0a8'), SH = palOf('#e8c8a0'), SU = palOf('#7a4a36');
     // a soft foot that rises into the neck and a round head
     for (let x = -13; x <= 8; x++) {
       const t = (x + 13) / 21, r = 1 + t * 1.6, y = 1.2 + t * 1.4;
       cylX(w, x, x + 1, y, 0.5, r * 1.15, (px, py, pz, d) => (py < 0 ? undefined : tone(SK, 0.45 + (py > y ? 0.12 : 0) - (py === 0 ? 0.1 : 0))));
     }
-    seg(w, 7.5, 2.5, 0.5, 11, 5.5, 0.5, 2.4, (px, py) => tone(SK, 0.5 + (px > 10 ? 0.05 : 0)));
-    ell(w, 11.6, 6.8, 0.5, 2.8, 3.1, 2.6, (px, py, pz) => tone(SK, 0.55 + (py > 7 ? 0.1 : 0)));
+    seg(w, 7.5, 2.5, 0.5, 11.5, 6, 0.5, 2.6, (px, py) => tone(SK, 0.5 + (px > 10 ? 0.05 : 0)));
+    ell(w, 12.2, 7.6, 0.5, 3.4, 3.6, 3.2, (px, py, pz) => tone(SK, 0.55 + (py > 8 ? 0.1 : 0)));
     for (const sz of [-1, 1]) {
-      seg(w, 11.8, 8.5, 0.5 + sz * 1, 12.6, 14, 0.5 + sz * 2.5, 0.55, tone(SK, 0.55));
-      ell(w, 12.8, 14.6, 0.5 + sz * 2.6, 1.1, 1.1, 1.1, C('#f4f0e0'));
-      w.set(14, 14, Math.round(0.5 + sz * 2.6) - (sz < 0 ? 1 : 0), C('#140c10'));
-      w.set(14, 6, sz < 0 ? -1 : 2, C('#ff8aa0'));
+      seg(w, 12.4, 10, 0.5 + sz * 1.2, 13.4, 16.5, 0.5 + sz * 2.8, 0.6, tone(SK, 0.6));
+      ell(w, 13.6, 17.2, 0.5 + sz * 2.9, 1.5, 1.5, 1.5, C('#f4f0e0'));
+      w.set(15, 17, sz < 0 ? -3 : 3, C('#140c10')); w.set(15, 18, sz < 0 ? -3 : 3, C('#ffffff'));
+      w.set(15, 7, sz < 0 ? -2 : 2, C('#ff8aa0'));
     }
-    w.set(14, 5, 0, C('#5a3a2a')); w.set(14, 5, 1, C('#5a3a2a'));
+    for (const z of [-1, 0, 1]) w.set(15, 6, z, C('#3a5a3a'));
     // spiral shell: cream and caramel bands wound in toward the centre, a dark suture following the curl
     const cx = -2, cy = 9.5, R = 6.5;
     for (let y = 2; y < cy + R + 1; y++) for (let x = Math.floor(cx - R) - 1; x <= cx + R; x++) for (let z = -4; z <= 4; z++) {
