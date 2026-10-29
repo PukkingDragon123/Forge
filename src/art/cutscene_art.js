@@ -6,6 +6,7 @@
 import { Painter } from './pixel.js';
 import { hash2, fbm2, hexToRgb, mixHex, clamp } from '../core/math.js';
 import { REGIONS } from '../data/regions.js';
+import { siteGrid, nearest2 } from './handpaint.js';
 import { MONSTERS } from '../data/monsters.js';
 
 export const PW = 480, PH = 270, M = 28;
@@ -114,7 +115,7 @@ const HEROES = {
   bran: { body: '#4a5a7e', pants: '#4a3a3a', trim: '#c8743a', pack: '#7a4a2a', skin: '#f0c09a', hair: '#9a4a22', tool: 'hammer', h: 1 },
   elio: { body: '#2e6a5e', pants: '#2a3a4a', trim: '#e0b860', hood: '#5a3a8a', pack: '#6a4a2a', tool: 'staff', h: 1, hooded: true },
   durgan: { body: '#8a4a2a', pants: '#4a3a2a', trim: '#d8d8e0', fur: '#a89070', beard: '#e8702a', pack: '#6a6a74', tool: 'axe', h: 0.78, helm: true },
-  clover: { body: '#6a5a3a', pants: '#4a3a30', trim: '#d84a3a', fur: '#f0e6d8', inner: '#ffb0b8', hair: '#c8a080', pack: '#8a6a3a', tool: 'dagger', h: 0.84, ears: true },
+  clover: { body: '#6a5a3a', pants: '#4a3a30', trim: '#d84a3a', fur: '#f0e6d8', inner: '#ffb0b8', hair: '#6a4a32', pack: '#8a6a3a', tool: 'dagger', h: 0.84, ears: true },
 };
 const lighten = (c, k) => [Math.min(255, c[0] * k + 18 * (k - 1)), Math.min(255, c[1] * k + 14 * (k - 1)), Math.min(255, c[2] * k + 10 * (k - 1))];
 /**
@@ -236,6 +237,8 @@ function lordFigure(p, x, y, h, L, awake = 1) {
   stamp(p, x - w / 2, y - h, w, h + 2, (s) => {
     const cx = w / 2, u = h / 12;
     s.poly([[cx - u * 3.8, h], [cx - u * 2.4, u * 3.2], [cx, u * 2.2], [cx + u * 2.4, u * 3.2], [cx + u * 3.8, h]], (px, py) => lit(ramp(stops('#1a1024', '#3a2050', '#5a3474'), (py / h) * 0.4 + (px < cx ? 0.2 : 0.5)), px + x - w / 2, py + y - h, L));
+    for (let k = -3; k <= 3; k++) line(s, [[cx + k * u * 0.7, u * 4.2], [cx + k * u * 1.05, h - 2]], [26, 14, 38]);
+    line(s, [[cx - u * 3.7, h - 3], [cx - u * 2.4, u * 3.4], [cx, u * 2.5], [cx + u * 2.4, u * 3.4], [cx + u * 3.7, h - 3]], [214, 170, 80]);
     s.poly([[cx - u * 2.6, u * 4], [cx - u * 4.4, u * 8.4], [cx - u * 3.4, u * 8.8], [cx - u * 1.6, u * 5]], [44, 24, 64]);
     s.poly([[cx + u * 2.6, u * 4], [cx + u * 4.4, u * 8.4], [cx + u * 3.4, u * 8.8], [cx + u * 1.6, u * 5]], [60, 34, 86]);
     s.ellipse(cx, u * 2.4, u * 1.3, u * 1.5, [14, 8, 20]);
@@ -278,13 +281,40 @@ function* skyGrad(p, top, bot, L) {
   yield* rows(p, (x, y) => lit([a[0] + (b[0] - a[0]) * (y / p.h), a[1] + (b[1] - a[1]) * (y / p.h), a[2] + (b[2] - a[2]) * (y / p.h)], x, y, L));
 }
 function* caveBack(p, pal, L, seed, opts = {}) {
-  // far cave wall: soft strata, recessed and cool
-  const col = stops(...(opts.stops || [mixHex(pal.rock[1], '#3a2a5a', 0.5), mixHex(pal.rock[2], '#6a5a9a', 0.35), mixHex(pal.rock[3], '#9a8ab8', 0.35), mixHex(pal.rock[4], '#d8b8c8', 0.4)]));
+  // far cave wall: big inked boulders over soft strata, cool in the dark, warm where lamps reach
+  const col = stops(...(opts.stops || [mixHex(pal.rock[1], '#2a1e4a', 0.55), mixHex(pal.rock[2], '#5a4a8a', 0.4), mixHex(pal.rock[3], '#9a86b8', 0.35), mixHex(pal.rock[4], '#e0c0c8', 0.4)]));
+  const cw = opts.cell || 46, ch = Math.round((opts.cell || 46) * 0.7);
+  const site = siteGrid(cw, ch, seed);
   yield* rows(p, (x, y) => {
-    const n = fbm2(x * 0.018, y * 0.035, 3, seed) * 0.7 + fbm2(x * 0.09, y * 0.12, 2, seed + 3) * 0.3;
-    const band = Math.sin(y * 0.09 + fbm2(x * 0.01, y * 0.01, 2, seed + 5) * 6) * 0.08;
-    return lit(ramp(col, n * 0.85 + band + 0.08 + (opts.lift || 0)), x, y, L);
+    const wx = x + (fbm2(x * 0.02, y * 0.02, 2, seed + 7) - 0.5) * 26, wy = y + (fbm2(x * 0.02 + 5, y * 0.02, 2, seed + 8) - 0.5) * 18;
+    const S = nearest2(site, cw, ch, wx, wy, 0.9);
+    const e = (S.d2 - S.d1) * 0.5;
+    if (e < 0.8) return lit(col[0], x, y, L);
+    const n = fbm2(x * 0.08, y * 0.1, 2, seed);
+    let t = 0.3 + S.s1[2] * 0.25 - S.s1[3] * 0.2 + n * 0.3 + Math.sin(y * 0.11 + fbm2(x * 0.01, y * 0.01, 2, seed + 5) * 6) * 0.05;
+    if (e < 4) t += (1 - e / 4) * (wy < S.s1[1] ? 0.22 : -0.2); // lit top lip, shaded underside
+    if (hash2(x, y, seed) > 0.985) t += 0.3;
+    return lit(ramp(col, t + (opts.lift || 0)), x, y, L);
   });
+  // moss and roots hanging along seams
+  const moss = rgb(mixHex(pal.moss || '#4a5a2a', '#7a9a4a', 0.3));
+  for (let k = 0; k < 40; k++) {
+    const x = hash2(k, 1, seed) * p.w, y = -(p.dy || 0) + hash2(k, 2, seed) * (p.h * 0.75), len = 3 + hash2(k, 3, seed) * 9;
+    for (let i = 0; i < len; i++) p.set(x + Math.round(Math.sin(i * 0.7 + k) * 0.6), y + i, lit(moss, x, y + i, L, 0.2));
+  }
+}
+/** Pebbles, chips and tufts scattered over a floor band. */
+function scatter(p, y0, y1, L, seed, n = 60, tint = '#8a7a6a') {
+  const c = rgb(tint);
+  for (let k = 0; k < n; k++) {
+    const x = hash2(k, 4, seed) * p.w, y = y0 + hash2(k, 5, seed) * (y1 - y0), r = 1 + hash2(k, 6, seed) * 2.5 * (0.5 + (y - y0) / (y1 - y0 + 1));
+    p.ellipse(x, y, r * 1.4, r * 0.8, (px, py, nx, ny) => lit(ny < 0 ? [c[0] + 40, c[1] + 36, c[2] + 30] : [c[0] * 0.6, c[1] * 0.6, c[2] * 0.7], px, py, L));
+    if (hash2(k, 7, seed) > 0.8) { const gx = x + 4; for (let i = 0; i < 4; i++) line(p, [[gx + i, y + 1], [gx + i + (i - 1.5), y - 3 - (i % 2) * 2]], lit([90, 130, 70], gx, y, L)); }
+  }
+}
+/** A glyph of the old tongue: a 3x5 pattern of strokes. */
+function rune(p, x, y, seed, col) {
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) if (hash2(r * 3 + c, seed, 77) > 0.52 || (c === 1 && r % 2 === 0)) { p.set(x + c * 2, y + r * 2, col); p.set(x + c * 2 + 1, y + r * 2, col); }
 }
 function stalactites(p, pal, L, seed, n = 14, len = 60, fromTop = true) {
   const col = stops(pal.rock[0], pal.rock[2], pal.rock[3]);
@@ -352,7 +382,7 @@ function P(def) { return { dur: 6, cam: [[-10, 0], [10, 0]], fx: [], cues: [], .
 const PROLOGUE = () => {
   const pal = REGIONS[0].pal, tomb = REGIONS[5].pal;
   const L1 = rig('#7a6aa0', [{ x: 150, y: 250, r: 230, col: '#ffb060', k: 1.3 }, { x: 300, y: 150, r: 200, col: '#c86bff', k: 0.9 }]);
-  const L2 = rig('#5a4a7a', [{ x: 268, y: 120, r: 260, col: '#ff6af0', k: 1.2 }, { x: 268, y: 330, r: 220, col: '#6a4aff', k: 0.6 }]);
+  const L2 = rig('#241a3c', [{ x: 268, y: 150, r: 150, col: '#ff6af0', k: 1.3 }, { x: 150, y: 230, r: 110, col: '#b06aff', k: 1.2 }, { x: 386, y: 230, r: 110, col: '#b06aff', k: 1.2 }, { x: 268, y: 330, r: 160, col: '#6a4aff', k: 0.5 }]);
   const L4 = rig('#8a8aa8', [{ x: 268, y: 250, r: 160, col: '#ff8a3a', k: 0.8 }]);
   const L5 = rig('#6a6aa0', [{ x: 268, y: 360, r: 300, col: '#ffb060', k: 1.3 }, { x: 268, y: 40, r: 160, col: '#9ad8ff', k: 0.5 }]);
   return [
@@ -366,12 +396,14 @@ const PROLOGUE = () => {
           yield* rockMass(p, [[150, 300], [160, 70], [268, 34], [376, 70], [386, 300]], stops('#2a2036', '#4a3a5e', '#6a5a7e', '#9a8aa8'), L1, 21, { scale: 0.04 });
           p.poly([[200, 300], [210, 110], [268, 84], [326, 110], [336, 300]], (x, y) => lit(ramp(stops('#1a1224', '#2e2440', '#3e3256'), fbm2(x * 0.05, y * 0.05, 2, 3)), x, y, L1));
           line(p, [[268, 90], [268, 300]], [24, 14, 36], 2);
-          for (let k = 0; k < 9; k++) { const ry = 120 + k * 19; for (const sx of [236, 300]) { line(p, [[sx - 6, ry], [sx, ry - 5], [sx + 6, ry]], [214, 140, 255]); p.set(sx, ry + 2, [255, 210, 255]); } }
+          for (let k = 0; k < 9; k++) { const ry = 116 + k * 19; for (const sx of [232, 298]) { rune(p, sx, ry, k * 7 + sx, [214, 140, 255]); p.set(sx + 2, ry - 2, [255, 220, 255]); } }
+          for (let k = 0; k < 18; k++) rune(p, 168 + (k % 2) * 196 + (hash2(k, 1, 9) - 0.5) * 6, 90 + k * 11, k + 40, [120, 80, 150]);
           glowBake(p, 268, 200, 70, '#c86bff', 0.3);
           bones(p, 200, 296, 5, 7);
         } },
         { depth: 1.0, paint: function* (p) {
           yield* floorBand(p, 280, pal, L1, 5);
+          scatter(p, 284, 340, L1, 5, 90);
           rails(p, 0, 140, 296, L1);
           crate(p, 40, 268, 22, 18, L1); crate(p, 58, 276, 16, 12, L1);
           lantern(p, 108, 262, L1);
@@ -390,20 +422,27 @@ const PROLOGUE = () => {
       dy: -46, caption: 'Inside slept the Cursed Lord. When he woke, he laid his curse upon them all…',
       rig: L2, cam: [[0, 22], [0, -14]],
       layers: [
-        { depth: 0.3, paint: function* (p) { yield* caveBack(p, tomb, L2, 31, { lift: -0.05 }); for (let k = 0; k < 6; k++) { const x = 60 + k * 84; yield* rockMass(p, [[x - 14, 400], [x - 12, 30], [x + 12, 30], [x + 14, 400]], stops('#2a1e3a', '#4a3a60', '#7a6a90'), L2, 40 + k, { scale: 0.08, top: 0 }); } } },
+        { depth: 0.3, paint: function* (p) { yield* caveBack(p, tomb, L2, 31, { stops: ['#0c0614', '#1a1028', '#2e2044', '#4a3a66'] }); for (let k = 0; k < 6; k++) { const x = 60 + k * 84; yield* rockMass(p, [[x - 14, 400], [x - 12, 30], [x + 12, 30], [x + 14, 400]], stops('#0e0816', '#22183a', '#3e3058', '#6a5a88'), L2, 40 + k, { scale: 0.08, top: 0 }); } } },
         { depth: 0.75, paint: function* (p) {
           // the throne dais and its stair
-          for (let s = 0; s < 6; s++) p.poly([[140 + s * 10, 300 - s * 12], [396 - s * 10, 300 - s * 12], [392 - s * 10, 306 - s * 12], [144 + s * 10, 306 - s * 12]], (x, y) => lit(ramp(stops('#2a2036', '#4a3a5e', '#8a7aa0'), 0.4 + (y % 6 < 2 ? 0.4 : 0)), x, y, L2));
+          for (let s = 0; s < 6; s++) p.poly([[140 + s * 10, 300 - s * 12], [396 - s * 10, 300 - s * 12], [392 - s * 10, 306 - s * 12], [144 + s * 10, 306 - s * 12]], (x, y) => lit(ramp(stops('#140c1e', '#2e2442', '#6a5a86'), 0.25 + (y % 6 < 2 ? 0.5 : 0) + fbm2(x * 0.1, y * 0.3, 2, s) * 0.2), x, y, L2));
           yield* rockMass(p, [[220, 232], [226, 110], [268, 86], [310, 110], [316, 232]], stops('#20162e', '#3a2a50', '#5a4a72'), L2, 61, { scale: 0.06 });
           lordFigure(p, 268, 236, 120, L2, 1);
           glowBake(p, 268, 160, 90, '#ff5af0', 0.25);
           bones(p, 190, 296, 8, 13); bones(p, 340, 298, 6, 17);
+          for (const bx of [150, 386]) {
+            // braziers of violet fire on either side of the stair
+            stamp(p, bx - 12, 226, 24, 36, (s2) => { s2.poly([[0, 4], [24, 4], [18, 14], [6, 14]], [70, 60, 80]); s2.rect(10, 14, 4, 18, [60, 50, 70]); s2.poly([[4, 32], [20, 32], [22, 36], [2, 36]], [50, 40, 60]); });
+            glowBake(p, bx, 222, 30, '#c86bff', 0.6);
+            for (let k = 0; k < 9; k++) p.ellipse(bx - 8 + k * 2, 224 - hash2(k, bx, 3) * 10, 2, 4, [230, 170, 255]);
+          }
+          for (let k = 0; k < 4; k++) { const x = 190 + k * 52; line(p, [[x, 0], [x + 6, 60 + k * 9]], [90, 80, 100], 1); }
         } },
         { depth: 1.35, paint: function* (p) { for (const x of [20, 500]) yield* rockMass(p, [[x - 40, 400], [x - 26, 0], [x + 30, 0], [x + 40, 400]], stops('#140c1c', '#2a1e3a', '#3a2e4e'), L2, 70 + x, { scale: 0.05 }); } },
       ],
-      fx: [{ kind: 'curse', rate: 30, x: 268, y: 170, spread: 120 }, { kind: 'dust', rate: 10 }],
-      lights: [{ x: 268, y: 150, r: 120, col: '#ff5af0', flicker: 0.2 }],
-      shafts: [{ x: 268, w: 60, col: '#ff9af0', a: 0.12 }],
+      fx: [{ kind: 'curse', rate: 24, x: 268, y: 170, spread: 120 }, { kind: 'curse', rate: 10, x: 150, y: 220, spread: 8 }, { kind: 'curse', rate: 10, x: 386, y: 220, spread: 8 }, { kind: 'dust', rate: 10 }],
+      lights: [{ x: 268, y: 150, r: 100, col: '#ff5af0', flicker: 0.2 }, { x: 150, y: 220, r: 44, col: '#c86bff', flicker: 0.4 }, { x: 386, y: 220, r: 44, col: '#c86bff', flicker: 0.4 }],
+      shafts: [{ x: 268, w: 50, col: '#ff9af0', a: 0.08 }],
       cues: [{ t: 1.8, sfx: 'curse_hum' }, { t: 3.6, sfx: 'boss_roar', flash: [0.9, 0.4, 1], shake: 0.6 }],
     }),
     P({

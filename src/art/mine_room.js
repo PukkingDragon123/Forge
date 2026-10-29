@@ -37,7 +37,8 @@ function rockWall(p, region, seed) {
     const B = nearest2(big, BW, BH, wx, wy, 0.85), S = nearest2(small, SW, SH, wx, wy);
     const eB = (B.d2 - B.d1) * 0.5, eS = (S.d2 - S.d1) * 0.5;
     const { L, dx, dy, cool } = light(x, y);
-    const base = mixHex(strataAt(region, y, x, seed), '#6a5a8a', 0.18); // back wall sits a little hazier than the face
+    const jit = Math.floor(B.s1[2] * 3 + 1.5) - 1; // each boulder leans to a neighbouring band
+    const base = mixHex(strataAt(region, y + jit * 60, x, seed), '#6a5a8a', 0.1); // back wall sits a little hazier than the face
     const rmp = rampOf(base);
     if (eB < 0.9 + hash2(x >> 3, y >> 3, seed) * 0.5) { p.set(x, y, grade(rmp[0], L * 0.5, cool)); continue; }
     let v = 0.46 + (B.s1[2] * dx + B.s1[3] * dy) * 0.32 + (S.s1[2] * dx + S.s1[3] * dy) * 0.1;
@@ -50,7 +51,8 @@ function rockWall(p, region, seed) {
     v += (fbm2(x * 0.08, y * 0.08, 2, seed) - 0.5) * 0.14 + (hash2(x, y, seed) - 0.5) * 0.05;
     const wet = fbm2(x * 0.16, y * 0.006, 2, seed + 30);
     if (wet > 0.72) v -= (wet - 0.72) * 0.7;
-    v = v * 0.55 + L * 0.55 - 0.08;
+    if (eB < 2.2 && (((wx - B.s1[0]) * dx + (wy - B.s1[1]) * dy) / (B.d1 || 1)) > 0.3) v += 0.35; // rim light on lamp-facing boulder edges
+    v = v * 0.78 + L * 0.38 - 0.1;
     p.set(x, y, grade(pk(rmp, v, x, y), L, cool));
   }
   // fossils and pebbles pressed into the wall
@@ -237,6 +239,18 @@ export function paintRoom(region, opts) {
   // minecart rails (side view): sleepers, then the rail with a lamp-lit top edge
   for (let x = 724; x < W; x += 17) beam(p, [[x, 504], [x + 11, 503], [x + 12, 510], [x - 1, 511]], x, true);
   for (let x = 712; x < W; x++) { p.set(x, 500, [250, 226, 196]); p.set(x, 501, [170, 160, 180]); p.set(x, 502, [110, 100, 130]); p.set(x, 503, OUTLINE); }
+
+  // ---- spoil heap at the foot of the face: tumbled stones, a leaning plank, moss
+  for (let k = 0; k < 46; k++) {
+    const t = hash2(k, 61, seed), x = BOARD.x - 6 + t * (BOARD.w + 12), base = FLOOR_Y + 2 - Math.pow(hash2(k, 62, seed), 1.6) * 54;
+    const r = 4 + hash2(k, 63, seed) * 9, col = S[2 + (k % 4)];
+    const pts = [];
+    for (let q = 0; q < 8; q++) { const a = (q / 8) * Math.PI * 2; pts.push([x + Math.cos(a) * r * (0.8 + hash2(q, k, 64) * 0.35), base - r * 0.7 + Math.sin(a) * r * 0.7]); }
+    fill(p, pts, col, (qx, qy) => 0.5 + (base - r * 0.7 - qy) / r * 0.3 - (qx - x) / r * 0.15, { form: 0.8, lit: 0.36 });
+    if (hash2(k, 65, seed) > 0.7) for (let m = -2; m <= 2; m++) p.set(Math.round(x + m), Math.round(base - r * 1.35), MOSS[2 + (m & 1)]);
+  }
+  beam(p, [[600, FLOOR_Y - 58], [606, FLOOR_Y - 60], [628, FLOOR_Y + 2], [621, FLOOR_Y + 3]], seed + 66);
+  beam(p, [[268, FLOOR_Y - 40], [276, FLOOR_Y - 42], [300, FLOOR_Y + 2], [292, FLOOR_Y + 3]], seed + 67);
 
   // ---- left: scaffold platform, ladder, crates, tool rack, mine sign, poster
   const PY = 318;

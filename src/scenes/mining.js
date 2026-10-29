@@ -498,7 +498,7 @@ export class MiningScene extends Scene {
     // daylight spilling through the ceiling crack, slanting across the left of the room
     this.additive(ctx, () => {
       const sh = shaftCanvas(70, 230, 470, '#fff0c8');
-      ctx.globalAlpha = 0.5 + Math.sin(this.time * 0.6) * 0.08;
+      ctx.globalAlpha = 0.95 + Math.sin(this.time * 0.6) * 0.05;
       ctx.translate(92, 0); ctx.rotate(0.22);
       ctx.drawImage(sh, -sh.width / 2, 0);
     });
@@ -554,7 +554,7 @@ export class MiningScene extends Scene {
     // warm lamp cones washing down over the face
     LANTERNS.forEach((l, i) => this.additive(ctx, () => {
       const cone = shaftCanvas(14, 150, 200, '#ffcf96');
-      ctx.globalAlpha = 0.26 + (this.flicker || 0) * 0.08;
+      ctx.globalAlpha = 0.55 + (this.flicker || 0) * 0.12;
       ctx.drawImage(cone, Math.round(l.x - cone.width / 2 + (i ? -16 : 16)), l.y + 6);
     }));
 

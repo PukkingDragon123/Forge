@@ -3,7 +3,6 @@
 // ambient occlusion, a soft bevel (outer edges of every face catch a little light), gentle face
 // shading and per-voxel colour variation. Emissive voxels go to a separate unlit mesh so they bloom.
 import * as THREE from 'three';
-import { TOON4 } from '../gfx/materials.js';
 
 const LIN = new Float32Array(256);
 for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
@@ -27,8 +26,10 @@ export function hash(x, y, z = 0, s = 0) {
 }
 /** Pick a colour from a ramp [dark..light] at t, with a little per-voxel dither. */
 export function ramp(cols, t, x = 0, y = 0, z = 0, s = 0) {
-  t = Math.max(0, Math.min(0.999, t + (hash(x, y, z, s) - 0.5) * 0.07)) * (cols.length - 1);
-  return rgb(cols[Math.floor(t + 0.5)]);
+  // blended (not stepped) so neighbouring voxels never flip between two bands
+  t = Math.max(0, Math.min(0.999, t + (hash(x, y, z, s) - 0.5) * 0.05)) * (cols.length - 1);
+  const i = Math.floor(t);
+  return mix(cols[i], cols[Math.min(i + 1, cols.length - 1)], t - i);
 }
 
 const pack = (c) => { const [r, g, b] = rgb(c); return ((Math.round(Math.min(255, r)) << 16) | (Math.round(Math.min(255, g)) << 8) | Math.round(Math.min(255, b))) >>> 0 || 0x010101; };
@@ -135,7 +136,7 @@ export class VPart {
   geometry(vs, offset = [0, 0, 0], o = {}) {
     const solid = { p: [], n: [], c: [], i: [] }, glow = { p: [], n: [], c: [], i: [] };
     const occ = (x, y, z) => { const e = this.m.get(KEY(x, y, z)); return e && !(e.v & GLOW) ? 1 : 0; };
-    const jitter = o.jitter ?? 0.045, gi = o.glowIntensity ?? 2.4;
+    const jitter = o.jitter ?? 0.03, gi = o.glowIntensity ?? 2.4;
     for (const e of this.m.values()) {
       const { x, y, z, v } = e;
       const isGlow = (v & GLOW) !== 0;
@@ -206,7 +207,8 @@ const SHADE = [0.9, 0.9, 1.0, 0.7, 0.96, 0.82];
 
 /** Vertex-coloured toon material (unique so a character can flash). */
 export function voxToon(o = {}) {
-  return new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: TOON4, emissive: new THREE.Color(0, 0, 0), ...o });
+  // soft per-face light (no hard toon bands): voxels read clean, the baked AO and bevel do the rest
+  return new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true, emissive: new THREE.Color(0, 0, 0), ...o });
 }
 export function voxGlow() { return new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, toneMapped: false }); }
 

@@ -262,7 +262,7 @@ export class CutscenePlayer {
     const cap = P.caption || '';
     const n = Math.floor(this.typed);
     ui.text(cap.slice(0, n), ui.w / 2, ui.h - BAR + 12, { align: 'center', color: '#f4e6cc', maxW: 720 });
-    if (n >= cap.length && !this.held) ui.text('›', ui.w / 2 + 380, ui.h - 22 + Math.round(Math.sin(this.t * 5)), { color: '#c9a36a' });
+    if (n >= cap.length && !this.held) ui.text('>', ui.w / 2 + 380, ui.h - 22 + Math.round(Math.sin(this.t * 5)), { color: '#c9a36a' });
     // a title for bosses and new layers
     if (P.title) {
       const k = clamp((this.t - 0.6) / 0.6, 0, 1) * clamp(((P.dur || 6) - this.t) / 0.8, 0, 1);
@@ -275,11 +275,11 @@ export class CutscenePlayer {
     }
     // skip tag (top right)
     if (!this.opts.noSkip && !this.held) {
-      const w = ui.measure('Skip ››') + 16, c = tagCanvas(w), x = ui.w - c.width - 10, y = 8;
+      const w = ui.measure('Skip >>') + 16, c = tagCanvas(w), x = ui.w - c.width - 10, y = 8;
       const h = ui.hit('cs-skip', x, y, c.width, c.height + 4, { sound: false });
       ctx.globalAlpha = h.hover ? 1 : 0.7;
       ui.img(c, x, y);
-      ui.text('Skip ››', x + 10, y + 11, { color: '#3a2214' });
+      ui.text('Skip >>', x + 10, y + 11, { color: '#3a2214' });
       ctx.globalAlpha = 1;
       if (h.clicked) this.skip();
     }

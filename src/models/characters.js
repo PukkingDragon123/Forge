@@ -24,13 +24,13 @@ const outBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) 
 export const VS = 0.034;
 
 // ------------------------------------------------------------------ surface recipes (voxel space)
-const fabric = (cols, s = 1) => (x, y, z) => ramp(cols, 0.55 + (hash(x >> 2, y >> 1, z >> 2, s) - 0.5) * 0.16 + ((x + y + z) & 1 ? 0.03 : -0.03), x, y, z, s);
+const fabric = (cols, s = 1) => (x, y, z) => ramp(cols, 0.55 + (hash(x >> 2, y >> 2, z >> 2, s) - 0.5) * 0.1, x, y, z, s);
 const leather = (cols, s = 2) => (x, y, z) => {
-  const scuff = hash(x + y * 3, z - y * 2, x, s) > 0.94;
-  return ramp(cols, scuff ? 0.85 : 0.5 + (hash(x >> 2, y >> 1, z >> 2, s) - 0.5) * 0.2, x, y, z, s);
+  const scuff = hash(x + y * 3, z - y * 2, x, s) > 0.975;
+  return ramp(cols, scuff ? 0.8 : 0.5 + (hash(x >> 2, y >> 2, z >> 2, s) - 0.5) * 0.12, x, y, z, s);
 };
 const metal = (cols, s = 3) => (x, y, z) => ramp(cols, 0.5 + (((y + (x >> 1)) & 3) === 0 ? 0.18 : 0) + (hash(x, y, z, s) - 0.5) * 0.1, x, y, z, s);
-const fur = (cols, s = 4) => (x, y, z) => ramp(cols, 0.35 + hash(x, y >> 1, z, s) * 0.45, x, y, z, s);
+const fur = (cols, s = 4) => (x, y, z) => ramp(cols, 0.4 + hash(x >> 1, y >> 1, z >> 1, s) * 0.3, x, y, z, s);
 const mail = (cols, s = 5) => (x, y, z) => ramp(cols, ((x + y) & 1) ^ (z & 1) ? 0.72 : 0.28, x, y, z, s);
 const flat = (c) => () => c;
 
@@ -500,7 +500,7 @@ export class Character {
       GEO_CACHE.set(key, g);
     }
     const grp = new THREE.Group();
-    if (g.solid) { const m = new THREE.Mesh(g.solid, this.mat); m.castShadow = true; m.receiveShadow = true; grp.add(m); }
+    if (g.solid) { const m = new THREE.Mesh(g.solid, this.mat); m.castShadow = true; m.receiveShadow = false; grp.add(m); } // no self-shadow acne on voxel faces
     if (g.glow) { const m = new THREE.Mesh(g.glow, this.glowMat); m.castShadow = false; grp.add(m); }
     joint.add(grp);
     return grp;
@@ -778,26 +778,21 @@ const BUILD = {
       P.cap([1.6, 13.1, 3.4], [2.5, 10.6, 3.9], 0.8, 0.5, fabric(C.kerchief, 25));
       P.cap([1.4, 13.1, 3.2], [0.6, 10.9, 3.8], 0.7, 0.45, fabric(C.kerchief, 26));
     });
-    // head: leather forge hood with brass goggles and a vented mask — no face
+    // head: leather forge hood, a riveted iron welding mask with one amber window — no face
     c.part(R.head, (P) => {
-      P.ell(0, 4.6, 0.2, 4.5, 5.2, 4.5, leather(C.hood, 31));
-      P.loft(-1.5, 1.5, () => [3.2, 3.0, 0, 0.3], leather(C.hood, 32));
-      skin(P, (x, y, z) => (x === 0 || x === -1) && y > 6 && z < 3 && (y & 1), mix(C.hood[0], '#d8b080', 0.3));
-      // strap around the head
-      skin(P, (x, y, z) => y >= 5 && y <= 6 && z < 2, leather(['#1e120c', '#2e1c12', '#3e2618'], 33));
-      for (const sx of [-1, 1]) {
-        const cx = sx * 2.2, cy = 5.5;
-        for (let y = 3; y <= 8; y++) for (let x = -5; x <= 5; x++) {
-          const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-          if (d < 2.05) { P.set(x, y, 4, d < 1.2 ? ramp(C.lens, 1 - d / 1.4 + (y > cy ? 0.15 : -0.1), x, y, 4, 34) : ramp(C.brass, 0.5 + (y > cy ? 0.3 : -0.15), x, y, 4, 35)); if (d >= 1.2) P.set(x, y, 5, ramp(C.brass, 0.75, x, y, 5, 35)); }
-        }
-        P.set(Math.floor(cx - 0.6), 6, 5, C.lens[3]);
-      }
-      // breathing vents in the lower mask, a brass filter on one cheek
-      for (let x = -2; x < 2; x++) for (const y of [1, 3]) P.set(x, y, 5, '#140a06');
-      for (let y = 0; y < 5; y++) P.set(-3, y, 4, mix(C.hood[0], '#d8b080', 0.25));
-      P.ell(3.3, 2.2, 3.4, 1.3, 1.3, 1.1, metal(C.brass, 36));
-      P.set(3, 2, 4, '#20140a');
+      P.ell(0, 4.6, -0.2, 4.6, 5.3, 4.6, leather(C.hood, 31));
+      P.loft(-1.5, 1.5, () => [3.4, 3.2, 0, 0.1], leather(C.hood, 32));
+      skin(P, (x, y, z) => (x === 0 || x === -1) && y > 6 && z < 2 && (y & 1), mix(C.hood[0], '#d8b080', 0.3));
+      // the mask: a curved iron plate from chin to brow
+      const iron = metal(['#24262c', '#3a3e48', '#5a606c', '#8a92a0'], 33);
+      P.loft(0.5, 8.6, (y) => [4.1 - Math.max(0, y - 6.5) * 0.4 - Math.max(0, 2 - y) * 0.5, 4.9 + Math.sin(Math.PI * clamp((y - 0.5) / 8, 0, 1)) * 0.5], iron, { front: true });
+      for (let x = -3; x < 3; x++) for (let y = 4; y < 6; y++) { P.set(x, y, 5, ramp(C.lens, y === 5 ? 0.75 : 0.45, x, y, 5, 34)); P.set(x, y, 6, null); }
+      P.set(-3, 5, 5, C.lens[3]);
+      for (let x = -4; x <= 3; x++) { P.set(x, 6, 6, ramp(['#3a3e48', '#5a606c', '#8a92a0'], 0.8, x, 6, 6, 35)); P.set(x, 3, 6, ramp(['#3a3e48', '#5a606c'], 0.6, x, 3, 6, 35)); }
+      for (const [x, y] of [[-4, 7], [3, 7], [-4, 1], [3, 1], [-1, 8]]) P.set(x, y, 5, C.brass[2]);
+      // hinge bolts at the temples, a soot smudge
+      for (const sx of [-1, 1]) P.ell(sx * 4.4, 5, 0.6, 1.1, 1.1, 1.1, metal(C.brass, 36));
+      for (let k = 0; k < 5; k++) P.set(Math.floor(hash(k, 1, 39) * 6) - 3, 1 + Math.floor(hash(k, 2, 39) * 2), 5, '#1a1612');
       // auburn hair bursting out of the hood top and back
       for (let x = -3; x < 3; x++) for (let z = -3; z < 2; z++) {
         const h = 1 + Math.floor(hash(x, z, 37) * 3) + (z < 0 ? 1 : 0);
@@ -973,7 +968,7 @@ const BUILD = {
       // visor: raised plate, a dark slit and breathing holes
       P.loft(1.5, 7, (y) => [3.9, 5.6 - Math.max(0, y - 5) * 0.3], metal(C.steel, 95), { front: true });
       for (let x = -4; x < 4; x++) { P.set(x, 5, 6, null); P.set(x, 5, 5, C.slit); P.set(x, 5, 4, C.slit); }
-      for (let x = -3; x < 3; x += 2) for (const y of [2, 3]) { P.set(x, y, 6, null); P.set(x, y, 5, C.slit); }
+      for (let y = 1; y < 5; y++) { P.set(-1, y, 6, ramp(C.bronze, 0.7, -1, y, 6, 90)); P.set(0, y, 6, ramp(C.bronze, 0.55, 0, y, 6, 90)); } // nose guard
       rivets(P, 6, 5.4, 18, C.bronze[3], 5.4);
       for (const sx of [-1, 1]) {
         P.cap([sx * 4.6, 6.4, 0], [sx * 7.6, 8.8, -0.4], 1.7, 1.2, (x, y, z, t) => ramp(C.horn, 0.35 + t * 0.4 + (Math.floor(t * 6) % 2 ? 0.12 : 0), x, y, z, 96));
@@ -1074,18 +1069,25 @@ const BUILD = {
       P.paint((x, y, z) => (y === 2 && P.surface(x, y, z) && z > 0 && (x & 1) ? C.scarf[3] : undefined));
     });
     const earJ = [];
+    const earCol = (x, y, z) => (z > -0.2 && Math.abs(x + 0.5) < 1.1 && y > 0.5 ? ramp(C.inner, 0.5, x, y, z, 136) : fur(C.ear, 137)(x, y, z));
     for (const sx of [-1, 1]) {
-      const ej = c.joint(R.head, ...c.v(sx * 1.7, 8.2, -0.6));
+      const ej = c.joint(R.head, ...c.v(sx * 1.8, 8.0, -0.6));
       const floppy = sx < 0;
       c.part(ej, (P) => {
-        P.cap([0, 0, 0], [0, 7.5, 0], 2.1, 1.3, (x, y, z) => (z > 0 && Math.abs(x + 0.5) < 1.3 && y > 1 && y < 6.8 ? ramp(C.inner, 0.5, x, y, z, 136) : fur(C.ear, 137)(x, y, z)), false, { sz: 0.48 });
-        P.ell(0, 0.5, 0, 1.9, 1.4, 1.6, fabric(C.hood, 138));
+        P.ell(0, floppy ? 2.2 : 4.2, 0, 1.9, floppy ? 2.6 : 4.6, 0.95, earCol);
+        P.ell(0, 0.4, 0, 1.8, 1.3, 1.5, fabric(C.hood, 138));
       });
-      if (floppy) ej.rotation.z = 1.25;
-      else ej.rotation.z = -0.12;
+      ej.rotation.z = floppy ? 0.35 : -0.12;
       earJ.push(ej);
       c.addSpring(ej, 'x', { base: -0.12, src: 'vy', gain: 0.35, k: 70, d: 6, wobble: 0.02, phase: sx, extra: (ch) => -ch.pose.ears * 0.25 });
-      c.addSpring(ej, 'z', { base: ej.rotation.z, src: 'vx', gain: -0.2, k: 60, d: 6, extra: floppy ? (ch) => -ch.pose.ears * 0.35 : (ch) => ch.pose.ears * 0.1 });
+      c.addSpring(ej, 'z', { base: ej.rotation.z, src: 'vx', gain: -0.2, k: 60, d: 6, extra: (ch) => ch.pose.ears * (floppy ? -0.15 : 0.1) });
+      if (floppy) {
+        // the tip flops over and bounces
+        const tip = c.joint(ej, ...c.v(0, 4.4, 0));
+        c.part(tip, (P) => P.ell(0, 2.2, 0, 1.7, 2.6, 0.9, earCol));
+        tip.rotation.z = 1.7;
+        c.addSpring(tip, 'z', { base: 1.7, src: 'vy', gain: -0.7, k: 30, d: 3.5, wobble: 0.08, phase: 2, extra: (ch) => -ch.pose.ears * 0.6 });
+      }
     }
     for (const side of ['L', 'R']) {
       const sx = side === 'L' ? 1 : -1;

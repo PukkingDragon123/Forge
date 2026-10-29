@@ -111,7 +111,7 @@ export function stoneCanvas(geom, tile, pal, flags = {}, region = 0) {
     const s = geom.seed * 7 + tile.x * 31 + tile.y * 17;
     const ox = BOARD.x + c.bx, oy = BOARD.y + c.by;
     const dim = flags.dim ? 0.16 : 0;
-    const wet = hash2(tile.x, 77, geom.seed) > 0.72;
+    const wet = hash2(tile.x, 77, geom.seed) > 0.86;
     for (let yy = 0; yy < c.bh; yy++) for (let xx = 0; xx < c.bw; xx++) {
       const k = yy * c.bw + xx, d = c.dist[k];
       if (d < 0) continue;
@@ -132,7 +132,7 @@ export function stoneCanvas(geom, tile, pal, flags = {}, region = 0) {
       v += (fbm2(gx * 0.1, gy * 0.1, 2, s) - 0.5) * 0.26 + (hash2(gx, gy, s) - 0.5) * 0.08;
       if (hard) v += Math.sin((gx + gy * 0.4) * 0.35 + fbm2(gx * 0.05, gy * 0.05, 2, s) * 6) * 0.05;
       if (wet) v -= 0.06;
-      v = v * 0.62 + Math.min(L, 0.85) * 0.46 - 0.08 - dim + (flags.hover ? 0.12 : 0);
+      v = v * 0.86 + Math.min(L, 0.85) * 0.34 - 0.1 - dim + (flags.hover ? 0.12 : 0);
       p.set(xx, yy, grade(pk(rmp, v, gx, gy), L, cool));
     }
     const inside = (x, y) => { const k = y * c.bw + x; return x >= 0 && y >= 0 && x < c.bw && y < c.bh && c.dist[k] > 1.6; };
@@ -140,13 +140,13 @@ export function stoneCanvas(geom, tile, pal, flags = {}, region = 0) {
     const band = faceBand(region, c.cx, c.cy, geom.seed);
     const rmp = rampOf(hard ? mixHex(band, '#6a7aa8', 0.45) : band);
     // grit, chips and chisel scratches
-    for (let k = 0; k < 18; k++) {
+    for (let k = 0; k < 9; k++) {
       const x = Math.floor(hash2(k, 5, s) * c.bw), y = Math.floor(hash2(k, 6, s) * c.bh);
       if (!inside(x, y) || !inside(x + 1, y + 1)) continue;
-      if (k % 3 === 0) { p.set(x, y, rmp[1]); p.set(x + 1, y, rmp[2]); p.set(x + 1, y + 1, rmp[6]); }
-      else p.set(x, y, k % 2 ? rmp[2] : rmp[5]);
+      if (k % 3 === 0) { p.set(x, y, rmp[1]); p.set(x + 1, y, rmp[2]); p.set(x + 1, y + 1, rmp[5]); }
+      else p.set(x, y, k % 2 ? rmp[2] : rmp[4]);
     }
-    for (let k = 0; k < 2; k++) {
+    for (let k = 0; k < 1; k++) {
       const x = c.bw * (0.2 + hash2(k, 15, s) * 0.6), y = c.bh * (0.2 + hash2(k, 16, s) * 0.6), a = hash2(k, 17, s) * Math.PI;
       for (let t = -3; t <= 3; t++) { const xx = Math.round(x + Math.cos(a) * t), yy = Math.round(y + Math.sin(a) * t); if (inside(xx, yy)) p.set(xx, yy, t < 0 ? rmp[1] : rmp[6]); }
     }
@@ -162,9 +162,9 @@ export function stoneCanvas(geom, tile, pal, flags = {}, region = 0) {
         if (top >= 0 && (tile.y === 0 || hash2(xx >> 3, tile.y, s) > 0.5)) mossTuft(p, xx, top, 1, s + xx, inside);
       }
     }
-    if (wet) for (let k = 0; k < 3; k++) {
+    if (wet) for (let k = 0; k < 1; k++) {
       const x = Math.round(c.bw * (0.25 + hash2(k, 41, s) * 0.5)), y0 = Math.round(c.bh * (0.15 + hash2(k, 42, s) * 0.4)), len = 4 + Math.floor(hash2(k, 43, s) * 7);
-      for (let j = 0; j < len; j++) if (inside(x, y0 + j)) p.set(x, y0 + j, j % 3 === 0 ? [236, 244, 255] : [200, 212, 240]);
+      for (let j = 0; j < len; j++) if (inside(x, y0 + j)) { p.set(x, y0 + j, j === 0 ? [240, 246, 255] : rmp[Math.max(1, 4 - (j >> 1))]); if (inside(x + 1, y0 + j)) p.set(x + 1, y0 + j, rmp[1]); }
     }
     if (hard) {
       // pale quartz seams: hard rock reads at a glance
@@ -255,14 +255,15 @@ export function cavityCanvas(geom, x, y, pal, region = 0) {
   return memo('cav|' + geom.seed + '|' + region + '|' + x + ',' + y, () => {
     const c = geom.cells[y][x];
     const p = new Painter(c.bw, c.bh);
-    const back = rampOf(mixHex(faceBand(region, c.cx, c.cy, geom.seed), '#2a1e4a', 0.62));
+    const back = rampOf(mixHex(faceBand(region, c.cx, c.cy, geom.seed), '#1e1436', 0.7));
     const s = geom.seed + x * 13 + y * 7;
     for (let yy = 0; yy < c.bh; yy++) for (let xx = 0; xx < c.bw; xx++) {
       const k = yy * c.bw + xx, d = c.dist[k];
       if (d < 0) continue;
       const { L, dx, dy, cool } = light(BOARD.x + c.bx + xx, BOARD.y + c.by + yy);
-      let v = 0.2 + fbm2((c.bx + xx) * 0.12, (c.by + yy) * 0.12, 2, s) * 0.22;
-      if (d < 7) { const b = 1 - d / 7; v += -(c.nx[k] * dx + c.ny[k] * dy) * b * 0.55 + b * 0.06; }
+      let v = 0.14 + fbm2((c.bx + xx) * 0.12, (c.by + yy) * 0.12, 2, s) * 0.18;
+      if (d < 8) { const b = 1 - d / 8; v += -(c.nx[k] * dx + c.ny[k] * dy) * b * 0.75 + b * 0.1; }
+      if (d > 1.3 && d < 2.4 && (c.nx[k] * dx + c.ny[k] * dy) < -0.3) v = 0.9; // the far lip catches the lamp
       if (d < 1.3) v = 0.02;
       v = v * 0.7 + L * 0.3 - 0.04;
       p.set(xx, yy, grade(pk(back, v, c.bx + xx, c.by + yy), L * 0.6, cool));
