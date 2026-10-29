@@ -3,7 +3,7 @@
 // (Lambert, like the explorers) so they sit in any scene's lighting. Glowing voxels get their own
 // unlit mesh that blooms. Coordinates are voxel ints: x/z centred on the prop, y = 0 at its base.
 import * as THREE from 'three';
-import { VWorld, meshWorld, makeLightRig, C, glowC, mixC, tone, ramp, bayer, box, ell, cyl, cylX, cylZ, seg, sag, h3, NOAO } from './stage_vox_kit.js';
+import { VWorld, meshWorld, makeLightRig, C, glowC, mixC, tone, ramp, bayer, box, ell, cyl, cylX, cylZ, seg, sag, h3, NOAO, text } from './stage_vox_kit.js';
 import { WOOD, WOOD_PALE, IRON, RUST, BRASS, BONE, CLOTH } from './stage_vox_props.js';
 import { LAYER_FX } from '../gfx/renderer.js';
 import { noise2 } from '../core/math.js';
@@ -12,7 +12,7 @@ export const PV = 0.04;
 /** metres → voxels (float / rounded) */
 export const u = (m) => m / PV;
 export const ui = (m) => Math.round(m / PV);
-export { C, glowC, mixC, tone, ramp, bayer, box, ell, cyl, cylX, cylZ, seg, sag, h3, NOAO, WOOD, WOOD_PALE, IRON, RUST, BRASS, BONE, CLOTH };
+export { C, glowC, mixC, tone, ramp, bayer, box, ell, cyl, cylX, cylZ, seg, sag, h3, NOAO, text, WOOD, WOOD_PALE, IRON, RUST, BRASS, BONE, CLOTH };
 
 // ------------------------------------------------------------------ palettes (warm pastel, lavender shadows)
 const SHADE = C('#1c1428'), LIT = C('#fff4e0');

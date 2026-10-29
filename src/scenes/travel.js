@@ -40,7 +40,7 @@ const WEATHER = [
   [{ kind: 'curse', rate: 5, area: [0, 300, 960, 240], up: true }, { kind: 'dust', rate: 3, col: '#e0c8ff' }],
 ];
 // Foreground silhouettes per layer, passing between the camera and the walker for depth.
-const FORE = [['drip', 'post', 'rock'], ['crystal', 'drip', 'rock'], ['roots', 'rock', 'drip'], ['post', 'drip', 'rock'], ['drip', 'rock', 'rock'], ['roots', 'drip', 'post']];
+const FORE = [['drip', 'post', 'drip'], ['crystal', 'drip', 'drip'], ['roots', 'drip', 'roots'], ['post', 'drip', 'drip'], ['drip', 'drip', 'post'], ['roots', 'drip', 'post']];
 
 /** A dark voxel silhouette (stalactite, timber post, boulder, roots, crystals); origin on its anchor. */
 function silhouette(kind, seed, col) {
@@ -236,7 +236,8 @@ export class TravelScene extends Scene {
   buildForeground(R) {
     const r = this.rng ? () => this.rng.next() : Math.random;
     const kinds = FORE[this.region] || FORE[0];
-    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(mixHex(R.pal.fog, '#000000', 0.45)), fog: false });
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(mixHex(R.pal.fog, '#000000', 0.45)), fog: false, transparent: true, opacity: 0 });
+    this.foreMat = mat;
     this.fore = [];
     const cache = {};
     for (let x = this.x0 - 3; x < this.x1 + 9; x += 4.2 + r() * 4.6) {
@@ -246,8 +247,8 @@ export class TravelScene extends Scene {
       const m = base.clone();
       m.traverse((o) => { if (o.isMesh) { o.material = mat; o.castShadow = false; o.receiveShadow = false; } });
       const y = this.pathY(x), top = kind === 'drip' || kind === 'roots';
-      m.position.set(x, top ? y + 3.15 + r() * 0.5 : kind === 'post' ? y - 0.1 : y - 0.55, 2.3 + r() * 0.8);
-      m.scale.setScalar(kind === 'rock' ? 1.6 + r() * 0.9 : 1.1 + r() * 0.5);
+      m.position.set(x, top ? y + 3.5 + r() * 0.4 : kind === 'post' ? y - 0.1 : y - 0.7, 2.4 + r() * 0.7);
+      m.scale.setScalar(kind === 'rock' ? 0.8 + r() * 0.4 : kind === 'post' ? 0.9 : 0.5 + r() * 0.25);
       m.rotation.y = kind === 'post' ? 0 : r() * 6.28;
       this.world.scene.add(m);
       this.fore.push(m);
@@ -302,7 +303,10 @@ export class TravelScene extends Scene {
     ambientDust(this.world, [this.x + 2, this.pathY(this.x) + 1.5, -0.5], [5, 1.4, 1.5], REGIONS[this.region].pal.glow2, 0.35);
     this.fx2d.update(rdt, game.ui.w, game.ui.h);
     const cp = this.rig.camera.position;
-    for (const m of this.fore) m.visible = Math.abs(m.position.x - cp.x) > 0.9 || cp.z - m.position.z > 2.2;
+    // silhouettes belong to the side-on shot; they fade away when the camera moves in close
+    const want = this.camMode === 'side' && !this.camOverride && !this.qte ? 1 : 0;
+    this.foreMat.opacity = lerp(this.foreMat.opacity, want, 1 - Math.exp(-4 * rdt));
+    for (const m of this.fore) m.visible = this.foreMat.opacity > 0.02 && cp.z - m.position.z > 3.2;
     // light along the tunnel: pockets of dark between lamps, and the glow of the way out near the end
     const dark = 0.5 + 0.5 * Math.sin(prog * Math.PI * 5 + 0.8), out = clamp((prog - 0.78) / 0.22);
     const P = this.post;

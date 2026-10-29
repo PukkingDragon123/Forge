@@ -116,7 +116,7 @@ const PAL = {
   },
   elio: {
     robe: ['#22163c', '#302058', '#442e78', '#5c429c'], inner: ['#101230', '#181c42', '#22275a', '#30387a'],
-    lining: ['#0c3638', '#125050', '#1c6a64', '#2c8a80'], trim: ['#7a4a10', '#b8801e', '#f0bc40', '#ffe89a'],
+    lining: ['#0c2e40', '#124660', '#1a6282', '#2c84a8'], trim: ['#7a4a10', '#b8801e', '#f0bc40', '#ffe89a'],
     sash: ['#460c20', '#66142e', '#8a203e', '#b03a58'], stone: ['#26243a', '#383650', '#504e6a', '#6e6c8c'],
     glove: ['#120e16', '#1c1622', '#282030', '#382e42'], wood: ['#1e100a', '#341e12', '#4c2e1c', '#664026'],
     crystal: ['#1a5a9a', '#32a0e0', '#7ae0ff', '#e4fbff'], paper: ['#b8a888', '#d8ccae', '#efe6d0'],
@@ -310,12 +310,12 @@ export const BUILD = {
       P.cap([0, -34, 0], [0, 27, 0], 2.2, 2.2, wood(C.wood));
       for (let y = -32; y < -18; y += 2) band(P, y, y + 1, C.leather[2]);
       P.ell(0, -35, 0, 3, 2.4, 3, C.iron[2]);
-      const hx = 13, y0 = 26, y1 = 41, hz = 7.5;
+      const hx = 12, y0 = 27, y1 = 40, hz = 7; const st = ['#2a2e36', '#454b56', '#666e7c', '#9aa4b4'];
       for (let x = -hx; x < hx; x++) for (let y = y0; y < y1; y++) for (let z = -hz; z < hz; z++) {
         const ex = Math.abs(x + 0.5) > hx - 1.5, ey = y === y0 || y === y1 - 1, ez = Math.abs(z + 0.5) > hz - 1.5;
         if (ex + ey + ez >= 2) continue;
         const ax = Math.abs(x + 0.5);
-        P.set(x, y, z, ex ? C.iron[3] : ax > 7 && ax < 9 ? (y % 3 ? C.brass[2] : C.brass[3]) : metal(C.iron, 18)(x, y, z));
+        P.set(x, y, z, ex ? st[3] : ax > 6.5 && ax < 8.5 ? (y % 3 ? C.brass[2] : C.brass[3]) : metal(st, 18)(x, y, z));
       }
       for (const z of [-hz, hz - 1]) for (const [gx, gy] of glyph(0, ANVIL)) P.set(gx, 33 + gy, z, G(C.coal[gy > 0 ? 2 : 1]));
       for (const x of [-8, 7]) for (const y of [y0 + 1, y1 - 2]) { P.set(x, y, hz, C.brass[3]); P.set(x, y, -hz - 1, C.brass[3]); }
@@ -654,6 +654,7 @@ export const BUILD = {
       P.cap([2, -1, 4], [2, -1, Z], 0.8, 0.8, C.leather[2]);
     });
     c.shield = shj;
+    c.shieldArm = { lSh: 0.3, lEl: 0.2, lAb: -0.22, lTw: 0 }; // swings are one-handed; the shield stays set
 
     // the ore-studded maul across the back
     const mj = c.joint(R.spine, ...c.v(2, 10, -12));

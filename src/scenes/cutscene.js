@@ -410,14 +410,14 @@ export class Cine {
     // the name card sits in the picture, under the bars
     if (this.card && this.card.t > 0) {
       const c = this.card, k = clamp(c.t / 0.5) * clamp((c.dur - c.t) / 0.7);
-      const y = H * 0.5 + 92;
+      const y = H * 0.5 + 80;
       ctx.globalAlpha = k;
       const spread = ease.outCubic(clamp(c.t / 0.9));
       const lw = Math.round(260 * spread);
-      ui.rect(W / 2 - lw, y - 34, lw * 2, 1, c.line, 0.8 * k);
-      ui.big(c.title, W / 2, y - 12, { scale: 3, top: c.top, bottom: c.bottom, outline: '#0a0608' });
-      if (c.sub) ui.big(c.sub, W / 2, y + 22, { scale: 1, top: '#f0e4d0', bottom: '#c8b8a0', outline: '#0a0608', highlight: false });
-      ui.rect(W / 2 - lw, y + 36, lw * 2, 1, c.line, 0.8 * k);
+      ui.rect(W / 2 - lw, y - 44, lw * 2, 1, c.line, 0.8 * k);
+      ui.big(c.title, W / 2, y - 16, { scale: 4, top: c.top, bottom: c.bottom, outline: '#0a0608' });
+      if (c.sub) ui.big(c.sub, W / 2, y + 24, { scale: 2, top: '#f0e4d0', bottom: '#c8b8a0', outline: '#0a0608', highlight: false });
+      ui.rect(W / 2 - lw, y + 42, lw * 2, 1, c.line, 0.8 * k);
       ctx.globalAlpha = 1;
     }
     if (this.fade > 0.002) ui.rect(0, 0, W, H, '#030206', ease.inOutSine(clamp(this.fade)));
@@ -603,9 +603,10 @@ SCRIPTS.prologue = (c) => {
         } },
       { dur: 2.3,
         cam: { pos: (c, k) => swordShot(0, k), look: (c, k) => swordShot(1, k), fov: [36, 31], roll: [0.05, -0.03] },
-        enter: (c) => { c.slowmo(0.1, 1.7, 0.12, 0.8); c.sfx('crack', { pitch: 0.7 }); c.tween(0.32, (k) => crackWeapon(sword, 0.5 + k * 0.5), 'linear'); },
+        enter: (c) => { c.sfx('crack', { pitch: 0.7 }); c.tween(0.5, (k) => crackWeapon(sword, 0.5 + k * 0.5), 'linear'); },
         at: [
-          [0.34, (c) => {
+          [0.5, (c) => {
+            c.slowmo(0.14, 1.3, 0.04, 0.7);
             const wp = sword.getWorldPosition(V()).add(V(0, 0.35, 0));
             c.shards.push(...shatterPieces(sword, T.group, { force: 1.6 }));
             c.sfx('shatter'); c.flash(0.55, [0.85, 0.55, 1]); c.shake(0.6); c.haptic(50);
@@ -779,7 +780,7 @@ SCRIPTS.boss = (c, p) => {
         },
         at: [[1.6, (c) => { c.sfx('monster_growl', { pitch: 0.6, vol: 0.7 }); c.shake(0.2); }]] },
       { dur: 3.2,
-        cam: { pos: [[mid - 0.6, 1.5, Math.max(6.2, mh * 1.6 + 0.6)], [mid - 0.8, 1.9, Math.max(7.4, mh * 1.9 + 0.8)]], look: [[mid + 0.5, mh * 0.5, 0], [mid + 0.4, mh * 0.52, 0]], fov: [40, 42] },
+        cam: { pos: [[mid - 0.6, 1.5, Math.max(6.2, mh * 1.8 + 0.8)], [mid - 0.8, 1.9, Math.max(7.4, mh * 2.2 + 1.0)]], look: [[mid + 0.5, mh * 0.55, 0], [mid + 0.4, mh * 0.58, 0]], fov: [40, 42] },
         enter: (c) => {
           [[0.25, 0.4], [0.95, 0.72], [1.6, 1]].forEach(([t, k]) => c.later(t, () => {
             c.envTo(k, k, k, k, 0.12, 'outQuad'); c.to(set, { lightK: k, flameK: k }, 0.12, 'outQuad');
@@ -798,7 +799,7 @@ SCRIPTS.boss = (c, p) => {
           c.postTo({ bloom: 1.4 }, 0.15); c.later(0.5, () => c.postTo({ bloom: 0.95 }, 1));
         }]] },
       { dur: 3.4,
-        cam: { pos: [[mid - 0.3, 1.3, Math.max(7.0, mh * 2.0 + 0.8)], [mid + 0.3, 1.45, Math.max(6.6, mh * 1.9 + 0.6)]], look: [[mid + 0.2, Math.max(1.2, mh * 0.5), 0], [mid + 0.2, Math.max(1.2, mh * 0.5), 0]], fov: 40 },
+        cam: { pos: [[mid - 0.3, 1.3, Math.max(7.0, mh * 2.3 + 1.0)], [mid + 0.3, 1.45, Math.max(6.6, mh * 2.2 + 0.8)]], look: [[mid + 0.2, Math.max(1.2, mh * 0.56), 0], [mid + 0.2, Math.max(1.2, mh * 0.56), 0]], fov: 40 },
         enter: (c) => { mon.play('idle'); hero.play('idleCombat', { loop: true }); c.titleCard(def.name, def.title, { at: 0.15, dur: 3.0, bottom: glow, line: glow }); },
         at: [[2.7, (c) => { c.fadeTo = 1; c.fadeRate = 1.4; }]] },
     ],
@@ -896,7 +897,7 @@ SCRIPTS.victory = (c) => {
           c.every(5, () => c.P.add.emit({ pos: [rnd(-4, 4), rnd(0.4, 2.4), rnd(-3, 2)], vel: [rnd(-0.1, 0.1), 0.05, 0], spread: 0.05, life: [2, 4], size: 1, color: ['#d8ff8a', '#ffe08a'], glow: 2.5, flicker: 0.6, fadeIn: 0.6 }));
         } },
       { dur: 6.4,
-        cam: { pos: [[0.1, 1.5, 3.9], [0.8, 3.4, 6.6], [1.3, 5.2, 8.8]], look: [[0, 0.85, 0], [0, 0.9, -0.6]], fov: [37, 42] },
+        cam: { pos: [[0.1, 1.5, 3.9], [0.55, 2.5, 5.5], [0.9, 3.2, 6.9]], look: [[0, 0.85, 0], [0, 0.95, -0.5]], fov: [37, 40] },
         enter: (c) => {
           c.every(14, () => c.P.add.emit({ pos: [rnd(-3, 3), rnd(2.6, 4), rnd(-2, 2)], vel: [rnd(-0.2, 0.2), -0.4, 0], spread: 0.3, life: [1.5, 3], size: [1, 2], color: ['#ffe08a', '#ff8ab0', '#7fe3ff', '#fff4c8'], glow: 2.4, flicker: 0.4 }), true);
         },
@@ -1021,10 +1022,10 @@ function drawParticles(ctx, list, scale = 1) {
  * radial light bursts and colour washes. Coordinates are UI pixels (960×540).
  */
 export class FX2D {
-  constructor() { this.parts = []; this.rings = []; this.rays = []; this.washes = []; this.amb = []; }
+  constructor() { this.parts = []; this.rings = []; this.fans = []; this.washes = []; this.amb = []; }
   burst(kind, x, y, n, o = {}) { for (let i = 0; i < n; i++) spawn(this.parts, kind, x + rnd(-2, 2), y + rnd(-2, 2), { scale: 1.6, ...o }); }
   ring(x, y, col = '#ffffff', o = {}) { this.rings.push({ x, y, col, t: 0, life: o.life || 0.55, r0: o.r0 || 6, r1: o.r1 || 120, w: o.w || 3 }); }
-  rays(x, y, col = '#fff0c0', o = {}) { this.rays.push({ x, y, col, t: 0, life: o.life || 1.2, n: o.n || 14, len: o.len || 420, a: o.a || 0.35, spin: o.spin ?? 0.25 }); }
+  rays(x, y, col = '#fff0c0', o = {}) { this.fans.push({ x, y, col, t: 0, life: o.life || 1.2, n: o.n || 14, len: o.len || 420, a: o.a || 0.35, spin: o.spin ?? 0.25 }); }
   wash(col, a = 0.35, life = 0.5) { this.washes.push({ col, a, t: 0, life }); }
   /** Continuous ambient emitter: {kind, rate, area:[x,y,w,h], col, up} */
   ambient(list) { this.amb = list; }
@@ -1042,13 +1043,13 @@ export class FX2D {
     }
     stepParticles(this.parts, dt, h);
     if (this.parts.length > 1400) this.parts.splice(0, this.parts.length - 1400);
-    for (const arr of [this.rings, this.rays, this.washes]) for (let i = arr.length - 1; i >= 0; i--) { arr[i].t += dt; if (arr[i].t >= arr[i].life) arr.splice(i, 1); }
+    for (const arr of [this.rings, this.fans, this.washes]) for (let i = arr.length - 1; i >= 0; i--) { arr[i].t += dt; if (arr[i].t >= arr[i].life) arr.splice(i, 1); }
   }
   draw(ui) {
     const ctx = ui.ctx;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (const r of this.rays) {
+    for (const r of this.fans) {
       const k = r.t / r.life, a = r.a * (k < 0.15 ? k / 0.15 : 1 - (k - 0.15) / 0.85);
       ctx.fillStyle = hexA(r.col, a);
       for (let i = 0; i < r.n; i++) {

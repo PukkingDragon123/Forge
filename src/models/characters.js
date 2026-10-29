@@ -79,7 +79,7 @@ function sitLegs(c) {
 /** Fighting stance, the base every swing starts from and returns to. */
 function stance(c) {
   const s = { dy: -0.05, lean: 0.14, twist: 0.25, lHip: 0.3, rHip: -0.25, lKn: 0.45, rKn: 0.3, lHab: 0.1, rHab: 0.12, rSh: 0.8, rEl: 0.95, rAb: 0.28, lSh: 0.6, lEl: 1.3, lAb: 0.22, nod: 0.06, turn: -0.15 };
-  if (c.id === 'durgan') Object.assign(s, { dy: -0.04, lean: 0.18, lSh: 0.55, lEl: 0.5, lAb: 0.05, lTw: 0.1, rSh: 0.7, rEl: 1.1, lHab: 0.2, rHab: 0.2 }); // shield up front
+  if (c.id === 'durgan') Object.assign(s, { dy: -0.05, lean: 0.2, lSh: 0.3, lEl: 0.2, lAb: -0.22, lTw: 0, rSh: 0.7, rEl: 1.1, lHab: 0.2, rHab: 0.2 }); // the tower shield set before him
   if (c.id === 'clover') Object.assign(s, { dy: -0.09, lean: 0.3, lKn: 0.8, rKn: 0.6, lHip: 0.5, rHip: -0.1, lSh: 0.9, lEl: 1.5, rSh: 0.5, rEl: 1.2, nod: 0.1 }); // low and coiled
   if (c.id === 'elio') Object.assign(s, { lean: 0.06, lSh: 1.2, lEl: 0.7, lAb: 0.3, lTw: 0.5, rSh: 0.5, rEl: 1.0, flare: 0.25 }); // a hand open, ready to cast
   return s;
@@ -108,9 +108,9 @@ const ANIMS = {
       return over(s, { dy: s.dy + b * 0.01, rSh: s.rSh + b * 0.04, lSh: s.lSh - b * 0.03, squash: c.id === 'clover' ? Math.max(0, -b) * 0.15 : 0 });
     },
   },
-  sit: { loop: true, f: (t, c) => ({ ...sitLegs(c), lean: 0.08, lSh: 0.45, rSh: 0.45, lEl: 0.7, rEl: 0.7, lAb: 0.05, rAb: 0.05, nod: Math.sin(t * 0.6) * 0.05, dy: sitLegs(c).dy + Math.sin(t * 2) * 0.004, turn: Math.sin(t * 0.3) * 0.2 }) },
+  sit: { loop: true, exact: true, f: (t, c) => ({ ...sitLegs(c), lean: 0.08, lSh: 0.45, rSh: 0.45, lEl: 0.7, rEl: 0.7, lAb: 0.05, rAb: 0.05, nod: Math.sin(t * 0.6) * 0.05, dy: sitLegs(c).dy + Math.sin(t * 2) * 0.004, turn: Math.sin(t * 0.3) * 0.2 }) },
   sitTalk: {
-    loop: true, f: (t, c) => {
+    loop: true, exact: true, f: (t, c) => {
       const g = Math.sin(t * 2.7), g2 = Math.sin(t * 1.3);
       return { ...sitLegs(c), lean: 0.06 + g2 * 0.04, twist: g2 * 0.12, lSh: 0.45, lEl: 0.7, rSh: 0.9 + g * 0.35, rEl: 1.1 + g * 0.3, rAb: 0.2 + Math.max(0, g) * 0.3, rTw: g * 0.3, nod: Math.sin(t * 5.4) * 0.07, tilt: g2 * 0.1, turn: g2 * 0.2 };
     },
@@ -146,7 +146,7 @@ const ANIMS = {
         lSh: -s * 1.0, rSh: s * 1.0, lEl: 1.35, rEl: 1.35, lAb: 0.22, rAb: 0.22, nod: -0.1, twist: -s * 0.18,
       };
       if (c.id === 'clover') Object.assign(r, { lean: 0.48, dy: ac * 0.08 - 0.04 });
-      if (c.id === 'durgan') Object.assign(r, { lSh: 0.7, lEl: 0.7, lAb: 0.05, side: s * 0.08, lean: 0.38 }); // shield charge
+      if (c.id === 'durgan') Object.assign(r, { lSh: 0.35, lEl: 0.15, lAb: -0.3, lTw: 0, side: s * 0.08, lean: 0.38 }); // shield charge
       return r;
     },
   },
@@ -168,7 +168,7 @@ const ANIMS = {
     },
   },
   hammer: {
-    loop: true, lambda: 32, period: 1.05, impact: 0.66, f: (t, c) => {
+    loop: true, lambda: 32, period: 1.05, impact: 0.66, swing: true, f: (t, c) => {
       const k = (t % 1.05) / 1.05;
       const up = sm(seg(k, 0.02, 0.55));
       const down = inQ(seg(k, 0.55, 0.66));
@@ -182,7 +182,7 @@ const ANIMS = {
     },
   },
   mine: {
-    loop: true, lambda: 32, period: 1.1, impact: 0.62, f: (t) => {
+    loop: true, lambda: 32, period: 1.1, impact: 0.62, swing: true, f: (t) => {
       const k = (t % 1.1) / 1.1;
       const up = sm(seg(k, 0.02, 0.5));
       const down = inQ(seg(k, 0.5, 0.62));
@@ -235,7 +235,7 @@ const ANIMS = {
   },
   // ---- attacks: wind-up, a fast smear into the strike, an impact hold, recovery
   slash: {
-    dur: 0.62, impact: 0.44, lambda: 60, expr: 'determined', f: (t, c, k) => {
+    dur: 0.62, impact: 0.44, lambda: 60, expr: 'determined', swing: true, f: (t, c, k) => {
       const s = stance(c);
       const strike = { rSh: 0.35, rAb: -0.7, rEl: 0.15, rTw: -0.5, twist: 0.75, lean: 0.42, bz: 0.24, dy: -0.09, lHip: 0.7, lKn: 0.7, rHip: -0.45, rKn: 0.35, lSh: 0.4, lAb: 0.5, lEl: 0.9, nod: 0.1, turn: -0.2 };
       return keys(k, [
@@ -249,7 +249,7 @@ const ANIMS = {
     },
   },
   stab: {
-    dur: 0.5, impact: 0.4, lambda: 60, expr: 'determined', f: (t, c, k) => {
+    dur: 0.5, impact: 0.4, lambda: 60, expr: 'determined', swing: true, f: (t, c, k) => {
       const s = stance(c);
       const thrust = { rSh: 1.5, rEl: 0.0, rAb: 0.15, rTw: 0.2, twist: 0.45, lean: 0.45, bz: 0.32, dy: -0.1, lHip: 0.8, lKn: 0.7, rHip: -0.45, rKn: 0.25, lSh: 0.2, lAb: 0.6, lEl: 0.7, nod: 0.12 };
       return keys(k, [
@@ -263,7 +263,7 @@ const ANIMS = {
     },
   },
   chop: {
-    dur: 0.66, impact: 0.5, lambda: 60, expr: 'angry', f: (t, c, k) => {
+    dur: 0.66, impact: 0.5, lambda: 60, expr: 'angry', swing: true, f: (t, c, k) => {
       const s = stance(c);
       const down = { rSh: 0.45, lSh: 0.5, rEl: 0.3, lEl: 0.5, rAb: -0.05, lAb: -0.25, lean: 0.55, bz: 0.18, dy: -0.11, lHip: 0.5, rHip: -0.3, lKn: 0.75, rKn: 0.5, nod: 0.3 };
       return keys(k, [
@@ -277,7 +277,7 @@ const ANIMS = {
     },
   },
   smash: {
-    dur: 0.82, impact: 0.6, lambda: 60, expr: 'angry', f: (t, c, k) => {
+    dur: 0.82, impact: 0.6, lambda: 60, expr: 'angry', swing: true, f: (t, c, k) => {
       const s = stance(c);
       const slam = { rSh: 0.25, lSh: 0.3, rEl: 0.35, lEl: 0.5, rAb: -0.1, lAb: -0.2, lean: 0.62, bz: 0.2, dy: -0.15, lHip: 0.6, rHip: -0.3, lKn: 0.95, rKn: 0.7, nod: 0.3 };
       return keys(k, [
@@ -293,7 +293,7 @@ const ANIMS = {
   },
   cast: {
     // gather the power low, then thrust both hands out; the signature glow flares on release
-    dur: 0.78, impact: 0.5, lambda: 50, expr: 'determined', f: (t, c, k) => {
+    dur: 0.78, impact: 0.5, lambda: 50, expr: 'determined', swing: true, f: (t, c, k) => {
       const s = stance(c);
       const rel = { lSh: 1.65, rSh: 1.55, lEl: 0.1, rEl: 0.15, lAb: 0.3, rAb: 0.3, lTw: 0.4, rTw: 0.4, lean: 0.28, bz: 0.1, dy: -0.06, lHip: 0.5, lKn: 0.5, rHip: -0.3, rKn: 0.3, nod: 0.05, flare: 1 };
       return keys(k, [
@@ -311,12 +311,12 @@ const ANIMS = {
     loop: true, lambda: 40, expr: 'determined', f: (t, c) => {
       const q = Math.sin(t * 31) * 0.008;
       const p = { rSh: 1.35, rEl: 1.4, rAb: -0.45, rTw: 0.3, lSh: 1.25, lEl: 1.45, lAb: -0.25, lean: 0.22 + q, dy: -0.08, lHip: 0.45, rHip: -0.35, lKn: 0.65, rKn: 0.5, nod: 0.18, squash: 0.25 };
-      if (c.id === 'durgan') Object.assign(p, { lSh: 0.95, lEl: 0.55, lAb: -0.15, lTw: 0.25, rSh: 0.55, rEl: 1.4, rAb: 0.1, lean: 0.32 + q, dy: -0.07 }); // tower shield set
+      if (c.id === 'durgan') Object.assign(p, { lSh: 0.4, lEl: 0.15, lAb: -0.42, lTw: 0, rSh: 0.55, rEl: 1.4, rAb: 0.1, lean: 0.36 + q, dy: -0.09, twist: -0.25 }); // shoulder into the planted shield
       return p;
     },
   },
   parry: {
-    dur: 0.35, lambda: 50, expr: 'determined', f: (t, c, k) => {
+    dur: 0.35, lambda: 50, expr: 'determined', swing: true, f: (t, c, k) => {
       const a = outBack(seg(k, 0, 0.35)) * (1 - seg(k, 0.6, 1));
       return { rSh: 1.2 + a * 0.6, rAb: -0.5 + a * 1.2, rEl: 0.8 - a * 0.5, twist: 0.3 - a * 0.6, lean: -0.05, dy: -0.04, lHip: 0.3, lKn: 0.35, rKn: 0.25, lSh: 0.5, lEl: 1.2, smear: a > 0.6 && k < 0.2 ? 0.7 : 0 };
     },
@@ -355,13 +355,13 @@ const ANIMS = {
     },
   },
   defeat: {
-    loop: true, lambda: 8, expr: 'sad', f: (t, c) => {
+    loop: true, exact: true, lambda: 8, expr: 'sad', f: (t, c) => {
       const br = Math.sin(t * 1.4);
       return { dy: -c.dims.hipH * 0.45, lHip: 1.3, lKn: 2.2, rHip: 0.4, rKn: 2.4, rFt: 0.6, lean: 0.4 + br * 0.02, nod: 0.5, lSh: 0.2, rSh: 0.2, lEl: 0.3, rEl: 0.3, lAb: 0.1, rAb: 0.1 };
     },
   },
   harvest: {
-    loop: true, lambda: 28, expr: 'determined', period: 0.7, impact: 0.5, f: (t, c) => {
+    loop: true, exact: true, lambda: 28, expr: 'determined', period: 0.7, impact: 0.5, f: (t, c) => {
       const k = (t % 0.7) / 0.7;
       const s = Math.sin(k * TAU);
       return { dy: -c.dims.hipH * 0.3, lHip: 1.0, lKn: 1.5, rHip: 0.5, rKn: 1.6, lean: 0.45, rSh: 1.0 + s * 0.35, rEl: 0.7 - s * 0.4, rAb: 0.1 + s * 0.15, lSh: 1.1, lEl: 0.6, lAb: -0.1, nod: 0.45 };
@@ -584,9 +584,12 @@ export class Character {
       }
       target = a.f(this.animT, this, k);
     } else target = a.f(this.animT, this, 0);
+    // body offsets are authored for Bran's size; smaller explorers crouch and lunge in proportion
+    if (!a.exact) { const z = this.dims.hipH / 0.8; target = { ...target }; for (const k of ['dy', 'by', 'bz']) if (target[k]) target[k] *= z; }
     const T = {};
     for (const k of CH) T[k] = REST[k] || 0;
     Object.assign(T, target);
+    if (this.shieldArm && a.swing) Object.assign(T, this.shieldArm);
     if (this.seated && SEATED_OK.has(this.anim)) { const sl = sitLegs(this); Object.assign(T, sl, { dy: sl.dy + (target.dy || 0) * 0.3 }); }
     // mood as posture, eased in and out
     const ex = EXPR_POSE[this.expr] || {};
