@@ -526,9 +526,9 @@ SCRIPTS.prologue = (c) => {
   F.bran.showBackItem && F.bran.showBackItem(false);
   let swordAt = null;
   const swordShot = (which, k) => {
-    if (!swordAt) swordAt = sword.getWorldPosition(V()).add(V(0, 0.38, 0));
+    if (!swordAt) swordAt = F.bran.group.position.clone();
     const p = swordAt;
-    return which ? V(p.x, p.y + 0.04 * k, p.z) : V(p.x - 1.05 + k * 0.2, p.y + 0.18, p.z + 0.85 - k * 0.15);
+    return which ? V(p.x + 0.15, 1.2 + 0.04 * k, p.z + 0.1) : V(p.x - 1.55 + k * 0.25, 1.15, p.z - 1.45 + k * 0.2);
   };
   const stones = {};
   // beams of curse-light pouring out of the opening door
@@ -602,7 +602,7 @@ SCRIPTS.prologue = (c) => {
           c.tween(2.0, (k) => crackWeapon(sword, k * 0.5), 'linear');
         } },
       { dur: 2.3,
-        cam: { pos: (c, k) => swordShot(0, k), look: (c, k) => swordShot(1, k), fov: [31, 25], roll: [0.05, -0.03] },
+        cam: { pos: (c, k) => swordShot(0, k), look: (c, k) => swordShot(1, k), fov: [36, 31], roll: [0.05, -0.03] },
         enter: (c) => { c.slowmo(0.1, 1.7, 0.12, 0.8); c.sfx('crack', { pitch: 0.7 }); c.tween(0.32, (k) => crackWeapon(sword, 0.5 + k * 0.5), 'linear'); },
         at: [
           [0.34, (c) => {

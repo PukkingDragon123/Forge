@@ -196,6 +196,8 @@ function lightAt(R, lamps, px, py, pz, nx, ny, nz, out) {
  * Mesh a world (or the cells inside bounds, voxel ints) into { solid, glow } BufferGeometries.
  * opts: bounds, room (array of voxel boxes; faces whose outside cell leaves them all are culled), light (makeLightRig), skip: Set of 'a,s' face dirs never seen (default back faces '2,-1'),
  * bottomAbove: only emit downward faces for voxels above this voxel y (ceilings, overhangs).
+ * faceTint: per-direction shade multipliers (default: baked stage tints; props pass near-uniform ones).
+ * scale: world size of one voxel.
  */
 export function meshWorld(w, opts = {}) {
   const R = opts.light || makeLightRig({});
@@ -226,7 +228,7 @@ export function meshWorld(w, opts = {}) {
       // u/v unit steps in xyz for this face orientation
       const uX = a === 2 ? 1 : 0, uY = a === 0 ? 1 : 0, uZ = a === 1 ? 1 : 0;
       const vX = a === 1 ? 1 : 0, vY = a === 2 ? 1 : 0, vZ = a === 0 ? 1 : 0;
-      const tint = FACE_TINT[a + ',' + sgn];
+      const tint = (opts.faceTint || FACE_TINT)[a + ',' + sgn];
       for (let sl = 0; sl < CS; sl++) {
         let any = false;
         for (let vv = 0; vv < CS; vv++) for (let uu = 0; uu < CS; uu++) {
