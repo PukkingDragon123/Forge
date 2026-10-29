@@ -110,10 +110,10 @@ const ICON3D = {
     S.add(cyl([0, 0, 0], ax, 12, 2.3, 0.8), (x, y, z, n, h) => {
       const a = Math.atan2(y, x), r = Math.hypot(x, y);
       if (dot(n, ax) < 0.6) return Math.sin(a * 24) > 0 ? R[2] : R[3]; // reeded edge
-      if (Math.abs(r - 10.3) < 0.7) return R[1];
-      return spec(n, 10) > 0.7 ? R[6] : tone(R, lit(n) * 0.6 + 0.35 - (x - y) * 0.02, 2, 5, h);
+      if (Math.abs(r - 10.4) < 0.6) return R[3];
+      return spec(n, 10) > 0.7 ? R[6] : tone(R, 0.55 - (x - y) * 0.035, 3, 5, h);
     });
-    ext(S, starPts(5, 6.6, 2.8), 0.8, (x, y, z, n, h) => (n[2] < 0.8 ? R[2] : R[5]), { c: add3([0, 0, 0], ax, 2.4), e: 0.3 });
+    ext(S, starPts(5, 6.2, 2.7), 0.9, (x, y, z, n, h) => (n[2] < 0.8 ? R[3] : R[6]), { c: add3([0, 0, 0], ax, 2.4), e: 0.3 });
   },
   heart: (S) => S.add(heart3([0, 1, 0], 1.05), gloss('#e83848')),
   hp: (S) => S.add(heart3([0, 1, 0], 1.05), gloss('#e83848')),
@@ -133,7 +133,7 @@ const ICON3D = {
     ext(S, pts, 2.2, (x, y, z, n, h) => glow(n[2] > 0.8 ? ramp('#ffe74a', 7, 1.2)[4] : ramp('#ffb020', 7, 1.2)[3]), { e: 1.1 });
     ext(S, d2seg(1, 10, -2, 3, 0.9), 0.8, glow(C('#fffbe0')), { c: [0, 0, 2], e: 0.3 });
   },
-  poison: (S) => { ext(S, drop2(-1, -2, 1.1), 4.2, gloss('#5fd14a'), { e: 3.2 }); S.add(sphere([7.5, 8, 1], 2.6), gloss('#8ff07a')); S.add(sphere([9.5, 12.5, 0.5], 1.5), gloss('#8ff07a')); },
+  poison: (S) => { ext(S, drop2(0, -1.5, 1.15), 4.2, gloss('#5fd14a'), { e: 3.2 }); S.cut(sphere([-1.5, -4, 4.4], 1.8), glow(C('#d8ffb0'))); S.cut(sphere([2.4, -6.5, 4.2], 1.2), glow(C('#d8ffb0'))); },
   bleed: (S) => { ext(S, drop2(-1.5, -1.5, 1.1), 4.2, gloss('#d82848'), { e: 3.2 }); S.add(ell([8.5, -9, 0], [2.2, 2.8, 2]), gloss('#d82848')); },
   curse: (S) => {
     const P = ramp('#b06bff', 7, 1.3);
@@ -144,8 +144,9 @@ const ICON3D = {
     });
   },
   holy: (S) => {
-    S.add(torus([0, 0, -2], [0, 0, 1], 10, 1.2), glowP('#ffe08a', 0.4));
-    ext(S, starPts(4, 13, 3.2), 2.2, (x, y, z, n, h) => glow(n[2] > 0.85 ? C('#fff8d8') : ramp('#ffd25e', 7, 1.2)[4]), { e: 1.6 });
+    const G = ramp('#ffc83a', 7, 1.3);
+    S.add(torus([0, 0, -2], [0, 0, 1], 9.5, 1.6), (x, y, z, n, h) => glow(G[3]));
+    ext(S, starPts(4, 13.5, 4.2), 2.4, (x, y, z, n, h) => glow(n[2] > 0.9 ? (Math.hypot(x, y) < 3.5 ? C('#fffbe8') : G[5]) : G[4]), { e: 1.4 });
   },
   sword: (S) => blade(S, 18, 2.4),
   dagger: (S) => blade(S, 12, 2.6, '#d8dce8', -Math.PI / 4, { at: -10, trim: '#c8a050' }),
@@ -260,7 +261,7 @@ const ICON3D = {
   },
   ore: (S) => {
     rock(S, [0, -1, 0], [12, 10, 9], 5);
-    for (const [x, y, z, r] of [[-4, 3, 7, 2.6], [3, -2, 8, 2.2], [6, 5, 5, 1.8]]) S.add(sphere([x, y, z], r), shiny('#ffc23a'));
+    for (const [x, y, z, r] of [[-4, 3, 6.5, 3.4], [4, -3, 7, 3], [5, 6, 4.5, 2.4]]) S.add(sphere([x, y, z], r), (x2, y2, z2, n, h) => (spec(n, 10) > 0.5 ? C('#fff6c0') : tone(ramp('#ffc23a', 7, 1.3), lit(n) * 0.8 + 0.2, 2, 5, h)));
     S.add(poly([-2, -5, 6], prismPlanes(6, 3, 1, 0.3), [1.6, 1.6, 1.6], Bz(0.3)), glowP('#7fe3ff', 0.3));
   },
   bone: (S) => {

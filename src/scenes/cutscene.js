@@ -523,6 +523,13 @@ SCRIPTS.prologue = (c) => {
   const lanL = c.light(lan, 'point', '#ffc070', 2.8, V(0, 0.15, 0), { dist: 6.5, decay: 1.3, fl: 0.18 });
   const sword = buildWeaponMesh(SWORD);
   F.bran.hold(sword, 'right');
+  F.bran.showBackItem && F.bran.showBackItem(false);
+  let swordAt = null;
+  const swordShot = (which, k) => {
+    if (!swordAt) swordAt = sword.getWorldPosition(V()).add(V(0, 0.38, 0));
+    const p = swordAt;
+    return which ? V(p.x, p.y + 0.04 * k, p.z) : V(p.x - 1.05 + k * 0.2, p.y + 0.18, p.z + 0.85 - k * 0.15);
+  };
   const stones = {};
   // beams of curse-light pouring out of the opening door
   const beams = [-0.7, 0, 0.7].map((x, i) => { const b = c.add(beam(9, 0.4, 2.6 + i * 0.3, '#b060ff', 0, 1.1), 'tomb'); aimBeam(b, V(x * 0.8, 1.9, -1.2), V(x * 2.6, -0.2, 6)); return b; });
@@ -562,7 +569,7 @@ SCRIPTS.prologue = (c) => {
           c.later(1.2, () => { F.elio.play('block', { loop: true }); F.clover.play('dodge'); });
         } },
       { dur: 5.4,
-        cam: { pos: [[0.95, 0.75, -0.3], [0.35, 0.65, -1.0]], look: [[0, 2.8, -3.6], [0, 3.3, -3.6]], fov: [52, 46] },
+        cam: { pos: [[0.85, 0.7, -0.4], [0.3, 0.55, -1.2]], look: [[0, 3.0, -3.6], [0, 3.5, -3.6]], fov: [42, 36] },
         enter: (c) => { c.later(0.15, () => { c.freeze(lord, false); lord.play('intro'); c.sfx('boss_intro'); }); c.lightTo(throneL, 7, 2.2); c.tween(2.2, (k) => eyes.material.color.setRGB(1.6 * k, 0.6 * k, 1.6 * k)); c.curseSmoke(V(0, 0.05, -3.2), 1.2, 26); },
         at: [[2.75, (c) => {
           lord.play('roar'); c.sfx('boss_roar'); c.punch = 7; c.haptic(60);
@@ -576,28 +583,33 @@ SCRIPTS.prologue = (c) => {
           c.postTo({ bloom: 1.5 }, 0.2); c.later(0.6, () => c.postTo({ bloom: 1.15 }, 1.5));
         }]],
         cap: 'And something old woke up.', capAt: 0.9 },
-      { dur: 5.6,
-        cam: { pos: [[-3.5, 0.9, 0.7], [-3.0, 1.05, 0.85]], look: [[-0.25, 1.25, 0.95], [-0.25, 1.4, 1.0]], fov: [33, 27] },
+      { dur: 2.1,
+        cam: { pos: [[-3.3, 2.7, 4.6], [-2.9, 2.45, 4.1]], look: [[0.2, 0.5, -0.6], [0.1, 0.65, 0.2]], fov: [44, 41] },
         enter: (c) => {
-          wave = c.add(waveRing('#c86bff', 0.1), 'tomb'); wave.position.set(0, 0.03, -3.2);
+          wave = c.add(waveRing('#c86bff', 0.14), 'tomb'); wave.position.set(0, 0.03, -3.2);
           wallW = c.add(waveWall('#c86bff'), 'tomb'); wallW.position.copy(wave.position);
-          c.tween(2.7, (k) => { const r = 0.8 + k * 6.6; wave.scale.set(r, 1, r); wallW.scale.set(r, 0.9 + k * 0.5, r); wave.material.uniforms.uOp.value = wallW.material.uniforms.uOp.value = k < 0.8 ? 1 : (1 - k) / 0.2; }, 'linear');
+          c.tween(4.2, (k) => { const r = 0.8 + k * 7.2; wave.scale.set(r, 1, r); wallW.scale.set(r, 1.3 + k * 1.1, r); wave.material.uniforms.uOp.value = wallW.material.uniforms.uOp.value = k < 0.8 ? 1 : (1 - k) / 0.2; }, 'linear');
           c.tick((dt, t) => {
             wave.material.uniforms.uTime.value = wallW.material.uniforms.uTime.value = t;
             const r = wave.scale.x;
-            for (let i = 0; i < 6; i++) { const a = rnd(Math.PI * 0.15, Math.PI * 0.85); c.P.add.emit({ pos: [Math.cos(a) * r, 0.1, -3.2 + Math.sin(a) * r], vel: [Math.cos(a) * 1.4, rnd(0.6, 1.8), Math.sin(a) * 1.4], spread: 0.2, life: [0.3, 0.8], size: [1, 2], color: ['#c86bff', '#ff5af0', '#ffffff'], glow: 3 }); }
-          });
+            for (let i = 0; i < 6; i++) { const a = rnd(Math.PI * 0.1, Math.PI * 0.9); c.P.add.emit({ pos: [Math.cos(a) * r, 0.1, -3.2 + Math.sin(a) * r], vel: [Math.cos(a) * 1.4, rnd(0.6, 1.8), Math.sin(a) * 1.4], spread: 0.2, life: [0.3, 0.8], size: [1, 2], color: ['#c86bff', '#ff5af0', '#ffffff'], glow: 3 }); }
+          }, true);
+          for (const id of CHARACTER_ORDER) F[id].setExpression('surprised');
           F.bran.play('block', { loop: true }); F.bran.setExpression('determined');
           c.sfx('wind_whoosh', { pitch: 0.6 });
-          c.tween(1.6, (k) => crackWeapon(sword, k * 0.6), 'linear');
-        },
+          c.tween(2.0, (k) => crackWeapon(sword, k * 0.5), 'linear');
+        } },
+      { dur: 2.3,
+        cam: { pos: (c, k) => swordShot(0, k), look: (c, k) => swordShot(1, k), fov: [31, 25], roll: [0.05, -0.03] },
+        enter: (c) => { c.slowmo(0.1, 1.7, 0.12, 0.8); c.sfx('crack', { pitch: 0.7 }); c.tween(0.32, (k) => crackWeapon(sword, 0.5 + k * 0.5), 'linear'); },
         at: [
-          [1.55, (c) => { c.slowmo(0.12, 1.5, 0.15, 0.7); c.sfx('crack', { pitch: 0.7 }); c.tween(0.4, (k) => crackWeapon(sword, 0.6 + k * 0.4), 'linear'); }],
-          [1.95, (c) => {
-            const wp = sword.getWorldPosition(V());
-            c.shards.push(...shatterPieces(sword, T.group, { force: 1.4 }));
-            c.sfx('shatter'); c.flash(0.5, [0.85, 0.55, 1]); c.shake(0.7); c.haptic(50);
-            c.P.add.emit({ pos: [wp.x, wp.y + 0.3, wp.z], radial: [1, 3.4], count: 80, life: [0.6, 1.6], size: [1, 3], color: ['#ffffff', '#e0c8ff', '#c86bff'], glow: 3.4, drag: 1.2 });
+          [0.34, (c) => {
+            const wp = sword.getWorldPosition(V()).add(V(0, 0.35, 0));
+            c.shards.push(...shatterPieces(sword, T.group, { force: 1.6 }));
+            c.sfx('shatter'); c.flash(0.55, [0.85, 0.55, 1]); c.shake(0.6); c.haptic(50);
+            c.P.add.emit({ pos: [wp.x, wp.y, wp.z], radial: [1, 3.6], count: 90, life: [0.6, 1.6], size: [1, 3], color: ['#ffffff', '#e0c8ff', '#c86bff'], glow: 3.4, drag: 1.2 });
+            const ring = c.add(waveRing('#e0b0ff', 0.08), 'tomb'); ring.position.copy(wp); ring.rotation.x = Math.PI / 2;
+            c.tween(0.5, (k) => { ring.scale.setScalar(0.1 + k * 1.6); ring.material.uniforms.uOp.value = 1 - k; }, 'outCubic', () => (ring.visible = false));
             F.durgan.play('point', { loop: true }); F.elio.play('cast', { loop: true }); F.clover.play('block', { loop: true }); F.bran.play('hurt'); F.bran.setExpression('hurt');
             for (const id of CHARACTER_ORDER) stones[id] = c.stone(F[id], '#d080ff', -0.2);
           }],

@@ -3,9 +3,9 @@
 // (≥ 2 voxels for anything that must read at the shared 0.04 m voxel size).
 import * as THREE from 'three';
 import { hornPath } from './monster_kit.js';
-import { ease, shadeHex as shade, mixHex as mix } from '../core/math.js';
+import { ease, shadeHex as shade } from '../core/math.js';
 import { NORMAL_ARCHES } from './monster_normals.js';
-import { glowMat, lampEye, nugget, chain } from './vox_mon_rpg.js';
+import { glowMat, chain } from './vox_mon_rpg.js';
 
 const sin = Math.sin, cos = Math.cos, PI = Math.PI;
 const SIDES = [-1, 1];

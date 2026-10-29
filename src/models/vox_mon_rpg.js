@@ -3,7 +3,7 @@
 // "F"/"l" limbs at −Z (mirrored to the camera side at runtime). Every feature that must read (eyes, teeth, rivets,
 // weapon edges) is at least one voxel thick; silhouettes carry the design, patterns and glow carry the detail.
 import { hornPath } from './monster_kit.js';
-import { shadeHex as shade, mixHex as mix } from '../core/math.js';
+import { shadeHex as shade } from '../core/math.js';
 
 const sin = Math.sin, cos = Math.cos, PI = Math.PI;
 const SIDES = [-1, 1];
@@ -577,4 +577,3 @@ const prismwisp = {
 };
 
 export const RPG_ARCHES = { gremlin, lanternwing, pebblegolem, drilltroll, sprite, prismknight, prismwisp };
-export { SIDES, walk, mix };

@@ -1,6 +1,5 @@
 // Boss archetypes: big (3–5 m) single-mesh SDF sculpts on skeletons, with custom intros and phase visuals.
 // Same conventions as monster_normals.js: metres, front toward −X, "F" limbs at −Z (mirrored to the camera side).
-import * as THREE from 'three';
 import { hornPath } from './monster_kit.js';
 import { clamp, ease, shadeHex as shade } from '../core/math.js';
 
@@ -125,84 +124,6 @@ const rustjaw = {
     r.rotation.z += (1 - up) * 0.5 + sin(k * 40) * 0.02 * (1 - k);
     m.P('armF').rotation.z += (1 - up) * 1.5; m.P('armB').rotation.z += (1 - up) * 1.5;
   },
-};
-
-// ============================================================================ QUEEN GEODESSA — crystal spider queen
-const geodessa = {
-  reach: 0.8, die: 'flatten',
-  build(m, md) {
-    m.res = 104;
-    const cr = md.crystals || md.accent;
-    const shell = m.mat('chitin', md.body, { acc: cr });
-    const fuzz = m.mat('fur', md.body, { acc: shade(md.body, 0.2), ts: 1.2 });
-    const crys = glowMat(m, cr, 1.8);
-    const ice = glowMat(m, '#7affff', 1.8);
-    const sigil = glowMat(m, md.eye, 2.6, 'smooth');
-    const fang = m.mat('chitin', '#1a1020', { acc: cr });
-    // abdomen: huge hairy teardrop with a glowing hourglass, spinnerets at the tail
-    m.bone('abdomen', [0.35, 1.1, 0]);
-    m.ell('abdomen', [0.7, 0.42, 0], [1.0, 0.86, 0.86], fuzz, { rot: [0, 0, -0.28], noise: 0.02, nf: 6 });
-    m.cap('abdomen', [-0.2, 0.12, 0], [-0.6, 0.06, 0], 0.22, 0.24, shell, { k: 0.08 });
-    m.cap('abdomen', [1.55, 0.05, 0], [1.72, -0.06, 0], 0.12, 0.06, shell, { k: 0.04 });
-    m.plate('abdomen', [0.66, 1.28, 0], [[-0.22, 0.28], [0.22, 0.28], [0.05, 0], [0.22, -0.28], [-0.22, -0.28], [-0.05, 0]], 0.3, 0.01, sigil, { op: 'paint', rot: [PI / 2, 0, -0.32] });
-    // crystal armour on the back (shed in phase 2)
-    m.bone('armor', [0.6, 0.9, 0], 'abdomen', { solo: true });
-    for (const [c, d, l, r, mm] of [[[0, 0.3, 0], [0.1, 1, 0], 0.9, 0.2, crys], [[0.4, 0.15, -0.35], [0.4, 1, -0.4], 0.65, 0.15, crys], [[0.4, 0.15, 0.35], [0.4, 1, 0.4], 0.65, 0.15, crys], [[-0.3, 0.2, -0.42], [-0.2, 1, -0.6], 0.45, 0.12, ice], [[-0.3, 0.2, 0.42], [-0.2, 1, 0.6], 0.45, 0.12, ice], [[0.75, -0.05, 0], [1, 0.8, 0], 0.5, 0.13, crys], [[0.15, 0.32, -0.15], [0, 1, -0.3], 0.5, 0.12, crys], [[0.15, 0.32, 0.17], [0, 1, 0.3], 0.42, 0.11, crys]]) m.cry('armor', c, l, r, mm, { dir: d });
-    // cephalothorax with eight beady eyes and a crystal tiara
-    m.bone('ceph', [-1.05, -0.05, 0], 'abdomen');
-    m.ell('ceph', [0, 0, 0], [0.62, 0.46, 0.56], shell, { k: 0.08 });
-    for (const [y, z, r] of [[0.2, -0.12, 0.065], [0.2, 0.12, 0.065], [0.28, -0.26, 0.048], [0.28, 0.26, 0.048], [0.1, -0.28, 0.045], [0.1, 0.28, 0.045], [0.34, -0.06, 0.04], [0.34, 0.06, 0.04]]) {
-      const dy = y / 0.46, dz = z / 0.56;
-      beady(m, 'ceph', [-0.62 * Math.sqrt(Math.max(0, 1 - dy * dy - dz * dz)) + r * 0.4, y, z], r, md.eye, 2.2);
-    }
-    for (let i = 0; i < 5; i++) { const z = (i - 2) * 0.13; m.cry('ceph', [-0.12 + Math.abs(z) * 0.3, 0.38, z], i === 2 ? 0.5 : 0.3, 0.065, crys, { dir: [-0.2, 1, z * 1.6] }); }
-    for (const s of SIDES) {
-      const n = s < 0 ? 'fangF' : 'fangB';
-      m.bone(n, [-0.5, -0.22, s * 0.16], 'ceph');
-      m.ell(n, [0, 0, 0], [0.11, 0.13, 0.09], shell, { k: 0.04 });
-      m.tube(n, hornPath([-0.06, -0.1, 0], [-0.4, -1, 0], [1, 0, 0], 0.36, 1.2, 4), (t) => 0.07 * (1 - t) + 0.014, fang, { k: 0.02 });
-    }
-    // legs: femur up-and-out, tibia down to the ground; crystal studs + tips
-    const LF = 1.6, LT = 2.45;
-    [-0.9, -0.35, 0.3, 0.85].forEach((ay, i) => {
-      for (const side of [1, -1]) {
-        const n = (side > 0 ? 'l' : 'r') + i;
-        m.bone(n, [-1.3 + i * 0.2, 0.0, side * 0.32], 'abdomen', { rot: [side * 0.75, side * -ay, 0], order: 'YXZ' });
-        m.cap(n, [0, 0, 0], [0, LF, 0], 0.12, 0.085, fuzz, { k: 0.06 });
-        m.sph(n, [0, LF, 0], 0.12, shell, { k: 0.03 });
-        for (const y of [0.4, 0.8, 1.2]) m.cry(n, [0, y, side * -0.06], 0.18, 0.045, crys, { dir: [0, 0.4, -side] });
-        m.bone(n + 't', [0, LF, 0], n, { rot: [side * -1.25, 0, 0] });
-        m.cap(n + 't', [0, 0, 0], [0, -LT * 0.55, 0], 0.095, 0.075, shell, { k: 0.03 });
-        m.cap(n + 't', [0, -LT * 0.55, 0], [0, -LT + 0.25, 0], 0.075, 0.045, shell, { k: 0.02 });
-        m.cry(n + 't', [0, -LT + 0.27, 0], 0.34, 0.055, crys, { dir: [0, -1, 0] });
-      }
-    });
-    m.bone('thread', [0.6, 1.25, 0], 'abdomen');
-    const thread = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 9, 0)]), new THREE.LineBasicMaterial({ color: new THREE.Color('#e8e8ff').multiplyScalar(1.6), transparent: true, opacity: 0.8 }));
-    m.attach('thread', thread);
-    m.emitter({ pos: [0.9, 2.5, 0], rate: 8, vel: [0, 0.4, 0], spread: 0.3, posSpread: [0.8, 0.4, 0.8], life: [0.8, 1.6], size: 1, color: [cr, '#7affff', '#ffffff'], glow: 2.6 });
-    m.points({ height: 3.2, hit: [-0.75, 1.25, 0], mouth: [-1.35, 0.85, 0], cuts: [[-0.9, 1.2, 0], [0.5, 2.0, 0], [1.4, 1.6, 0], [0, 1.0, -1.0], [0.6, 0.9, 1.0], [-0.5, 0.5, 0.8]] });
-  },
-  anim(m) {
-    const e = m.env, t = m.t;
-    for (let i = 0; i < 4; i++) {
-      const ph = t * 3 + i * 1.7;
-      m.P('l' + i).rotation.x += sin(ph) * 0.08; m.P('r' + i).rotation.x -= sin(ph + 2) * 0.08;
-      if (i < 2) {
-        m.P('l' + i).rotation.z += e.wind * 0.9 - e.strike * 0.9 + e.multi * sin(t * 16 + i) * 0.5;
-        m.P('r' + i).rotation.z += e.wind * 0.9 - e.strike * 0.9 + e.multi * sin(t * 16 + i + 1) * 0.5;
-      }
-    }
-    m.P('fangF').rotation.z += -(e.strike + e.roar) * 0.6 + sin(t * 4) * 0.1;
-    m.P('fangB').rotation.z += -(e.strike + e.roar) * 0.6 + sin(t * 4 + 1) * 0.1;
-    m.P('ceph').rotation.z += -e.wind * 0.25 + e.strike * 0.3 - e.roar * 0.3;
-    m.P('abdomen').rotation.z += sin(t * 1.4) * 0.03 + e.special * 0.1;
-    m.P('abdomen').position.y += sin(t * 1.4) * 0.03;
-    m.P('thread').scale.y = Math.max(0.001, 1 - m.env.intro);
-  },
-  intro(m, k) { m.root.position.y += (1 - ease.outCubic(k)) * 6; m.root.rotation.y += (1 - k) * 0.8 * sin(k * 6); },
-  phase(m, n) { if (n >= 2) { m.P('armor').visible = false; } },
-  onDie(m) { m.P('thread').visible = false; },
 };
 
 // ============================================================================ MOTHER MYCEL — mushroom titan
@@ -544,4 +465,4 @@ const cursedlord = {
   phase(m, n) { m.emitters.forEach((em) => { em.boost = 1 + (n - 1); }); },
 };
 
-export const BOSS_ARCHES = { rustjaw, geodessa, mycel, warden, pyrrhax, cursedlord };
+export const BOSS_ARCHES = { rustjaw, mycel, warden, pyrrhax, cursedlord };
