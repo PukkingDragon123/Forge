@@ -12,12 +12,50 @@ const fr = (x) => x - Math.floor(x);
 
 // ------------------------------------------------------------------ palettes
 function lum(hex) { const [r, g, b] = hexToRgb(hex); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
+function toHsl(hex) {
+  let [r, g, b] = hexToRgb(hex); r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+}
+function fromHsl(h, s, l) {
+  h = ((h % 360) + 360) % 360; s = clamp(s); l = clamp(l);
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return '#' + [r, g, b].map((v) => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
+}
+const hueToward = (h, t, k) => { const d = ((t - h + 540) % 360) - 180; return h + d * k; };
+/**
+ * Hue-shifted pixel-art ramp of n tones, dark → light: shadows lean toward blue-violet and get
+ * richer, highlights lean toward warm yellow and wash out to a tinted white. Greys get a cool
+ * shadow / warm light tint so metal and stone never look flat.
+ */
+export function hueRamp(hex, n = 6, o = {}) {
+  let [h, s, l] = toHsl(hex);
+  const grey = s < 0.14;
+  if (l > 0.78) l = 0.78 - (l - 0.78) * 0.4;
+  if (l < 0.16) l = 0.16;
+  const sat = Math.min(1, s * (o.sat ?? 1.15));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1), u = t * 2 - 1; // -1 shadow … +1 highlight
+    const L = u < 0 ? l + u * Math.min(l - 0.05, 0.42) : l + u * Math.min(0.95 - l, 0.3);
+    let H, S;
+    if (u < 0) { H = grey ? 232 : hueToward(h, 250, -u * 0.22); S = grey ? 0.1 + -u * 0.14 : Math.min(1, sat + -u * 0.12); }
+    else { H = grey ? 46 : hueToward(h, 52, u * 0.18); S = grey ? 0.06 + u * 0.1 : sat * (1 - u * 0.2); }
+    out.push(fromHsl(H, S, L));
+  }
+  if (o.spec !== false) out[n - 1] = fromHsl(grey ? 50 : hueToward(h, 55, 0.4), grey ? 0.25 : 0.35, 0.95);
+  return out;
+}
+/** Near-black outline colour carrying a hint of the item's hue. */
+export function inkOf(hex) { const [h, s] = toHsl(hex); return fromHsl(hueToward(h, 255, 0.5), Math.min(0.5, 0.2 + s * 0.4), 0.075); }
 /** 7 tones: 0 deep … 3 base … 6 specular. Hue-shifted (cool shadows, warm lights). */
 function ramp7(hex, spread = 1) {
-  const l = lum(hex);
-  const b = l > 0.74 ? shadeHex(hex, -(l - 0.74) * 1.3) : hex;
-  return [shadeHex(b, -0.7 * spread), shadeHex(b, -0.5 * spread), shadeHex(b, -0.27 * spread), b,
-    shadeHex(b, 0.26 * spread), shadeHex(b, 0.52 * spread), mixHex(shadeHex(b, 0.8), '#ffffff', 0.5)];
+  const r = hueRamp(hex, 7, { sat: 1.1 + (spread - 1) * 0.2 });
+  return r;
 }
 const RAMP = new Map();
 const R = (hex, s = 1) => { const k = hex + s; let r = RAMP.get(k); if (!r) { r = ramp7(hex, s); RAMP.set(k, r); } return r; };
@@ -139,6 +177,7 @@ export function paintWeapon(w, S) {
   PAINTERS[bp](ctx);
 
   outline(p, tag);
+  if (S >= 64) rim2(p, tag);
   glow(ctx, uvAt);
   motifs(ctx);
   if (look.grade >= 4) {
@@ -271,7 +310,38 @@ function crossguard(c, g) {
     }
     return null;
   }, 2);
-  if (det) gem(c, g.u + 0.4, 0, g.gemR);
+  if (det) gem(c, g.u + 0.4, 0, g.gemR * (look.grade >= 3 ? 1.35 : 1));
+  if (look.grade >= 3 || look.cursed || look.fangs >= 2) horns(c, g, look.grade >= 4 ? 17 : 12, look.cursed ? 4.2 : 3.4);
+  if (look.grade >= 4 && det) { gem(c, g.u + g.curve + 0.4, g.gw + 0.6, 1.5); gem(c, g.u + g.curve + 0.4, -g.gw - 0.6, 1.5); }
+}
+
+/** Curling ram horns sprouting from the guard's finials (ornate, cursed and masterwork pieces). */
+function horns(c, g, len, curl) {
+  const { GT, look } = c;
+  const T = look.cursed ? R('#5a3a6e') : look.fangs >= 2 ? R('#e6dcc0') : GT;
+  const lines = [1, -1].map((sg) => {
+    const pts = [];
+    let u = g.u + g.curve * 0.7, v = sg * (g.gw - 0.8), dir = 0.45;
+    const n = 26;
+    for (let i = 0; i <= n; i++) { pts.push([u, v, i / n]); const st = len / n; dir += curl / n; u += Math.sin(dir) * st; v += sg * Math.cos(dir) * st; }
+    return pts;
+  });
+  c.paint((u, v) => {
+    let best = 1e9, bt = 0, bs = 1;
+    for (const pts of lines) for (let i = 0; i + 1 < pts.length; i++) {
+      const [u0, v0, t0] = pts[i], [u1, v1] = pts[i + 1];
+      const eu = u1 - u0, ev = v1 - v0, l2 = eu * eu + ev * ev || 1;
+      const q = clamp(((u - u0) * eu + (v - v0) * ev) / l2);
+      const du = u - (u0 + eu * q), dv = v - (v0 + ev * q), dd = du * du + dv * dv;
+      if (dd < best) { best = dd; bt = t0 + q / (pts.length - 1); bs = dv >= 0 ? 1 : -1; }
+    }
+    const r = lerp(2.3, 0.5, bt), d = Math.sqrt(best);
+    if (d > r) return null;
+    let i = d / r > 0.72 ? (bs > 0 ? 3 : 1) : bs > 0 ? 5 : 3;
+    if (fr(bt * 7) < 0.2) i -= 1; // ribbed horn
+    if (bt > 0.9) i = 5;
+    return at(T, i);
+  }, 2);
 }
 
 /** Pommel: faceted ball with a cap nub and a gem/core. */
@@ -345,6 +415,11 @@ function blade(c, b) {
       if (e < 0.9) i = d >= 0 ? 6 : 3;
       if (look.kind === 'prism') T = R(['#ff7aa8', '#ffd46a', '#8af0a0', '#7ac8ff', '#c89aff'][((f % 5) + 5) % 5]);
       if (det && hash2(x, y, seed + 9) > 0.97) i = 6;
+    }
+    // etched, hammered steel: mottled tone shifts and flecks across the whole blade
+    if (det >= 2 && !look.glass && !look.bone && e >= bev * 0.6) {
+      const n = fbm2(u * 0.17, d * 0.55, 3, seed + 11), h = hash2(x, y, seed + 21);
+      if (n > 0.63 || h > 0.968) i -= 1; else if (n < 0.32 && h > 0.86) i += 1;
     }
     let col = at(T, i);
     if (look.stars) {
@@ -636,6 +711,16 @@ function outline(p, tag) {
     add.push([x, y, mixHex(INK, '#' + c.slice(0, 3).map((v) => v.toString(16).padStart(2, '0')).join(''), lit ? 0.26 : 0.1), tag[nb[0] + nb[1] * S]]);
   }
   for (const [x, y, col, t] of add) { p.set(x, y, col); tag[x + y * S] = t | 4; }
+}
+
+/** A second, softer dark ring outside the ink line: the bold sticker edge of big pixel swords. */
+function rim2(p, tag) {
+  const S = p.w, add = [];
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    if (p.alpha(x, y) > 40) continue;
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < S && ny < S && (tag[nx + ny * S] & 4)) { add.push([x, y]); break; } }
+  }
+  for (const [x, y] of add) p.set(x, y, '#08060a', 150);
 }
 
 function glow(c, uvAt) {

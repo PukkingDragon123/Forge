@@ -9,21 +9,18 @@ import { SHAPES, cellsSize } from '../data/shapes.js';
 import { CHARACTERS } from '../data/characters.js';
 import { NODE_TYPES } from '../data/regions.js';
 import { icon } from '../ui/icons.js';
-import { paintWeapon } from './weapon_art.js';
+import { paintWeapon, hueRamp, inkOf } from './weapon_art.js';
 
 const cache = new Map();
 const memo = (key, fn) => { let v = cache.get(key); if (!v) { v = fn(); cache.set(key, v); } return v; };
 
 // ------------------------------------------------------------------ palette helpers
-/** 6 tones dark→light (index 5 is a near-white specular). */
-export function tones(hex) {
-  // very light colours get pulled down so shading + highlights still have room to read
-  const l = lumOf(hex);
-  const b = l > 0.7 ? shadeHex(hex, -(l - 0.7) * 1.25) : hex;
-  return [shadeHex(b, -0.74), shadeHex(b, -0.5), shadeHex(b, -0.26), b, shadeHex(b, 0.34), shadeHex(b, 0.68)];
-}
+/** 6 tones dark→light (index 5 is a near-white specular), hue-shifted like hand-picked pixel ramps. */
+export function tones(hex) { return memoTones(hex); }
+const toneCache = new Map();
+function memoTones(hex) { let t = toneCache.get(hex); if (!t) { t = hueRamp(hex, 6); toneCache.set(hex, t); } return t; }
+const outlineOf = (hex) => inkOf(hex);
 function lumOf(hex) { const [r, g, b] = hexToRgb(hex); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
-const outlineOf = (hex) => mixHex(shadeHex(hex, -0.86), '#140c10', 0.55);
 const L = [-0.5, -0.65, 0.57];
 
 /** Map light intensity (-1..1) to a tone index 0..5 (5 only for strong highlights). */
@@ -32,25 +29,29 @@ function toneIdx(i, bias = 0) {
   return Math.min(4, Math.floor(t * 5));
 }
 
-/** Selective outline: dark outer line, softened where it touches lit (top/left) pixels. */
+/** Crisp form like a hand-made ore sheet: rim light on edges facing the light, a core shadow on
+ * the far edges, then a bold dark outline all the way round. */
 function finish(p, outHex, opts = {}) {
   const w = p.w, h = p.h;
+  const rgb = (c) => [c[0], c[1], c[2]];
+  const mix = (c, d, t) => [c[0] + (d[0] - c[0]) * t, c[1] + (d[1] - c[1]) * t, c[2] + (d[2] - c[2]) * t];
+  const ink = hexToRgb(outHex);
+  if (opts.rim !== false) {
+    const lit = [], dim = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (!p.alpha(x, y)) continue;
+      const tl = !p.alpha(x - 1, y) || !p.alpha(x, y - 1), br = !p.alpha(x + 1, y) || !p.alpha(x, y + 1);
+      if (tl && !br) lit.push([x, y]); else if (br && !tl) dim.push([x, y]);
+    }
+    for (const [x, y] of lit) p.set(x, y, mix(rgb(p.get(x, y)), [255, 250, 226], 0.3));
+    for (const [x, y] of dim) p.set(x, y, mix(rgb(p.get(x, y)), ink, 0.28));
+  }
   const add = [];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     if (p.alpha(x, y)) continue;
-    const nb = [[1, 0], [0, 1], [-1, 0], [0, -1]].filter(([dx, dy]) => p.alpha(x + dx, y + dy) > 0);
-    if (!nb.length) continue;
-    // lit side = the shape lies right/below this outline pixel (pixel is on the top/left rim)
-    const litSide = nb.some(([dx, dy]) => dx === 1 || dy === 1) && !nb.some(([dx, dy]) => dx === -1 || dy === -1);
-    let col = outHex;
-    if (litSide && opts.selout !== false) {
-      const [dx, dy] = nb.find(([a, b]) => a === 1 || b === 1);
-      const c = p.get(x + dx, y + dy);
-      col = mixHex(outHex, '#' + c.slice(0, 3).map((v) => v.toString(16).padStart(2, '0')).join(''), 0.28);
-    }
-    add.push([x, y, col]);
+    if (p.alpha(x + 1, y) || p.alpha(x - 1, y) || p.alpha(x, y + 1) || p.alpha(x, y - 1)) add.push([x, y]);
   }
-  for (const [x, y, c] of add) p.set(x, y, c);
+  for (const [x, y] of add) p.set(x, y, outHex);
 }
 
 function sparkle(p, x, y, col = '#ffffff', big = false) {
@@ -167,8 +168,8 @@ function axisPaint(p, x0, y0, x1, y1, maxR, fn) {
 
 // ------------------------------------------------------------------ material palettes / special cases
 const ROCK = {
-  default: '#8a847e', junk: '#8a7462', lodestone: '#4e4c60', magmasteel: '#4a3028', cursedore: '#4a3a5c',
-  iron: '#7a5e50', copper: '#86827c', stariron: '#2a2a4a',
+  default: '#8695a2', junk: '#8a7f74', lodestone: '#5a5c74', magmasteel: '#4e3a3a', cursedore: '#4e4466',
+  iron: '#828c9a', copper: '#8a98a4', stariron: '#2e3058',
 };
 function seedOf(id) { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
 
@@ -176,79 +177,83 @@ function seedOf(id) { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(
 const STYLES = {};
 
 STYLES.chunk = (p, W, H, m, r) => {
+  // raw ore like a hand-made ore sheet: a cool slate rock with bright ore poking out of its top
   const rock = tones(ROCK[m.id] || ROCK.default);
   const ore = tones(m.color);
-  const cx = W / 2, cy = H * 0.58, rx = W * 0.45, ry = H * 0.38;
-  facetDome(p, cx, cy, rx, ry, rock, r, { n: 7, flat: 0.8, h: 0.95, toneBias: 0.12 });
-  // speckle texture
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (p.alpha(x, y) && hash2(x, y, seedOf(m.id)) > 0.9) p.set(x, y, rock[hash2(x, y, 7) > 0.5 ? 1 : 3]);
+  const cx = W / 2, cy = H * 0.64, rx = W * 0.46, ry = H * 0.3;
+  facetDome(p, cx, cy, rx, ry, rock, r, { n: 8, flat: 0.85, h: 0.9, toneBias: 0.08 });
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (p.alpha(x, y) && hash2(x, y, seedOf(m.id)) > 0.93) p.set(x, y, rock[hash2(x, y, 7) > 0.5 ? 1 : 4]);
   const glowing = m.id === 'magmasteel' || m.id === 'cursedore';
-  // veins
-  const veins = glowing ? 3 : 2;
-  for (let v = 0; v < veins; v++) {
-    let x = cx + r.float(-rx * 0.6, rx * 0.4), y = cy + r.float(-ry * 0.5, ry * 0.5);
-    for (let k = 0; k < W * 0.35; k++) {
-      if (p.alpha(x | 0, y | 0)) p.set(x | 0, y | 0, glowing ? ore[4] : ore[1]);
-      x += r.float(0.3, 1.1); y += r.float(-0.8, 0.8);
+  const crystals = glowing || m.id === 'lodestone';
+  // cracks of ore running through the stone
+  for (let v = 0; v < 2; v++) {
+    let x = cx + r.float(-rx * 0.6, rx * 0.2), y = cy + r.float(-ry * 0.1, ry * 0.5);
+    for (let k = 0; k < W * 0.3; k++) { if (p.alpha(x | 0, y | 0)) p.set(x | 0, y | 0, glowing ? ore[4] : ore[2]); x += r.float(0.4, 1.1); y += r.float(-0.7, 0.7); }
+  }
+  // the ore itself: crystals jutting out, or fat nuggets set into the top of the rock
+  const spots = [[-0.42, -0.62, 1.15], [0.12, -0.92, 1.3], [0.48, -0.5, 1.0], [-0.08, -0.25, 0.85]];
+  const n = m.id === 'junk' ? 4 : 3;
+  for (let i = 0; i < n; i++) {
+    const [fx, fy, sz] = spots[(i + seedOf(m.id)) % spots.length];
+    const ox = cx + fx * rx, oy = cy + fy * ry;
+    const s0 = W * 0.13 * sz * r.float(0.9, 1.1);
+    if (crystals) prism(p, ox, oy + s0 * 0.6, s0 * 1.1, s0 * 2.4, ore, r.float(-1.5, 1.5), { glow: true, inner: true });
+    else if (m.id === 'junk') lump(p, ox, oy, s0, s0 * 0.75, tones(i % 2 ? m.color2 : m.color), r.next() * 50, { wobble: 0.45 });
+    else {
+      lump(p, ox, oy, s0 * 1.05, s0 * 0.85, ore, r.next() * 50, { wobble: 0.3, bias: 0.12 });
+      const sx = Math.round(ox - s0 * 0.35), sy = Math.round(oy - s0 * 0.35);
+      p.set(sx, sy, ore[5]); if (s0 > 3) { p.set(sx + 1, sy, ore[5]); p.set(sx, sy + 1, ore[4]); }
     }
   }
-  // embedded nuggets/crystals of the ore
-  const count = m.id === 'junk' ? 3 : 3;
-  const spots = [[-1.9, 0.62], [-1.2, 0.5], [-0.5, 0.58], [-2.5, 0.3], [-0.9, 0.15]];
-  for (let i = 0; i < count; i++) {
-    const [a0, d] = spots[(i + seedOf(m.id)) % spots.length];
-    const a = a0 + r.float(-0.2, 0.2);
-    const nx = cx + Math.cos(a) * rx * d, ny = cy + Math.sin(a) * ry * d - ry * 0.12;
-    const s = W * r.float(0.11, 0.15) * (i === 0 ? 1.25 : 1);
-    if (m.id === 'junk') lump(p, nx, ny, s, s * 0.8, tones(m.color2), r.next() * 50, { wobble: 0.5 });
-    else facetDome(p, nx, ny, s * 1.15, s, ore, r, { n: 5, h: 1.2, toneBias: 0.25 });
+  if (m.id === 'lodestone') { // iron filings bristle toward its pull
+    for (let i = 0; i < 7; i++) { const x = Math.round(cx + r.float(-rx * 0.8, rx * 0.8)); const y = Math.round(cy - ry * r.float(0.75, 1.05)); p.set(x, y - 1, '#b8c0d8'); p.set(x, y - 2, '#6a7090'); }
   }
-  if (m.id === 'lodestone') { // iron filings bristle
-    for (let i = 0; i < 6; i++) { const x = Math.round(cx + r.float(-rx * 0.7, rx * 0.7)); const y = Math.round(cy - ry * r.float(0.7, 1.0)); p.set(x, y - 1, '#9aa0b0'); p.set(x, y - 2, '#5a6070'); }
-    p.set(Math.round(cx + rx * 0.3), Math.round(cy - ry * 0.2), '#ff6a6a');
-  }
-  if (m.id === 'iron') for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (p.alpha(x, y) && hash2(x, y, 41) > 0.93) p.set(x, y, m.color2);
-  if (glowing) for (let i = 0; i < 3; i++) { const x = Math.round(cx + r.float(-rx * 0.5, rx * 0.5)), y = Math.round(cy + r.float(-ry * 0.4, ry * 0.3)); if (p.alpha(x, y)) p.set(x, y, ore[5]); }
+  if (m.id === 'iron') for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (p.alpha(x, y) && hash2(x, y, 41) > 0.95) p.set(x, y, m.color2);
+  if (glowing) for (let i = 0; i < 4; i++) { const x = Math.round(cx + r.float(-rx * 0.6, rx * 0.6)), y = Math.round(cy + r.float(-ry * 0.3, ry * 0.4)); if (p.alpha(x, y)) p.set(x, y, ore[5]); }
 };
 
 STYLES.nuggets = (p, W, H, m, r) => {
   const T = tones(m.color);
   const coal = m.id === 'coal';
-  const pts = [[0.36, 0.62, 0.22], [0.64, 0.6, 0.2], [0.5, 0.38, 0.19], [0.24, 0.4, 0.13], [0.74, 0.36, 0.12]];
-  const n = m.id === 'silver' || m.id === 'gold' ? 4 : 5;
-  // draw back to front (top first)
+  const pts = [[0.3, 0.66, 0.2], [0.66, 0.68, 0.19], [0.48, 0.42, 0.19], [0.2, 0.4, 0.13], [0.78, 0.4, 0.13], [0.5, 0.82, 0.12]];
+  const n = m.id === 'silver' || m.id === 'gold' ? 5 : 6;
   const order = pts.slice(0, n).sort((a, b) => a[1] - b[1]);
   for (const [fx, fy, fr] of order) {
-    const rr = W * fr * r.float(0.9, 1.1);
-    if (coal) facetDome(p, W * fx, H * fy, rr, rr * 0.85, tones('#4a4652'), r, { n: 5, h: 1.1, toneBias: 0.2 });
-    else lump(p, W * fx, H * fy, rr, rr * 0.82, T, r.next() * 99, { wobble: 0.4 });
+    const rr = W * fr * r.float(0.92, 1.08);
+    if (coal) facetDome(p, W * fx, H * fy, rr, rr * 0.85, tones('#4c4a5a'), r, { n: 5, h: 1.1, toneBias: 0.2 });
+    else {
+      lump(p, W * fx, H * fy, rr, rr * 0.8, T, r.next() * 99, { wobble: 0.38, bias: 0.06 });
+      // a fat specular blob like polished metal
+      const sx = Math.round(W * fx - rr * 0.4), sy = Math.round(H * fy - rr * 0.35);
+      p.set(sx, sy, T[5]); if (rr > 3) { p.set(sx + 1, sy, T[5]); p.set(sx, sy + 1, T[4]); p.set(sx + 1, sy + 1, T[4]); }
+    }
   }
-  if (coal) { // bluish sheen glints
-    for (let i = 0; i < 4; i++) { const x = Math.round(W * r.float(0.25, 0.7)), y = Math.round(H * r.float(0.3, 0.65)); if (p.alpha(x, y)) p.set(x, y, '#8a90b8'); }
-  }
+  if (coal) for (let i = 0; i < 5; i++) { const x = Math.round(W * r.float(0.2, 0.75)), y = Math.round(H * r.float(0.3, 0.7)); if (p.alpha(x, y)) p.set(x, y, '#9aa4d8'); }
 };
 
 STYLES.ingot = (p, W, H, m, r) => {
+  // a fat cast bar in 3/4 view: bright top, sheened front, dark end
   const T = tones(m.color);
-  // wedge ingot in 3/4 view: top face, front face, right face
-  const x0 = W * 0.12, x1 = W * 0.78, y0 = H * 0.4, y1 = H * 0.72, d = W * 0.16;
-  const top = [[x0 + d, y0 - d * 0.7], [x1 + d * 0.2, y0 - d * 0.7], [x1, y0], [x0, y0]];
-  const front = [[x0, y0], [x1, y0], [x1 - W * 0.04, y1], [x0 + W * 0.04, y1]];
-  const side = [[x1, y0], [x1 + d * 0.2, y0 - d * 0.7], [x1 + d * 0.6, y1 - d * 0.6], [x1 - W * 0.04, y1]];
-  p.poly(front, T[2]);
+  const x0 = W * 0.06, x1 = W * 0.74, y0 = H * 0.42, y1 = H * 0.8, dx = W * 0.2, dy = H * 0.22;
+  const top = [[x0 + dx, y0 - dy], [x1 + dx, y0 - dy], [x1, y0], [x0, y0]];
+  const front = [[x0, y0], [x1, y0], [x1 - W * 0.05, y1], [x0 + W * 0.05, y1]];
+  const side = [[x1, y0], [x1 + dx, y0 - dy], [x1 + dx - W * 0.04, y1 - dy], [x1 - W * 0.05, y1]];
+  p.poly(front, (x, y) => T[(y - y0) / (y1 - y0) < 0.25 ? 3 : 2]);
   p.poly(top, T[4]);
   p.poly(side, T[1]);
-  // bevel lines
-  p.hline(Math.round(x0) + 1, Math.round(x1) - 1, Math.round(y0), T[5]);
-  p.hline(Math.round(x0) + 2, Math.round(x1) - 2, Math.round(y1) - 1, T[1]);
-  // stamp / sheen
-  const sx = Math.round(W * 0.3);
-  p.line(sx, Math.round(y0) + 2, sx + Math.round(W * 0.12), Math.round(y0) + 2, T[3]);
-  p.set(Math.round(x0 + d + 2), Math.round(y0 - d * 0.7 + 1), T[5]);
-  if (m.id === 'bronze_ancient') { // verdigris patina specks
-    for (let i = 0; i < 7; i++) { const x = Math.round(r.float(x0 + 1, x1)), y = Math.round(r.float(y0 - d * 0.5, y1 - 1)); if (p.alpha(x, y)) p.set(x, y, hash2(x, y, 3) > 0.5 ? '#4a9a7a' : '#6ac09a'); }
+  // diagonal sheen across the front and top, a bright lip along the top edge
+  for (let y = Math.floor(y0 - dy); y < y1; y++) for (let x = 0; x < W; x++) {
+    if (!p.alpha(x, y)) continue;
+    const b = (x - y * 0.9) / W;
+    if (Math.abs(b - 0.08) < 0.045 || Math.abs(b - 0.22) < 0.02) p.set(x, y, T[y < y0 ? 5 : 4]);
   }
-  if (m.id === 'mithril') { sparkle(p, Math.round(x0 + d + 4), Math.round(y0 - d * 0.7), '#ffffff'); }
+  p.hline(Math.round(x0) + 1, Math.round(x1) - 1, Math.round(y0), T[5]);
+  p.hline(Math.round(x0 + W * 0.06), Math.round(x1 - W * 0.06), Math.round(y1) - 1, T[0]);
+  // a maker's stamp on the front
+  const sx = Math.round(W * 0.34), sy = Math.round((y0 + y1) / 2);
+  p.rect(sx - 2, sy - 1, 5, 3, T[1]); p.set(sx, sy, T[3]);
+  if (m.id === 'bronze_ancient') for (let i = 0; i < 9; i++) { const x = Math.round(r.float(x0 + 1, x1 + dx)), y = Math.round(r.float(y0 - dy, y1 - 1)); if (p.alpha(x, y)) p.set(x, y, hash2(x, y, 3) > 0.5 ? '#4aa88e' : '#7ad0b0'); }
+  if (m.id === 'mithril') { sparkle(p, Math.round(x0 + dx + W * 0.1), Math.round(y0 - dy), '#ffffff', W > 24); }
 };
 
 STYLES.cluster = (p, W, H, m, r) => {
@@ -1083,7 +1088,7 @@ export function itemSprite(id, cell = 32, rot = 0) {
 }
 
 // ------------------------------------------------------------------ WEAPONS
-export function weaponSprite(w, size = 96) {
+export function weaponSprite(w, size = 128) {
   const key = `wpn|${w.bp}|${(w.ids || []).join(',')}|${JSON.stringify(w.el || {})}|${w.grade ?? 1}|${w.recipe || ''}|${size}`;
   return memo(key, () => paintWeapon(w, size));
 }

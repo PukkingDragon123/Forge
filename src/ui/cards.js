@@ -25,6 +25,20 @@ const BAND = {
   legendary: HM.brass.slice(1, 6),
   iron: ['#16181a', '#26292c', '#3a3e40', '#52585a', '#727a7a'],
 };
+// gilded frame metal by rarity (dark → bright) and the dark card field behind the art
+const FRAME = {
+  common: ['#1c0e06', '#4a2a12', '#7e4e24', '#b07a3e', '#e2b070', '#fff0c8'],
+  uncommon: ['#0a1a12', '#1e4034', '#36705a', '#5ea488', '#a2dcc0', '#f0fff6'],
+  rare: ['#08122a', '#1a3460', '#345e98', '#6694cc', '#a8ccf2', '#f4faff'],
+  epic: ['#160828', '#3a1a5e', '#683698', '#a464d0', '#dcaaf4', '#fff0ff'],
+  legendary: ['#241002', '#6a3808', '#b47010', '#eaa82a', '#ffda6a', '#fffbe0'],
+  iron: ['#0c0e10', '#22262a', '#3a4046', '#5c646a', '#8c949a', '#d4dadc'],
+};
+const FIELD = {
+  common: ['#0e0806', '#1c120c', '#2c1c12', '#3c2818'], uncommon: ['#04100a', '#0a1e14', '#122e20', '#1c402c'],
+  rare: ['#040a18', '#0a1630', '#12244a', '#1c3462'], epic: ['#0c0418', '#180a30', '#261248', '#361c60'],
+  legendary: ['#140a02', '#24140a', '#3a2210', '#523218'], iron: ['#08090a', '#121416', '#1e2124', '#2a2e32'],
+};
 const GEMC = { common: '#c9b89a', uncommon: '#7dd89a', rare: '#7ab8ff', epic: '#d08aff', legendary: '#ffd25e', iron: '#a8b0b0' };
 const EL_COLOR = { fire: '#ff7b2e', ice: '#7fe3ff', shock: '#ffe74a', poison: '#8fe04a', curse: '#c86bff', bleed: '#ff4f6a', holy: '#fff3b0' };
 const ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
@@ -109,42 +123,90 @@ function paintScene(p, x0, y0, w, h, kind, accent, seed, inside) {
 }
 
 // ------------------------------------------------------------------ card frame
-/** Paint the card stock, band, inner ink line and arched window. Returns layout. */
+/** Paint a gilded tarot card: metal frame by rarity with corner fleurons, a dark patterned field,
+ * an inner gold rule and an arched window. Returns layout. */
 function tarot(W, H, band, seed, win) {
   const p = new Painter(W, H);
-  const B = BAND[band] || BAND.common;
-  const mask = cutMask(W, H, seed, { amp: 1, r: 5, chip: false });
-  const paper = paperTone(HM.paper, seed);
-  const bw = W >= 100 ? 5 : 4;
+  const B = FRAME[band] || FRAME.common, D = FIELD[band] || FIELD.common;
+  const mask = cutMask(W, H, seed, { amp: 0, r: 4, chip: false });
+  const bw = W >= 100 ? 4 : 3;
   fillMask(p, mask, (x, y, e) => {
     const d = Math.min(x, y, W - 1 - x, H - 1 - y);
     if (d < bw) {
-      // painted band: brush strokes along the edge, lit top-left
-      let t = 0.55 + (fbm2(x * 0.15 + y * 0.02, y * 0.15, 2, seed) - 0.5) * 0.45;
-      const lit = (y < bw && y <= x && y <= W - 1 - x) || (x < bw && x <= y && x <= H - 1 - y);
-      t += lit ? 0.18 : -0.12;
-      if (d === bw - 1) t -= 0.35;
-      if (band === 'legendary' && hash2(x, y, seed) > 0.9) t += 0.3; // gold-leaf flecks
-      return pick(B, clamp(t));
+      const top = y <= x && y <= W - 1 - x && y < H / 2, left = x <= y && x <= H - 1 - y && x < W / 2;
+      const lit = top || left;
+      let i = d === 0 ? 1 : d === bw - 1 ? 1 : lit ? 4 : 2;
+      if (d === 1 && lit) i = 5;
+      if (d >= 1 && d < bw - 1 && (x * 3 + y * 5) % 11 === 0) i -= 1; // engraved ticks
+      if (band === 'legendary' && hash2(x, y, seed) > 0.9) i = Math.min(5, i + 1);
+      return B[clamp(i, 0, 5)];
     }
-    return paper(x, y, Math.min(e, 5));
+    // night field: a soft vignette, a faint diamond lattice and gold dust
+    const t = 0.62 + (fbm2(x * 0.09, y * 0.09, 2, seed) - 0.5) * 0.5 - Math.hypot((x - W / 2) / W, (y - H * 0.42) / H) * 0.9;
+    let c = dpal(D, t, x, y);
+    if (((x + y) % 7 === 0 || (x - y + 700) % 7 === 0) && hash2(x >> 1, y >> 1, seed) > 0.35) c = mixHex(c, B[3], 0.16);
+    if (hash2(x, y, seed + 3) > 0.988) c = B[4];
+    return c;
   });
-  // thin hand-inked rule inside the band
-  const r = bw + 2;
-  wobbleLine(p, r, r, W - r - 1, r, '#5a3a20', seed, { amp: 0.4, skip: 0.06 });
-  wobbleLine(p, r, H - r - 1, W - r - 1, H - r - 1, '#5a3a20', seed + 1, { amp: 0.4, skip: 0.06 });
-  wobbleLine(p, r, r, r, H - r - 1, '#5a3a20', seed + 2, { amp: 0.4, skip: 0.06 });
-  wobbleLine(p, W - r - 1, r, W - r - 1, H - r - 1, '#5a3a20', seed + 3, { amp: 0.4, skip: 0.06 });
+  // inner gold rule and corner fleurons with a gem dot
+  const r = bw + 1;
+  for (let x = r; x < W - r; x++) { p.set(x, r, B[3]); p.set(x, H - 1 - r, B[2]); }
+  for (let y = r; y < H - r; y++) { p.set(r, y, B[3]); p.set(W - 1 - r, y, B[2]); }
+  const fl = ['xxx..', 'x.ox.', 'xoo.x', '.x..x', '..xx.'];
+  for (const [ox, oy, sx, sy] of [[r, r, 1, 1], [W - 1 - r, r, -1, 1], [r, H - 1 - r, 1, -1], [W - 1 - r, H - 1 - r, -1, -1]]) {
+    fl.forEach((row, j) => [...row].forEach((ch, i) => { if (ch === 'x') p.set(ox + i * sx, oy + j * sy, B[4]); else if (ch === 'o') p.set(ox + i * sx, oy + j * sy, GEMC[band] || B[5]); }));
+  }
   inkEdge(p, mask, { seed });
-  // arched window
-  const { x: wx, y: wy, w: ww, h: wh } = win;
-  const arch = Math.min(9, Math.round(ww * 0.16));
+  const { w: ww, h: wh } = win;
+  const arch = Math.min(10, Math.round(ww * 0.18));
   const inside = (x, y) => {
     if (x < 0 || y < 0 || x >= ww || y >= wh) return false;
     if (y < arch) { const dx = (x + 0.5 - ww / 2) / (ww / 2), dy = (arch - y - 0.5) / arch; return dx * dx + dy * dy <= 1; }
     return true;
   };
   return { p, inside, arch, mask, B };
+}
+/** Light rays fanning out behind the art (rare and up), clipped to the window. */
+function sunburst(p, win, inside, col, cx, cy, strength) {
+  for (let y = 0; y < win.h; y++) for (let x = 0; x < win.w; x++) {
+    if (!inside(x, y)) continue;
+    const dx = x - cx, dy = y - cy, a = Math.atan2(dy, dx), d = Math.hypot(dx, dy);
+    if (fr01(a * 14 / (Math.PI * 2)) > 0.5) continue;
+    const k = Math.max(0, 1 - d / (win.w * 0.75)) * strength;
+    if (k <= 0 || !dither(x, y, k)) continue;
+    const c = p.get(win.x + x, win.y + y);
+    if (c) p.set(win.x + x, win.y + y, mixHex('#' + c.slice(0, 3).map((v) => v.toString(16).padStart(2, '0')).join(''), col, 0.35));
+  }
+}
+const fr01 = (v) => v - Math.floor(v);
+/** Faceted rarity gem set into the top of the frame. */
+function rarityGem(p, cx, y, col) {
+  const G = [shadeHex(col, -0.55), shadeHex(col, -0.25), col, shadeHex(col, 0.35), '#ffffff'];
+  const rows = ['..aaa..', '.abcda.', 'abccdda', 'abbccda', '.abbca.', '..aba..', '...a...'];
+  rows.forEach((row, j) => [...row].forEach((ch, i) => {
+    if (ch === '.') return;
+    p.set(cx - 3 + i, y + j, ch === 'a' ? INK : ch === 'b' ? G[1] : ch === 'c' ? G[2] : ch === 'd' ? G[3] : G[4]);
+  }));
+  p.set(cx - 1, y + 2, G[4]);
+}
+/** Rarity-coloured ribbon banner with forked tails; returns the text draw callback. */
+function ribbon(p, ctx, cx, y, w, lines, B) {
+  const f = 7, h = lines.length * f + 3, x0 = Math.round(cx - w / 2);
+  for (let yy = 0; yy < h; yy++) for (let x = 0; x < w; x++) {
+    const t = yy / (h - 1);
+    p.set(x0 + x, y + yy, t < 0.2 ? B[4] : t > 0.85 ? B[1] : B[3]);
+  }
+  for (let x = 0; x < w; x++) { p.set(x0 + x, y - 1, INK); p.set(x0 + x, y + h, INK); }
+  // forked tails folding behind
+  for (const s of [-1, 1]) {
+    const ex = s < 0 ? x0 - 5 : x0 + w;
+    for (let yy = 1; yy < h + 2; yy++) for (let i = 0; i < 5; i++) {
+      const fork = Math.abs(yy - (h + 1) / 2) < (s < 0 ? i : 4 - i) * 0.5 - 0.6;
+      if (fork) continue;
+      p.set(ex + i, y + yy, i === (s < 0 ? 0 : 4) || yy === 1 || yy === h + 1 ? INK : B[1]);
+    }
+  }
+  return () => lines.forEach((ln, i) => drawText(ctx, ln, cx, y + 2 + i * f, { font: 'small', color: '#fff8e6', align: 'center', outline: INK, outlineShadow: false }));
 }
 /** Ink + band-coloured bevel around the window. */
 function windowFrame(p, win, inside, B) {
@@ -256,13 +318,14 @@ export function materialCard(item, opts = {}) {
     const { p, inside, B } = tarot(W, H, rar, seed, win);
     const el = elementOf(m);
     paintScene(p, win.x, win.y, win.w, win.h, sceneFor(m), el ? EL_COLOR[el] : m.kind === 'gem' || m.kind === 'crystal' ? m.color : null, seed, inside);
+    const tierN = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 }[rar] || 1;
+    if (tierN >= 2) sunburst(p, win, inside, GEMC[rar], win.w / 2, win.h * 0.55, tierN >= 4 ? 0.9 : tierN >= 3 ? 0.7 : 0.45);
     windowFrame(p, win, inside, B);
     const c = makeCanvas(W, H);
     const ctx = c.getContext('2d');
     const after = [];
-    // roman numeral plaque: rarity tier
-    const tier = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 }[rar] || 1;
-    after.push(cartouche(p, ctx, W / 2, 3, ROMAN[tier], B));
+    // a faceted rarity gem set into the top of the frame
+    rarityGem(p, Math.round(W / 2), 1, GEMC[rar]);
     // element gem in the window's top-right shoulder
     if (el) {
       const E = [shadeHex(EL_COLOR[el], -0.5), EL_COLOR[el], shadeHex(EL_COLOR[el], 0.45)];
@@ -271,7 +334,7 @@ export function materialCard(item, opts = {}) {
     }
     // name scroll over the bottom of the window
     const lines = wrap(m.name.toUpperCase(), 'small', W - 20).slice(0, 2);
-    after.push(nameScroll(p, ctx, W / 2, win.y + win.h - (lines.length > 1 ? 9 : 4), W - 18, lines));
+    after.push(ribbon(p, ctx, W / 2, win.y + win.h - (lines.length > 1 ? 9 : 4), W - 20, lines, B));
     // stat tokens
     const b = badges(m);
     const toks = [];
@@ -280,6 +343,10 @@ export function materialCard(item, opts = {}) {
     while (toks.length > 1 && total > W - 14) { const t = toks.pop(); total -= measure(t.text, 'small') + (t.ic ? t.ic.w + 1 : 0) + 8; }
     let bx = Math.round((W - total + 2) / 2);
     for (const t of toks) { const tk = token(p, ctx, bx, 80, t.text, t.bg, t.ic); after.push(tk.draw); bx += tk.w + 2; }
+    // what it is and how fine it is, in gold leaf under the tokens
+    const KIND = { ore: 'ORE', gem: 'GEM', crystal: 'CRYSTAL', mineral: 'MINERAL', part: 'PART', key: 'KEY', tool: 'TOOL', scroll: 'RUNE', recipe: 'RECIPE' };
+    const capt = `${KIND[m.kind] || (m.kind || '').toUpperCase()} · ${QUALITY[item.q ?? 2].name.toUpperCase()}`;
+    after.push(() => drawText(ctx, capt, W / 2, 90, { font: 'small', color: B[4], align: 'center', outline: INK, outlineShadow: false }));
     // quality pips: little painted gems on the bottom band
     const q = item.q ?? 2, qc = QUALITY[q].color;
     for (let i = 0; i < 4; i++) {
@@ -289,11 +356,12 @@ export function materialCard(item, opts = {}) {
     }
     ctx.drawImage(p.toCanvas(), 0, 0);
     // the material itself, standing on the ground of its scene
-    const S = 44;
+    const S = 48;
     const spr = materialSprite(item.id, S);
-    ctx.drawImage(spr, Math.round(win.x + (win.w - S) / 2), win.y + Math.round(win.h * 0.74) - S + 4 - (lines.length > 1 ? 4 : 0));
+    ctx.drawImage(spr, Math.round(win.x + (win.w - S) / 2), win.y + Math.round(win.h * 0.74) - S + 6 - (lines.length > 1 ? 4 : 0));
     for (const f of after) f();
     if (opts.selected) selectGlow(c, W, H);
+    c.foil = tierN >= 3;
     if (opts.dim) { ctx.globalCompositeOperation = 'source-atop'; ctx.fillStyle = 'rgba(10,6,8,0.58)'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over'; }
     return c;
   });
@@ -313,13 +381,14 @@ export function weaponCard(w, opts = {}) {
     const { p, inside, B } = tarot(W, H, band, seed, win);
     const tint = Object.entries(w.el || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])[0];
     paintScene(p, win.x, win.y, win.w, win.h, 'forge', tint ? EL_COLOR[tint[0]] : null, seed, inside);
+    if (gi >= 2 || w.recipe) sunburst(p, win, inside, tint ? EL_COLOR[tint[0]] : GEMC[band] || '#ffd25e', win.w / 2, win.h * 0.5, gi >= 4 ? 0.95 : 0.6);
     windowFrame(p, win, inside, B);
     const c = makeCanvas(W, H);
     const ctx = c.getContext('2d');
     const after = [];
     // title scroll
     const lines = wrap((w.name || '').toUpperCase(), 'small', W - 26).slice(0, 2);
-    after.push(nameScroll(p, ctx, W / 2, lines.length > 1 ? 5 : 8, W - 22, lines));
+    after.push(ribbon(p, ctx, W / 2, lines.length > 1 ? 5 : 8, W - 26, lines, B));
     // damage seal: a big wax seal under the window with the damage in it
     const dmg = w.dmg ?? 0;
     const big = bigText(String(dmg), { scale: 1, font: 'large', top: '#fff6e0', bottom: '#ffd0a0' });
@@ -338,8 +407,8 @@ export function weaponCard(w, opts = {}) {
     for (let x = 14; x < W - 14; x++) { p.set(x, gy - 1, INK); p.set(x, gy + 9, INK); }
     ctx.drawImage(p.toCanvas(), 0, 0);
     // weapon art
-    const S = 72;
-    ctx.drawImage(weaponSprite(w, S), Math.round(win.x + (win.w - S) / 2), win.y + 1);
+    const S = 80;
+    ctx.drawImage(weaponSprite(w, S), Math.round(win.x + (win.w - S) / 2), win.y - 3);
     // element pips along the window's bottom-left
     let ex = win.x + 3;
     for (const [e, v] of Object.entries(w.el || {})) {
@@ -354,13 +423,14 @@ export function weaponCard(w, opts = {}) {
     for (const f of after) f();
     ctx.drawImage(big, Math.round(W / 2 - big.width / 2), sy + Math.round(sealD / 2 - big.height / 2) + 1);
     const ly = sy + 12;
-    if (spd) { const ic = icon('clock:s'); ctx.drawImage(ic.canvas, 12, ly); drawText(ctx, spd, 12 + ic.w + 1, ly + 1, { font: 'small', color: '#3a2a4a' }); }
+    if (spd) { const ic = icon('clock:s'); ctx.drawImage(ic.canvas, 12, ly); drawText(ctx, spd, 12 + ic.w + 1, ly + 1, { font: 'small', color: '#cfe0ff', outline: INK, outlineShadow: false }); }
     if (w.critMult) {
       const t = '×' + (Math.round(w.critMult * 10) / 10); const ic = icon('crit:s'); const tw = measure(t, 'small');
-      ctx.drawImage(ic.canvas, W - 12 - tw - ic.w - 1, ly); drawText(ctx, t, W - 12 - tw, ly + 1, { font: 'small', color: '#7a3010' });
+      ctx.drawImage(ic.canvas, W - 12 - tw - ic.w - 1, ly); drawText(ctx, t, W - 12 - tw, ly + 1, { font: 'small', color: '#ffb48a', outline: INK, outlineShadow: false });
     }
     drawText(ctx, g.name.toUpperCase(), W / 2, gy + 2, { font: 'small', color: gi >= 4 || gi === 1 ? '#3a1e08' : '#fff6e0', align: 'center' });
     if (opts.selected) selectGlow(c, W, H);
+    c.foil = gi >= 3 || !!w.recipe;
     return c;
   });
 }
@@ -423,8 +493,10 @@ export function drawCard(ui, canvas, x, y, opts = {}) {
     ctx.globalAlpha = 1;
   }
   if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
-  if (!tilt) ctx.drawImage(canvas, x, y);
-  else {
+  if (!tilt) {
+    ctx.drawImage(canvas, x, y);
+    if (canvas.foil && opts.foil !== false) { const f = foilFrame(canvas); if (f) ctx.drawImage(f, x, y); }
+  } else {
     const h = canvas.height;
     for (let row = 0; row < h; row++) {
       const off = Math.round(tilt * (row / h - 0.5) * 4);
@@ -433,6 +505,30 @@ export function drawCard(ui, canvas, x, y, opts = {}) {
   }
   ctx.globalAlpha = 1;
   return { x, y, w: canvas.width, h: canvas.height };
+}
+/** Holographic foil: a soft rainbow-white band sweeping across rare cards every couple of seconds. */
+const foils = new WeakMap();
+function foilFrame(canvas) {
+  const N = 28, k = Math.floor(performance.now() / 70) % N;
+  if (k >= 14) return null;
+  let frames = foils.get(canvas);
+  if (!frames) { frames = []; foils.set(canvas, frames); }
+  if (!frames[k]) {
+    const W = canvas.width, H = canvas.height;
+    const src = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+    const p = new Painter(W, H);
+    const pos = -0.3 + (k / 13) * 1.6;
+    const RB = ['#ffd6f0', '#fff4c0', '#c8fff0', '#c8dcff'];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (src[(x + y * W) * 4 + 3] < 200) continue;
+      const t = (x / W + y / H) / 2 - pos;
+      const a = Math.max(0, 1 - Math.abs(t) * 9);
+      if (a <= 0 || !dither(x, y, a)) continue;
+      p.set(x, y, RB[Math.floor((x - y + 400) / 3) % 4], 110);
+    }
+    frames[k] = p.toCanvas();
+  }
+  return frames[k];
 }
 const shadows = new WeakMap();
 function memoShadow(c) {

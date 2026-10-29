@@ -38,7 +38,7 @@ export class SpritePreview extends Scene {
       WEAPONS.forEach(([bp, ing], i) => {
         const res = evaluate(bp, ing.map((id) => ({ id, q: 2, uid: i })), {});
         const w = { bp, ids: ing, el: res.el, grade: i % 5, recipe: res.recipe };
-        ui.img(weaponSprite(w), 6 + (i % 8) * 100, 6 + Math.floor(i / 8) * 100);
+        ui.img(weaponSprite(w), 6 + (i % 8) * 118, 6 + Math.floor(i / 8) * 100);
         ui.img(weaponSprite(w, 48), 6 + i * 52, 210);
         ui.img(weaponSprite(w, 30), 6 + i * 52, 262);
         if (i < 3) ui.img(scaleCanvas(weaponSprite(w), 2), 6 + i * 196, 300);
