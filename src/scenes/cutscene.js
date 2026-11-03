@@ -587,7 +587,7 @@ export class CutsceneScene extends Scene {
       if (isOverlay) g.popOverlay(this);
       const fn = this.p.onDone || this.p.next;
       if (fn) fn();
-      else if (!isOverlay) g.go(g.run ? 'map' : 'title', {}, { transition: 'fade' });
+      else if (!isOverlay) g.go(g.run ? 'delve' : 'title', {}, { transition: 'fade' });
     }
   }
   draw(ui) { this.cine.input(); this.cine.draw(ui); }

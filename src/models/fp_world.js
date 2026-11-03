@@ -198,7 +198,7 @@ function tunnel(act, seed, o) {
 // ---------------------------------------------------------------------------- junction
 const JR = 2.8, JCZ = -3.4, STUB = 7.2;
 // stand near the way in, so the side mouths sit ~42° off forward (inside the view) and forward is straight on
-const JSTAND = JCZ + (JR - 0.2) / Math.tan((42 * Math.PI) / 180);
+const JSTAND = JCZ + JR - 0.3;
 function junction(act, seed, o) {
   const A = ACT_STYLES[act], r = rngOf(seed * 11 + act * 71 + 5);
   const exits = (o.exits && o.exits.length ? o.exits : [-1, 0, 1]).filter((d, i, a) => a.indexOf(d) === i);
@@ -209,8 +209,15 @@ function junction(act, seed, o) {
   L.carve(-1.3, 1.3, JCZ + JR - 0.6, 0.6, (x) => Math.abs(x) < 1.3, 0, (x, z) => vaultH(Math.abs(x), 1.3, -z), MAT.STONE, style); // where you came in
   const stubs = [];
   for (const d of exits) {
-    if (d === 0) { L.carve(-1.3, 1.3, JCZ - STUB + 0.6, JCZ - JR + 0.6, null, 0, (x, z) => vaultH(Math.abs(x), 1.3, -z), MAT.STONE, style); stubs.push({ dir: 0, yaw: 0, mouth: V(0, EYE + 0.05, JCZ - JR + 0.2), deep: V(0, EYE, JCZ - STUB + 1.4), end: V(0, 0, JCZ - STUB + 0.6) }); }
-    else { const s = d; const xa = s < 0 ? -STUB : JR - 0.6, xb = s < 0 ? -JR + 0.6 : STUB; L.carve(xa, xb, JCZ - 1.3, JCZ + 1.3, null, 0, (x, z) => vaultH(Math.abs(z - JCZ), 1.3, x), MAT.STONE, style); stubs.push({ dir: s, yaw: -s * Math.PI / 2, mouth: V(s * (JR - 0.2), EYE + 0.05, JCZ), deep: V(s * (STUB - 1.4), EYE, JCZ), end: V(s * STUB, 0, JCZ) }); }
+    if (d === 0) { L.carve(-1.3, 1.3, JCZ - STUB + 0.6, JCZ - JR + 0.6, null, 0, (x, z) => vaultH(Math.abs(x), 1.3, -z), MAT.STONE, style); stubs.push({ dir: 0, yaw: 0, d: [0, -1], mouth: V(0, EYE + 0.05, JCZ - JR + 0.2), deep: V(0, EYE, JCZ - STUB + 1.4), end: V(0, 0, JCZ - STUB + 0.6) }); }
+    else {
+      // side ways leave diagonally (forward-left / forward-right), so from the stand you look down them
+      const yaw = -d * Math.PI / 4, dx = -Math.sin(yaw), dz = -Math.cos(yaw), lx = -dz, lz = dx;
+      const ex = dx * STUB, ez = JCZ + dz * STUB;
+      L.carve(Math.min(0, ex) - 1.6, Math.max(0, ex) + 1.6, ez - 1.6, JCZ + 1.6, (x, z) => { const u = x * dx + (z - JCZ) * dz, v = x * lx + (z - JCZ) * lz; return u > JR - 0.6 && u < STUB && Math.abs(v) < 1.3; }, 0, (x, z) => { const u = x * dx + (z - JCZ) * dz, v = x * lx + (z - JCZ) * lz; return vaultH(Math.abs(v), 1.3, u); }, MAT.STONE, style);
+      const at = (u) => V(dx * u, 0, JCZ + dz * u);
+      stubs.push({ dir: d, yaw, d: [dx, dz], mouth: at(JR - 0.2).setY(EYE + 0.05), deep: at(STUB - 1.4).setY(EYE), end: at(STUB) });
+    }
   }
   // the heart of the junction, one per act
   if (act === 1) L.edit(-1.3, 1.3, JCZ - 1.3, JCZ + 1.3, (x, z) => Math.hypot(x, z - JCZ) < 1.15, { floor: -0.45, mat: MAT.WATER });
@@ -219,7 +226,7 @@ function junction(act, seed, o) {
   const P = new Piece(L, A, seed);
   // the heart of the junction sits in a back corner, between the mouths, never across a line of sight
   const center = { x: 0, z: JCZ, r: 1.0 };
-  const side = r() < 0.5 ? -1 : 1, hx = side * 1.75, hz = JCZ - 1.6;
+  const side = r() < 0.5 ? -1 : 1, hx = side * 2.2, hz = JCZ + 0.15; // beside the stand's view, between the way in and a side mouth
   const heart = { x: hx, z: hz, r: 0.6 };
   if (act === 0) {
     // a pillar of old roots grown through the dome down into the floor, glowing at the knuckles
@@ -254,19 +261,13 @@ function junction(act, seed, o) {
     const hint = (o.hints || []).find((h) => h.dir === s.dir);
     P.lamp(s.deep.x, 1.1, s.deep.z, hint ? hint.color : A.lamp2, 2.4, hint ? 1.4 : 0.35);
     // light just inside each mouth so the opening reads from the stand, plus a stone arch proud of the wall
-    const inX = s.dir === 0 ? 0 : s.dir * (JR + 0.6), inZ = s.dir === 0 ? JCZ - JR - 0.6 : JCZ;
-    P.lamp(inX, 1.5, inZ, A.lamp, 2.6, 0.9);
-    P.op(s.mouth.x - 1.6, s.mouth.x + 1.6, s.mouth.z - 1.6, s.mouth.z + 1.6, (w) => {
-      const along = s.dir === 0, X = vx(s.mouth.x), Z = vx(s.mouth.z), top = vx(2.62);
-      for (let k = 0; k <= 30; k++) {
-        const a = Math.PI - (k / 30) * Math.PI, u = Math.round(Math.cos(a) * 35), v = Math.round(Math.sin(a) * (top - 44) + 44 * (Math.sin(a) > 0 ? 1 : 0));
-        for (let du = -2; du <= 2; du++) for (let dv = -2; dv <= 2; dv++) {
-          const px = along ? X + u + du : X, pz = along ? Z : Z + u + du;
-          const c = (k + Math.floor(dv / 2)) % 4 === 0 ? A.mortar : tone(A.brick, 0.5 + h3(k, du, dv, 3) * 0.2);
-          w.set(px - (along ? 0 : s.dir), v + dv, pz + (along ? 1 : 0), c);
-        }
-      }
-      for (const sgn of [-1, 1]) for (let y = 0; y < 44; y++) for (let d = -2; d <= 2; d++) { const px = along ? X + sgn * 35 + d : X - s.dir, pz = along ? Z + 1 : Z + sgn * 35 + d; w.set(px, y, pz, (y % 7) === 0 ? A.mortar : tone(A.brick, 0.45 + h3(y, d, sgn, 4) * 0.2)); }
+    const [ddx, ddz] = s.d, llx = -ddz, llz = ddx;
+    P.lamp(ddx * (JR + 0.7), 1.5, JCZ + ddz * (JR + 0.7), A.lamp, 2.6, 0.9);
+    P.op(s.mouth.x - 1.8, s.mouth.x + 1.8, s.mouth.z - 1.8, s.mouth.z + 1.8, (w) => {
+      const cx = s.mouth.x / S - ddx * 1.5, cz = s.mouth.z / S - ddz * 1.5, top = vx(2.62);
+      const put = (u, v, c) => { for (let t = 0; t < 2; t++) w.set(Math.round(cx + llx * u - ddx * t), v, Math.round(cz + llz * u - ddz * t), c); };
+      for (let k = 0; k <= 40; k++) { const a2 = Math.PI - (k / 40) * Math.PI, u = Math.cos(a2) * 35, v = Math.round(44 + Math.sin(a2) * (top - 44)); for (let dd = -2; dd <= 2; dd++) put(u + dd * Math.cos(a2), v + Math.round(dd * Math.sin(a2)), (k % 5 === 0) ? A.mortar : tone(A.brick, 0.5 + h3(k, dd, 3, 3) * 0.2)); }
+      for (const sgn of [-1, 1]) for (let y = 0; y < 44; y++) for (let dd = -2; dd <= 2; dd++) put(sgn * 35 + dd, y, (y % 7) === 0 ? A.mortar : tone(A.brick, 0.45 + h3(y, dd, sgn, 4) * 0.2));
     });
     if (hint) P.lights.push({ x: s.deep.x, y: 1.1, z: s.deep.z, c: hint.color, i: 1.6, r: 4 });
   }
