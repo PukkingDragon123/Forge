@@ -479,4 +479,14 @@ export const SFX = {
       return 2.0;
     },
   },
+  // ---------------------------------------------------------------- v4: names other scenes asked for
+  shield_bash: { vol: 0.95, verb: 0.15, fn: (s) => { thud(s, { f: 170, f2: 60, dur: 0.16, vol: 0.5 }); s.fm({ f: 520, ratio: 1.41, index: 2.5, dur: 0.25, vol: 0.12 }); s.noise({ dur: 0.06, vol: 0.25, filter: BP(1400, null, 1) }); return 0.3; } },
+  knife_throw: { vol: 0.85, verb: 0.1, fn: (s) => { whoosh(s, { dur: 0.14, f: 1800, f2: 5200, vol: 0.18, Q: 2 }); s.tone({ t: 0.04, type: 'triangle', f: 2400, f2: 1800, dur: 0.06, vol: 0.05 }); clink(s, { t: 0.16, f: 2600, dur: 0.12, vol: 0.06 }); return 0.3; } },
+  equip: { vol: 0.85, verb: 0.15, fn: (s) => { clink(s, { f: 1500, ratio: 2.1, dur: 0.2, vol: 0.1 }); whoosh(s, { t: 0.02, dur: 0.1, f: 900, f2: 2400, vol: 0.08 }); clink(s, { t: 0.1, f: 2200, ratio: 2.4, dur: 0.25, vol: 0.07 }); return 0.4; } },
+  pickup: { vol: 0.8, verb: 0.12, fn: (s) => { s.tone({ type: 'triangle', f: 660, f2: 990, sweep: 0.06, dur: 0.1, vol: 0.12 }); s.fm({ t: 0.06, f: 1320, ratio: 2, index: 0.8, dur: 0.25, vol: 0.06 }); return 0.3; } },
+  loot: { vol: 0.85, verb: 0.25, fn: (s) => { thud(s, { f: 200, f2: 110, dur: 0.06, vol: 0.18 }); chime(s, [988, 1319, 1568], { t: 0.04, gap: 0.05, vol: 0.07, dur: 0.6 }); s.noise({ t: 0.05, dur: 0.4, a: 0.1, vol: 0.03, filter: HP(6000) }); return 0.7; } },
+  pip_sniff: { vol: 0.75, verb: 0.08, fn: (s) => { for (let i = 0; i < 4; i++) s.noise({ t: i * 0.08 + r(0, 0.02), dur: 0.05, a: 0.015, vol: 0.1, filter: BP(r(2200, 3000), null, 2) }); return 0.35; } },
+  bat_flutter: { vol: 0.75, verb: 0.3, fn: (s) => { for (let i = 0; i < 9; i++) s.noise({ t: i * 0.05 + r(0, 0.015), dur: 0.03, vol: 0.09 * (1 - i / 12), filter: BP(r(700, 1100), null, 1.6) }); s.tone({ t: 0.1, type: 'sine', f: 4200, f2: 3600, dur: 0.05, vol: 0.02 }); return 0.5; } },
+  page: { vol: 0.8, verb: 0.1, fn: (s) => { s.noise({ dur: 0.2, a: 0.07, vol: 0.13, filter: BP(1000, 2600, 0.8) }); crackle(s, 4, { spread: 0.15, vol: 0.05 }); return 0.22; } },
+  quill: { vol: 0.7, verb: 0.08, fn: (s) => { for (let i = 0; i < 5; i++) s.noise({ t: i * 0.06 + r(0, 0.02), dur: r(0.03, 0.06), a: 0.01, vol: 0.06, filter: BP(r(3500, 5000), null, 3) }); return 0.35; } },
 };

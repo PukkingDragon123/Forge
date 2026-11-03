@@ -6,7 +6,7 @@ const DEFAULT = () => ({
   version: 1,
   settings: { master: 0.8, music: 0.6, sfx: 0.9, shake: 1, travelSpeed: 1, pixelScale: 0, hints: true },
   stats: { runs: 0, wins: 0, deaths: 0, bestRegion: 0, weaponsShattered: 0, masterworks: 0, monsters: 0, oresMined: 0 },
-  discovered: { recipes: [], materials: [], synergies: [], monsters: [], events: [] },
+  discovered: { recipes: [], materials: [], synergies: [], monsters: [], events: [], stews: [] },
   unlocks: { materials: [], events: [], story: [] },
   seen: { intro: false, tips: {} },
   winsBy: {},

@@ -92,8 +92,10 @@ export function drawBlade(ui, s) {
   ui.rect(bx, by, sw, 4, '#8e8a84');
   ui.rect(bx, by, sw, 1, '#c8c4bc');
   if (k > 0 && k < 1) ui.rect(bx + sw, by - 1, 1, 6, '#9affd8');
-  // segment ticks so the meter reads as "kills left"
+  // segment ticks, and how many more kills the blade has in it
   for (let i = 1; i < 5; i++) ui.rect(bx + Math.round((bw * i) / 5), by, 1, 4, '#140c10');
+  const left = s.killsLeft();
+  if (left !== null && left < 100) ui.text(left <= 0 ? '!' : '×' + left, bx + bw + 5, y, { font: 'small', color: left <= 1 ? '#ff8a7a' : '#c8c4bc', outline: '#140c10' });
   if (ui.hit('fp-stone', x, y - 3, bw + 18, 12, { cursor: false }).hover) {
     ui.tooltip({ title: w.name, body: `{@sword}${fmt(w.dmg)}  · Stone ${Math.round(k * 100)}%\nFull stone: it crumbles.` });
   }

@@ -27,7 +27,7 @@ export const CAMPMENU = {
     durgan: { x: 0.66, z: -0.86, h: 0, log: null },   // stands at the pot with the ladle
     clover: { x: 1.78, z: 0.05, h: 0.3, log: 'crate' },
   },
-  petBed: [0.98, 1.02], chest: [1.55, -3.05], mapCrate: [-2.35, 1.35], sacks: [[-2.85, -0.55], [-2.55, -1.45], [-3.2, -1.05]],
+  petBed: [0.98, 1.02], chest: [1.5, -2.3], mapCrate: [-2.35, 1.35], sacks: [[-2.85, -0.55], [-2.55, -1.45], [-3.2, -1.05]],
   crate: [2.8, -1.05], anvil: [2.75, 1.45], books: [-1.55, -2.05], bowls: [[-0.62, 0.7], [0.42, 0.82], [-0.75, -0.55]],
   crack: [[0.35, 2.05], [2.55, 2.75]],
   gate: [3.5, -4.1], fall: [-4.15, -5.5],
@@ -134,7 +134,7 @@ export function buildCampMenu(Stage, opts = {}) {
   // bedrolls in the niche, a pile of firewood, lanterns on the columns
   P.op(-7.6, -6, -1.3, 1.7, (w) => { PR.bedroll(w, vx(-7.2), 0, vx(-0.8), PR.CLOTH.salmon, 1); PR.bedroll(w, vx(-7.2), 0, vx(0.2), PR.CLOTH.teal, 2); PR.bedroll(w, vx(-7.2), 0, vx(1.2), PR.CLOTH.mustard, 3); });
   P.torch(-7.0, 1.5, -1.25, 0, 1, '#ffb060');
-  P.op(0.6, 2.4, -2.6, -1.8, (w) => { for (let k = 0; k < 9; k++) cylX(w, vx(0.9), vx(2.0), 3 + Math.floor(k / 3) * 6, vx(-2.3) + (k % 3) * 6, 3, (px, py, pz, d) => (d < 0.3 ? C('#d8a870') : tone(PR.WOOD, 0.4 + h3(px, py, pz, k) * 0.2))); });
+  P.op(-4.3, -2.9, -3.6, -2.6, (w) => { for (let k = 0; k < 9; k++) cylX(w, vx(-4.0), vx(-3.0), 3 + Math.floor(k / 3) * 6, vx(-3.3) + (k % 3) * 6, 3, (px, py, pz, d) => (d < 0.3 ? C('#d8a870') : tone(PR.WOOD, 0.4 + h3(px, py, pz, k) * 0.2))); });
   for (const [cx, cz] of cols) {
     const fz = cz + (cz < 0 ? 0.5 : -0.5), nz = cz < 0 ? 1 : -1;
     P.op(cx - 0.6, cx + 0.6, fz - 0.6, fz + 0.6, (w) => { PR.lantern(w, vx(cx), vx(2.15), vx(fz) + nz * 2, '#ffc070', 8); for (let y = vx(2.4); y < vx(2.75); y++) w.set(vx(cx), y, vx(fz), IRON[2]); });
@@ -175,7 +175,7 @@ export function buildCampMenu(Stage, opts = {}) {
   const campClear = [{ x: 0, z: 0, r: 2.4 }, { x: 0, z: 3.6, r: 2.0 }, { x: LY.crate[0], z: LY.crate[1], r: 0.9 }, { x: LY.chest[0], z: LY.chest[1], r: 1.0 }, { x: gx, z: gz, r: 1.4 }, { x: fx, z: fzz, r: 1.3 }, { x: LY.anvil[0], z: LY.anvil[1], r: 0.8 }];
   decorateCamp(P, A, r, campClear);
   // pool of mood: the fire is the key light for the crew, with moon and waterfall rims
-  const st = P.build(Stage, 'campmenu', 0, { stream: true, tile: 32, sync: [-2.3, 2.3, -2.0, 1.7], radius: 1e9, poolLights: 0, carryLight: 0, ambI: 0.7, budgetMs: 6, fadeIn: true });
+  const st = P.build(Stage, 'campmenu', 0, { stream: true, tile: 32, sync: [-2.3, 2.3, -2.0, 1.7], syncTop: 2.4, radius: 1e9, poolLights: 0, carryLight: 0, ambI: 0.7, budgetMs: 6, fadeIn: true });
   const hemi = st.lights.find((l) => l.isHemisphereLight);
   if (hemi) { hemi.color.set('#9a90d8'); hemi.groundColor.set('#6a3420'); hemi.intensity = 0.95; }
   const fire = new THREE.PointLight(0xffa040, 7.5, 9, 1.1); fire.position.set(0, 0.85, 0.1);

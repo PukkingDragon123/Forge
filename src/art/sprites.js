@@ -69,8 +69,11 @@ export function itemSprite(id, cell = 32, rot = 0) {
     g.imageSmoothingEnabled = false;
     g.drawImage(spr, Math.round((W - spr.width) / 2), Math.round((H - spr.height) / 2));
     if (occ.size !== w * h) {
+      // one union path, one fill: a fill per cell would keep only the last cell under destination-in
       g.globalCompositeOperation = 'destination-in';
-      for (const k of occ) { const [x, y] = k.split(',').map(Number); g.fillRect(x * cell, y * cell, cell, cell); }
+      g.beginPath();
+      for (const k of occ) { const [x, y] = k.split(',').map(Number); g.rect(x * cell, y * cell, cell, cell); }
+      g.fill();
       g.globalCompositeOperation = 'source-over';
     }
     return c;

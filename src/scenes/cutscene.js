@@ -274,13 +274,8 @@ export class Cine {
     if (this.camera.parent !== this.scene) this.scene.add(this.camera);
     let arms = null;
     try { arms = buildFPArms(who); this.camera.add(arms.group); this.actors.push({ obj: arms, frozen: false, arms: true }); } catch (e) { arms = null; }
-    // a warm hand-held glow so the dark tunnels read
-    const torch = new THREE.PointLight(0xffc890, 2.4, 7, 1.4);
-    torch.position.set(0.25, 0.1, -0.2);
-    this.camera.add(torch);
-    torch.userData.k = 2.4; torch.userData.fl = 0.12; torch.userData.sp = 7; torch.userData.seed = 3;
-    this.lights.push(torch);
-    this.arms = arms; this.torch = torch;
+    // (the first-person worlds carry their own light at the camera)
+    this.arms = arms;
     void where;
     return arms;
   }

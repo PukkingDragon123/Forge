@@ -544,25 +544,6 @@ export function ladder(o) {
   });
 }
 
-export function elevator(o) {
-  const grp = new THREE.Group();
-  grp.add(voxModel('elevator', (w) => {
-    box(w, -19, 1, -16, 20, 3, 17, (px, py, pz) => (py === 1 ? WOOD[1] : (px + 60) % 4 === 0 ? WOOD_PALE[0] : woodC(WOOD_PALE, Math.floor((px + 60) / 4), pz, 5, 0.48)));
-    for (const z of [-16, 15]) box(w, -20, 0, z, 21, 2, z + 2, (px, py, pz) => woodC(WOOD, 0, px, 4, 0.35));
-    for (const [x, z] of [[-19, -16], [18, -16], [-19, 14], [18, 14]]) box(w, x, 0, z, x + 3, 45, z + 3, (px, py, pz) => woodC(WOOD, px, py, 6, 0.4 + (py % 12 === 0 ? -0.12 : 0)));
-    for (const z of [-16, 14]) box(w, -20, 44, z, 22, 47, z + 3, (px, py, pz) => woodC(WOOD, 1, px, 8, 0.45));
-    box(w, -1, 45, -16, 2, 48, 17, (px, py, pz) => woodC(WOOD, 2, pz, 9, 0.42));
-    for (const z of [-16, 15]) box(w, -19, 16, z, 20, 17, z + 1, (px) => woodC(WOOD_PALE, 3, px, 2, 0.5));
-    box(w, 18, 16, -15, 19, 17, 15, WOOD_PALE[2]);
-    torus(w, 0.5, 49.5, 0.5, 3, 0.8, 'z', (px, py) => tone(IRON, 0.45 + ((px + py) & 1) * 0.12));
-    w.set(0, 49, 0, IRON[4]);
-    box(w, -3, 3, -12, 4, 9, -7, (px, py) => tone(IRON, 0.35 + (py === 8 ? 0.15 : 0)));
-    seg(w, 0.5, 9, -9.5, 2, 15, -9, 0.5, STEEL[3]);
-    w.set(2, 15, -9, glowC('#ff4a3a')); w.set(2, 16, -9, glowC('#ff8a7a'));
-  }));
-  grp.add(voxModel('elevropes', (w) => { for (const x of [-15, 15]) for (let y = 47; y < 47 + 350; y++) w.set(x, y, 0, (y & 1) ? C('#c8a870') : C('#8a6a40')); }, { shadow: false }));
-  return grp;
-}
 
 export function ropebridge(o) {
   const L = o.length || 8, sag = o.sag ?? 0.35;
@@ -603,47 +584,3 @@ export function signpost() {
   });
 }
 
-// ------------------------------------------------------------------ the travelling merchant's cart
-export function merchantcart(o, B) {
-  const grp = new THREE.Group();
-  grp.add(voxModel('mcart', (w) => {
-    const RED = ['#3a1418', '#5a1e22', '#8e3e2c', '#b05a3a', '#d07a4a'].map(C);
-    box(w, -27, 12, -15, 28, 14, 16, (px, py, pz) => ((pz + 40) % 5 === 0 ? RED[0] : woodC(RED, Math.floor((pz + 40) / 5), px, 11, 0.48)));
-    for (const z of [-15, 15]) box(w, -27, 14, z, 28, 23, z + 1, (px, py) => (py % 3 === 2 ? RED[0] : woodC(RED, Math.floor(py / 3), px, 12, 0.5)));
-    for (const x of [-27, 27]) box(w, x, 14, -15, x + 1, 23, 16, (px, py, pz) => (py % 3 === 2 ? RED[0] : woodC(RED, Math.floor(py / 3), pz, 13, 0.45)));
-    for (const z of [-15, 15]) box(w, -28, 23, z, 29, 24, z + 1, WOOD[1]);
-    for (const x of [-16, 16]) for (const z of [-17, 16]) {
-      torus(w, x + 0.5, 8.5, z, 7.2, 0.9, 'z', (px, py) => tone(WOOD, 0.3 + ((px + py) & 1) * 0.1));
-      for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; seg(w, x + 0.5, 8.5, z + 0.5, x + 0.5 + Math.cos(a) * 6.5, 8.5 + Math.sin(a) * 6.5, z + 0.5, 0.5, WOOD_PALE[2]); }
-      box(w, x - 1, 7, z, x + 2, 10, z + 1, IRON[2]);
-    }
-    box(w, -17, 7, -2, 18, 9, 2, WOOD[1]);
-    box(w, -1, 8, -17, 2, 9, 18, IRON[2]);
-    for (const [x, z] of [[-26, -14], [26, -14], [-26, 14], [26, 14]]) box(w, x, 14, z, x + 1, 50, z + 1, (px, py) => woodC(WOOD, 0, py, x, 0.4));
-    // striped canopy with a scalloped valance
-    for (let x = -30; x <= 30; x++) for (let z = -17; z <= 17; z++) {
-      const y = Math.round(50 + Math.cos((z / 17) * (Math.PI / 2)) * 5.5);
-      const stripe = Math.floor((x + 60) / 5) % 2;
-      w.set(x, y, z, stripe ? tone(CLOTH.salmon, 0.6 + (z === 0 ? 0.1 : 0)) : tone(CLOTH.cream, 0.7));
-    }
-    for (const z of [-18, 18]) for (let x = -30; x <= 30; x++) { const k = (x + 60) % 5; const stripe = Math.floor((x + 60) / 5) % 2; for (let d = 0; d < (k === 2 ? 3 : k === 1 || k === 3 ? 2 : 1); d++) w.set(x, 50 - d, z, stripe ? CLOTH.salmon[1] : CLOTH.cream[2]); }
-    // goods: ore sacks, a crate of glowing gems, hanging copper pots
-    for (const [x, z, c] of [[-15, -4, '#c8743a'], [-4, -6, '#9aa3b2']]) {
-      ell(w, x, 18, z, 4.5, 4.5, 3.8, (px, py, pz, d) => (py < 14 ? undefined : tone(CLOTH.cream, 0.6 - d * 0.3 + ((px + py) % 5 === 0 ? -0.1 : 0))));
-      for (let i = 0; i < 3; i++) rock(w, x + (i - 1) * 1.6, 22.5, z + (i % 2), 1.2, 1, 1.1, palOf(c), 160 + i, { cuts: 3 });
-    }
-    box(w, 8, 14, -7, 20, 21, 3, (px, py, pz) => (py === 20 && px > 8 && px < 19 && pz > -7 && pz < 2 ? (h3(px, pz, 1, 2) > 0.45 ? glowC(h3(px, pz, 2, 2) > 0.5 ? '#b06bff' : '#6ad8ff') : CHAR[1]) : woodC(WOOD_PALE, py >> 1, px + pz, 9, 0.48)));
-    for (const [x, c] of [[-20, '#c8743a'], [-10, '#9aa0aa'], [0, '#e0c060'], [10, '#5a8a3a'], [20, '#9a3a5a']]) {
-      for (let y = 42; y < 47; y++) w.set(x, y, 15, C('#8a6a40'));
-      vessel(w, x + 0.5, 15.5, 38, 42, (t) => 1.2 + Math.sin(t * Math.PI) * 1.3, (px, py) => tone(palOf(c), 0.5 + (px < x ? 0.12 : 0)));
-    }
-    // painted sign on the canopy front
-    box(w, -13, 56, 17, 14, 62, 18, (px, py) => (py === 56 || py === 61 || px === -13 || px === 13 ? WOOD[1] : C('#c05a4e')));
-    text(w, -9, 60, 18, 'WARES', C('#fff0c8'));
-  }));
-  const lan = B.lantern({ hang: 0.15, intensity: 2.2, distance: 5 });
-  lan.position.set(1.0, 1.85, 0.62);
-  grp.add(lan);
-  grp.userData.lights = lan.userData.lights;
-  return grp;
-}

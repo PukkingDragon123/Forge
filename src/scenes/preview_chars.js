@@ -6,6 +6,7 @@ import { buildCharacter } from '../models/characters.js';
 import { buildWeaponMesh, crackWeapon } from '../models/weapons3d.js';
 import { toon } from '../gfx/materials.js';
 import { buildFPArms } from '../models/fp_arms.js';
+import { buildPet } from '../models/pet.js';
 
 export class CharPreview extends Scene {
   enter() {
@@ -56,6 +57,13 @@ export class CharPreview extends Scene {
       this.chars = ex;
       const h = { bran: 1.53, elio: 1.21, durgan: 0.9, clover: 1.12 }[id];
       this.rig.cut([0, h + 0.03, 4.4], [0, h - 0.02, 0], 34);
+    }
+    if (q.get('pet')) { // pet sheet: ?pet=idle,walk,sleep… one Pip per anim
+      this.chars.forEach((c) => c.setVisible(false));
+      const list = q.get('pet').split(',');
+      this.pets = list.map((a, i) => { const p = buildPet(); p.group.position.set((i - (list.length - 1) / 2) * 0.55, 0, 0); p.group.rotation.y = +(q.get('prot') ?? 0.7); p.play(a); scene.add(p.group); return p; });
+      this.rig.cut([0, 0.42, 1.2 + list.length * 0.3], [0, 0.16, 0], 34);
+      this.chars = [];
     }
     if (q.get('hold')) {
       const bps = ['sword', 'staff', 'axe', 'dagger'];
@@ -113,7 +121,7 @@ export class CharPreview extends Scene {
     else if (q.get('weapons') && q.get('wcam')) { const x = -2.6 + +q.get('wcam') * 0.65; this.rig.cut([x, 0.75, 1.5], [x, 0.72, 0], 34); }
     else if (q.get('weapons')) this.rig.cut([0, 0.75, 3.4], [0, 0.72, 0], 40);
     else if (q.get('poses')) { const n = this.posed.length, sp = +(q.get('sp') || 0.95); this.rig.cut([0, 0.62, 1.0 + n * sp * 1.0], [0, 0.42, 0], 34); }
-    else if (cam === 'wide') this.rig.cut([0, 0.85, 4.8], [0, 0.55, 0], 34);
+    else if (cam === 'wide' && !this.pets) this.rig.cut([0, 0.85, 4.8], [0, 0.55, 0], 34);
     this.ff = +(q.get('t') || 0);
   }
   /** First-person arms bench: ?fp=bran&hold=weapon&anim=swing&t=0.2&freeze=1 */
@@ -154,6 +162,7 @@ export class CharPreview extends Scene {
       this.fire.tick(this.time);
       return;
     }
+    if (this.pets) { if (!this.q.get('freeze')) this.pets.forEach((p) => p.update(dt)); this.rig.update(dt); return; }
     if (this.ff > 0) { const n = Math.ceil(this.ff / 0.016); for (let i = 0; i < n; i++) this.chars.forEach((c) => c.update(0.016)); this.ff = 0; }
     this.fire.tick(this.time);
     if (this.q.get('walk')) this.chars.forEach((c, i) => { c.group.position.x += dt * 0.8; if (c.group.position.x > 3) c.group.position.x -= 5.6; });

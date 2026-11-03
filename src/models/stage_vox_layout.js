@@ -216,12 +216,12 @@ export function wallColor(A, x, y, z, along, st, yFloor = 0) {
       const hb = h3(b.id, b.row, 3, SEED);
       const topRow = ((y % 7) + 7) % 7 === 6;
       c = tone(A.brick, 0.28 + hb * 0.42 + (topRow ? 0.1 : 0) + (h3(x, y, z, 6) > 0.95 ? 0.08 : 0) - (yr < 10 ? 0.1 : 0));
-      if (h3(b.id, b.row, 21, SEED) > 0.9 && h3(x, y, z, 22) > 0.55) c = A.mortar; // chipped
+      if (h3(b.id, b.row, 21, SEED) > 0.95 && h3(x, y, z, 22) > 0.7) c = mixC(c, A.mortar, 0.6); // chipped
       if (st === 2 && b.row % 9 === 5) c = mixC(c, C(A.glow), 0.18); // a jade band in the garden marble
     }
   }
   // damp streaks, moss climbing from the floor and hanging from the top
-  if (noise2(along * 0.4, 7.7) > 0.74 && noise2(along * 0.4, y * 0.02) > 0.45) c = mixC(c, A.rock[0], 0.35);
+  if (noise2(along * 0.4, 7.7) > 0.76 && noise2(along * 0.4, y * 0.02) > 0.5) c = mixC(c, A.rock[0], 0.18);
   const mossy = noise2(along * 0.07 + 11, y * 0.09) > (yr < 18 ? 0.5 : 0.7);
   if (mossy && (yr < 22 || noise2(along * 0.05, y * 0.05 + 4) > 0.62)) c = tone(A.moss, 0.2 + noise2(along * 0.3, y * 0.3) * 0.5 + (h3(x, y, z, 31) > 0.7 ? 0.18 : 0));
   return c;
@@ -565,15 +565,15 @@ export class Piece {
     const tiles = new Map();
     const timing = st.timing = { paint: 0, shell: 0, mesh: 0, chunks: 0 };
     const glowK = opts.glowK ?? 1.6;
-    const bakeTile = (tx, tz) => {
+    const bakeTile = (tx, tz, yTop = BIG) => {
       const b = { x0: tx * TS, x1: tx * TS + TS, z0: tz * TS, z1: tz * TS + TS };
-      const clip = { x0: b.x0 - 2, x1: b.x1 + 2, y0: -BIG, y1: BIG, z0: b.z0 - 2, z1: b.z1 + 2 };
+      const clip = { x0: b.x0 - 2, x1: b.x1 + 2, y0: -BIG, y1: yTop === BIG ? BIG : yTop + 2, z0: b.z0 - 2, z1: b.z1 + 2 };
       const w = new VWorld(clip);
       const tp = performance.now();
       for (const op of this.ops) if (op.x1 >= clip.x0 && op.x0 <= clip.x1 && op.z1 >= clip.z0 && op.z0 <= clip.z1) { const t1 = performance.now(); op.fn(w); if (op === this.ops[0]) timing.shell += performance.now() - t1; }
       const tm = performance.now();
       timing.paint += tm - tp;
-      const res = meshWorld(w, { light: rig, bounds: { x0: b.x0, x1: b.x1, y0: -BIG, y1: BIG, z0: b.z0, z1: b.z1 }, skip: new Set(), bottomAbove: -1e9, seen });
+      const res = meshWorld(w, { light: rig, bounds: { x0: b.x0, x1: b.x1, y0: -BIG, y1: yTop, z0: b.z0, z1: b.z1 }, skip: new Set(), bottomAbove: -1e9, seen });
       timing.mesh += performance.now() - tm; timing.chunks += w.chunks.size;
       const g = worldMeshes(res, glowK);
       for (const m of g.children) { m.matrixAutoUpdate = false; m.updateMatrix(); }
@@ -594,9 +594,13 @@ export class Piece {
     // tiles that arrive after the first frame fade up out of the dark instead of popping in
     const fading = [];
     let firstFrameDone = false;
-    const ensure = (t) => {
-      const k = t.tx + ',' + t.tz; if (tiles.has(k)) return;
-      const tile = bakeTile(t.tx, t.tz);
+    const ensure = (t, low = false) => {
+      const k = t.tx + ',' + t.tz, had = tiles.get(k);
+      if (had && !had.partial) return;
+      if (had && low) return;
+      const tile = bakeTile(t.tx, t.tz, low ? Math.round(opts.syncTop / S) : BIG);
+      tile.partial = low;
+      if (had) { st.env.remove(had.g); had.g.traverse((o) => o.geometry && o.geometry.dispose()); tiles.set(k, tile); return; } // the rest of a first-frame tile: swap in place
       tiles.set(k, tile);
       if (opts.fadeIn && firstFrameDone) for (const m of tile.g.children) { const orig = m.material, fm = orig.clone(); fm.color = orig.color.clone().multiplyScalar(0); m.material = fm; fading.push({ m, orig, fm, t: 0 }); }
     };
@@ -612,20 +616,21 @@ export class Piece {
     const sync = opts.sync;
     for (const t of all) {
       const inSync = sync ? t.cx + TS * S / 2 > sync[0] && t.cx - TS * S / 2 < sync[1] && t.cz + TS * S / 2 > sync[2] && t.cz - TS * S / 2 < sync[3] : !opts.stream;
-      if (inSync) ensure(t);
+      if (inSync) ensure(t, !!opts.syncTop);
     }
     // the rest streams in, nearest first, within a frame budget; far tiles of long pieces are freed
     const budget = opts.budgetMs ?? 7;
     const focus = new THREE.Vector3();
     st.stream = {
       want() {},
-      pending() { return all.some((t) => !tiles.has(t.tx + ',' + t.tz) && Math.hypot(t.cx - focus.x, t.cz - focus.z) < R); },
+      pending() { return all.some((t) => { const h = tiles.get(t.tx + ',' + t.tz); return !h || h.partial; }); },
       step() {
         const cam = st._cam;
         if (cam) focus.copy(cam.position); else if (st.focusPos) focus.copy(st.focusPos);
         const Rr = cam || st.focusPos ? R : 1e9; // nobody to stream around: build it all, nearest first
         const t0 = performance.now();
-        const want = all.filter((t) => !tiles.has(t.tx + ',' + t.tz) && Math.hypot(t.cx - focus.x, t.cz - focus.z) < Rr).sort((a, b) => Math.hypot(a.cx - focus.x, a.cz - focus.z) - Math.hypot(b.cx - focus.x, b.cz - focus.z));
+        const need = (t) => { const h = tiles.get(t.tx + ',' + t.tz); return !h || h.partial; };
+        const want = all.filter((t) => need(t) && Math.hypot(t.cx - focus.x, t.cz - focus.z) < Rr).sort((a, b) => Math.hypot(a.cx - focus.x, a.cz - focus.z) - Math.hypot(b.cx - focus.x, b.cz - focus.z));
         for (const t of want) { ensure(t); if (performance.now() - t0 > budget) break; }
         if (Rr < 1e8) for (const [k, v] of tiles) {
           const [tx, tz] = k.split(',').map(Number), cx = (tx * TS + TS / 2) * S, cz = (tz * TS + TS / 2) * S;

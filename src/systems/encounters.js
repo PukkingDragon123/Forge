@@ -39,12 +39,15 @@ export function monsterFor(run, node, tier = node && node.type === 'elite' ? 'el
 
 /** An event id for a node: one that fits the act and hasn't happened this run. */
 export function eventFor(run, node) {
+  if (node && node.event) return node.event; // decided once (scouting shows the same event you'll find)
   const seen = run.flags.events || (run.flags.events = []);
   const fits = (e) => (e.acts || e.regions || []).includes(run.act);
   let pool = EVENTS.filter((e) => fits(e) && !seen.includes(e.id));
   if (!pool.length) pool = EVENTS.filter((e) => !seen.includes(e.id));
   if (!pool.length) pool = EVENTS;
-  return rngFor(run, node, 'ev').pick(pool).id;
+  const id = rngFor(run, node, 'ev').pick(pool).id;
+  if (node) node.event = id;
+  return id;
 }
 
 /**

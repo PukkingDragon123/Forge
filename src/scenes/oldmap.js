@@ -12,6 +12,8 @@ import { hash2, fbm2, clamp, ease, mixHex } from '../core/math.js';
 import { ACTS, NODE_TYPES } from '../data/regions.js';
 import { CHARACTERS } from '../data/characters.js';
 import { tag } from '../ui/frames.js';
+import { eventFor } from '../systems/encounters.js';
+import { EVENTS } from '../data/events.js';
 
 const W = 600, STEP = 58, TOP = 118, BOTTOM = 92, MX = 92;
 const INK = '#2a1608', INK2 = '#4a2a14', RED = '#8a2410', FAINT = '#7a5634';
@@ -365,7 +367,7 @@ export class OldMapScene extends Scene {
   draw(ui) {
     const ctx = ui.ctx, inp = this.game.input;
     const k = ease.outCubic(clamp(this.open, 0, 1)) * (1 - clamp(this.closing, 0, 1));
-    ui.block(3);
+    // (the game already blocks the scene below before drawing an overlay)
     ui.rect(0, 0, ui.w, ui.h, '#07060b', 0.62 * k);
     const sx = this.sheetX(ui), sy = this.sheetY(ui);
     // tapping outside the sheet folds it (registered first, so everything else sits on top)
@@ -390,8 +392,6 @@ export class OldMapScene extends Scene {
     if (this.map) this.drawMap(ui, sx, sy, k);
     ctx.globalAlpha = 1;
     this.drawChrome(ui, sx, sy, k);
-    ui.unblock();
-    ui.block(2);
   }
 
   drawMap(ui, sx, sy, k) {
@@ -489,7 +489,13 @@ export class OldMapScene extends Scene {
       const { n } = hover[hover.length - 1];
       const nt = NODE_TYPES[n.type] || NODE_TYPES.event;
       const f = n.type === 'boss' && run && run.friendForAct ? run.friendForAct(this.actIdx) : null;
-      ui.tooltip({ title: nt.name, body: f && CHARACTERS[f] ? `${CHARACTERS[f].name} is held here.` : nt.short, color: nt.color, w: 140 });
+      // Clover scouted this act: the ? rooms tell what they hold
+      let title = nt.name, body = f && CHARACTERS[f] ? `${CHARACTERS[f].name} is held here.` : nt.short;
+      if (n.type === 'event' && run && run.flags && run.flags.scout === this.actIdx && !map.visited.includes(n.id)) {
+        const ev = EVENTS.find((e) => e.id === eventFor(run, n));
+        if (ev) { title = ev.title; body = 'Clover scouted it.'; }
+      }
+      ui.tooltip({ title, body, color: nt.color, w: 140 });
     }
     // touch: a "go" tag beside the room you tapped
     if (this.sel && !this.chosen && this.p.pick) {

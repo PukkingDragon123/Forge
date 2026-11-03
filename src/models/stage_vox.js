@@ -644,7 +644,6 @@ function buildRoom(st, B, ri, opts) {
     for (const x of [-2.6, 2.4]) { B.op(x - 0.2, x + 0.2, (w) => PR.lampPost(w, vx(x), 0, vx(-1.2), 40, '#ffc070')); B.lamp(x + 0.2, 1.6, -1.2, '#ffc070', 3.4, 1.2); }
     for (let k = 0; k < 6; k++) clutter(B, (r() > 0.5 ? 1 : -1) * (3.2 + r() * 2.2), -2.4 + r() * 1.4, r, ['crate', 'barrel', 'sack']);
     B.op(-1.2, 1.2, (w) => PR.rug(w, vx(-0.2), 1, vx(0.3), 40, 22, PR.CLOTH.teal, 4));
-    if (opts.npc !== false) { try { A.npc = st.prop('mole', {}, -0.2, 0, -0.5, 0.25); } catch (e) { /* optional */ } }
     st.addShaft(-0.2, 4.7, -2.4, 1.4, 4.8, '#ffe0b0', 0.1, 0.35);
   } else if (room === 'treasure') {
     for (let i = 0; i < 3; i++) A['chest' + i] = V(-1.5 + i * 1.5, 0, -0.6);
@@ -706,12 +705,11 @@ function buildWall(st, B, ri) {
 
 // ---------------------------------------------------------------------------- corridor (streamed)
 function buildCorridor(st, B, ri, opts) {
-  const R = B.R, L = opts.length || 34, tun = opts.tunnel || 'tunnel', r = rngOf(90 + ri + tun.length);
+  const R = B.R, L = opts.length || 34, tun = opts.tunnel === 'elevator' ? 'stairs' : opts.tunnel || 'tunnel', r = rngOf(90 + ri + tun.length);
   const crawl = tun === 'crawl';
   const wallZ = crawl ? -1.7 : -2.3;
   let pathY = () => 0, gap = null, shaft = null, stairs = null;
   if (/bridge$/.test(tun)) { gap = [Math.round(L * 0.42), Math.round(L * 0.42) + 6]; pathY = (x) => (x > gap[0] && x < gap[1] ? -0.22 * Math.sin((Math.PI * (x - gap[0])) / (gap[1] - gap[0])) : 0); }
-  else if (tun === 'elevator') { shaft = [Math.round(L * 0.45), Math.round(L * 0.45) + 2.6]; const drop = -3.4; pathY = (x) => (x < shaft[0] ? 0 : x > shaft[1] ? drop : drop * smoothstep(shaft[0], shaft[1], x)); }
   else if (tun === 'stairs') { stairs = [Math.round(L * 0.45), Math.round(L * 0.45) + 5]; const drop = -1.6; pathY = (x) => (x < stairs[0] ? 0 : x > stairs[1] ? drop : drop * ((x - stairs[0]) / (stairs[1] - stairs[0]))); }
   else if (tun === 'flooded') pathY = () => -0.34;
   const X0 = -7, X1 = L + 7;
@@ -806,26 +804,6 @@ function buildCorridor(st, B, ri, opts) {
     st.group.add(fxify(m, 8));
     st.updaters.push((dt, t) => { tex.offset.x = t * 0.03; tex.offset.y = Math.sin(t * 0.4) * 0.05; });
     st.emitters.push((dt) => { if (rnd.chance(dt * 4)) st.P.alpha.emit({ pos: [st.focus.x + rnd.float(-5, 5), -0.32, rnd.float(-1.5, 1.5)], vel: [0, 0.3, 0], life: [0.4, 0.8], size: 1, color: '#d8ffff', alpha: 0.8 }); });
-  }
-  // elevator: a moving voxel platform with ropes
-  if (shaft) {
-    const P2 = new Plan(R, B.seed + 7);
-    const w2 = vx(shaft[1] - shaft[0] + 0.6);
-    P2.op(-3, 3, (w) => {
-      box(w, -(w2 >> 1), -2, vx(-0.6), w2 >> 1, 0, vx(0.6), (px, py, pz) => ramp(PR.WOOD_PALE, 0.4 + h3(px >> 2, py, pz, 2) * 0.3 + ((px + 40) % 5 === 0 ? -0.25 : 0), px, pz));
-      for (const sx of [-(w2 >> 1), (w2 >> 1) - 1]) { box(w, sx, 0, vx(-0.6), sx + 1, vx(1.1), vx(-0.55), PR.IRON[2]); for (let y = vx(1.1); y < vx(9); y++) w.set(sx, y, 0, y % 2 ? C('#c8a870') : C('#8a6a40')); }
-      box(w, -(w2 >> 1), vx(1.05), vx(-0.6), w2 >> 1, vx(1.1), vx(-0.55), PR.IRON[3]);
-    });
-    const pg = new THREE.Group();
-    const tmp = new Stage('corridor', ri, R);
-    bake(tmp, P2, 'elev|' + ri);
-    pg.add(tmp.env);
-    pg.position.x = (shaft[0] + shaft[1]) / 2;
-    st.group.add(pg);
-    st.elevator = pg;
-    st.updaters.push(() => { const k = clamp((st.focus.x - shaft[0]) / (shaft[1] - shaft[0])); pg.position.y = pathY(shaft[0] + k * (shaft[1] - shaft[0])); });
-    st.anchors.elevatorTop = V(shaft[0], pathY(shaft[0]), 0);
-    st.anchors.elevatorBottom = V(shaft[1], pathY(shaft[1]), 0);
   }
   // streaming bake: 6 m segments built around the walker, one per frame
   const SEG = 6, segs = new Map();
@@ -982,9 +960,9 @@ function buildCrossroads(st, B, ri, opts) {
   for (const sd of [-1, 1]) { boulders(B, sd * 7.8, 0, -1.4, 1.9, 3.8, 3.6, { seed: 74 + sd, n: 8 }); boulders(B, sd * 5.4, 0, 3.0, 1.2, 1.4, 1.0, { seed: 76 + sd, n: 4, dark: true }); }
   st.anchors.mouths = [];
   mouths.forEach((m, i) => {
-    const c = choices[i], tun = c.tunnel, type = c.type, crawl = tun === 'crawl';
+    const c = choices[i], tun = c.tunnel === 'elevator' ? 'stairs' : c.tunnel, type = c.type, crawl = tun === 'crawl';
     const hw = (crawl ? m.w * 0.75 : m.w) / 2, hh = crawl ? m.h * 0.6 : m.h;
-    const timber = ['tunnel', 'minecart', 'elevator', 'stairs', 'crawl'].includes(tun);
+    const timber = ['tunnel', 'minecart', 'stairs', 'crawl'].includes(tun);
     // the tunnel itself: rock tube receding into the dark
     B.op(m.x - hw - 0.6, m.x + hw + 0.6, (w) => {
       const X0 = vx(m.x - hw) - 2, X1 = vx(m.x + hw) + 2, ZB = vx(wallZ - depth), ZF = vx(wallZ) + 1;
@@ -1002,7 +980,6 @@ function buildCrossroads(st, B, ri, opts) {
       if (tun === 'minecart') for (let z = ZB; z < vx(1.5); z++) { for (const rz of [vx(m.x) - 4, vx(m.x) + 4]) w.set(rz, 1, z, PR.IRON[4]); if ((z + 400) % 6 < 3) box(w, vx(m.x) - 6, 0, z, vx(m.x) + 7, 1, z + 1, PR.WOOD[1]); }
       if (tun === 'stairs') for (let k = 0; k < 9; k++) box(w, vx(m.x - hw) + 2, -k * 3, ZF - 6 - k * 6, vx(m.x + hw) - 2, -k * 3 + 1, ZF - k * 6, ramp(R.stone, 0.4 - k * 0.04, k, 0));
       if (tun === 'flooded') box(w, vx(m.x - hw) - 6, 0, vx(wallZ - 3), vx(m.x + hw) + 6, 1, vx(wallZ + 1.2), (px, py, pz) => ((NOAO | (h3(px, py, pz, 4) > 0.9 ? C('#bff4ff') : C(R.drip || '#3ab0c0'))) >>> 0));
-      if (tun === 'elevator') { for (let y = vx(hh) - 6; y > 0; y--) { w.set(vx(m.x) - 8, y, vx(wallZ) - 10, C('#c8a870')); w.set(vx(m.x) + 8, y, vx(wallZ) - 10, C('#c8a870')); } box(w, vx(m.x) - 12, 0, vx(wallZ) - 16, vx(m.x) + 12, 2, vx(wallZ) - 4, PR.WOOD_PALE[2]); for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; w.set(vx(m.x) + Math.round(Math.cos(a) * 4), vx(hh) + 4 + Math.round(Math.sin(a) * 4), vx(wallZ) + 2, PR.IRON[3]); } }
       if (/bridge$/.test(tun)) {
         // a crevasse in front of the mouth and its bridge
         for (let x = vx(m.x - hw) - 14; x < vx(m.x + hw) + 14; x++) for (let z = vx(wallZ + 0.5); z < vx(wallZ + 1.3); z++) for (let y = -60; y < 1; y++) w.set(x, y, z, 0);
@@ -1025,7 +1002,6 @@ function buildCrossroads(st, B, ri, opts) {
       const tz = vx(wallZ) + 6;
       if (type === 'monster' || type === 'boss' || type === 'elite') PR.bones(w, vx(m.x) - 6, 0, tz, i, type !== 'monster');
       if (type === 'elite' || type === 'boss') for (let k = 0; k < 3; k++) for (let q = 0; q < 12; q++) w.set(vx(m.x + hw) + 3 + k * 2 + (q >> 2), vx(hh * 0.6) - q, vx(wallZ) + 3, C('#140a10'));
-      if (type === 'merchant') PR.sign(w, vx(m.x + hw) + 8, vx(hh * 0.62), vx(wallZ) + 3, '$', { hang: 4, paint: '#c08c36', ink: '#3a2a10' });
       if (type === 'treasure') PR.goldPile(w, vx(m.x) + 4, 0, tz + 2, 6, i);
       if (type === 'mining') { for (let k = 0; k < 10; k++) w.set(vx(m.x - hw) + Math.floor(h3(k, i, 1, 2) * vx(hw * 2)), Math.floor(h3(k, i, 2, 2) * vx(hh)), vx(wallZ) + 2, glowC(k % 2 ? '#9ae8ff' : '#ffffff')); PR.toolRack(w, vx(m.x - hw) - 12, 0, vx(wallZ) + 3); }
       if (type === 'event') for (let k = 0; k < 6; k++) w.set(vx(m.x - hw) - 4, vx(0.6) + k * 4, vx(wallZ) + 3, glowC('#a08aff'));

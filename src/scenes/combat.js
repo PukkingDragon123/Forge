@@ -17,6 +17,7 @@ import * as Sim from '../systems/combat.js';
 import * as Petrify from '../systems/petrify.js';
 import * as Forge from '../systems/forge.js';
 import { makeItem } from '../systems/items.js';
+import { Run } from '../systems/run.js';
 import * as Mon from '../models/monsters.js';
 import * as FPW from '../models/fp_world.js';
 import * as Arms from '../models/fp_arms.js';
@@ -105,6 +106,8 @@ export class CombatScene extends Scene {
   enter(p = {}) {
     const game = this.game;
     this.p = p;
+    // dev entry (?scene=combat&monster=adder) without a run: start a throwaway one
+    if (!game.run) { try { game.run = new Run(p.char || 'bran', p.seed || 'dev'); } catch (e) { /* no run system */ } }
     const run = (this.run = game.run);
     if (!run) { game.go('title', {}, { transition: 'none' }); return; }
     this.act = actOf(run);
@@ -721,6 +724,7 @@ export class CombatScene extends Scene {
       case 'pheal': { ui.float(`+${e.amount}`, 34, 22, { color: COLORS.heal, vy: -14, life: 0.8 }); return; }
       case 'mheal': { const p = this.screen(this.hitWorld()); ui.float(`+${fmt(e.amount)}`, p.x, p.y - 20, { color: COLORS.heal, vy: -16 }); this.sfx('heal', { vol: 0.5 }); return; }
       case 'status': {
+        if (e.st === 'stone') { this.stoneHit(e); return; }
         if (e.st === 'cracked') this.sfx('crack');
         this.fx2.edge(e.st === 'poison' ? '#5ab02a' : e.st === 'burn' ? '#ff6a1a' : '#7a6aa0', 0.35, 0.6);
         return;
@@ -731,6 +735,23 @@ export class CombatScene extends Scene {
       case 'defeat': this.phase = 'defeat'; this.tele = null; this.co.start(this.defeatSeq.bind(this)); return;
       default: return;
     }
+  }
+
+  /** A gaze or bite of stone: it creeps up your blade mid-fight. */
+  stoneHit(e) {
+    const v = clamp(e.stone ?? ((this.weapon && this.weapon.stone) || 0), 0, 1);
+    if (this.blade) {
+      const from = this.stoneShown;
+      this.tw.value(from, v, 0.6, (x) => { this.stoneShown = x; this.blade && this.blade.set(x); }, { ease: 'outCubic' });
+      const f = this.blade.frontWorld();
+      this.sparks.emit({ pos: f.toArray(), radial: [0.4, 1.4], count: 18, life: [0.3, 0.7], size: 1, color: ['#c8fff0', '#ffffff'], glow: 3, drag: 2 });
+    }
+    this.fx2.edge('#8e9a96', 0.55, 0.8);
+    this.fx2.wash('#c8fff0', 0.12, 0.4);
+    this.sfx('stone_crack', { vol: 0.7, pitch: 0.9 });
+    this.sfx('petrify', { vol: 0.4 });
+    const p = this.screen(this.contact());
+    this.game.ui.float('stone', p.x + 60, p.y - 30, { color: '#c8fff0', vy: -14, life: 0.9 });
   }
 
   endTele(res) { if (this.tele) { this.tele.res = res; this.tele.rt = 0; } }
@@ -989,6 +1010,14 @@ export class CombatScene extends Scene {
     if (this.run.weapon === w) this.run.weapon.stone = s1;
     yield 0.35;
     T.x = 0; T.y = 0; T.z = 0; T.rz = 0; T.rx = 0;
+  }
+
+  /** Kills before the blade is all stone (against normal foes), for the HUD; null when unknown. */
+  killsLeft() {
+    if (!this.weapon || this.usingPick) return null;
+    try { if (Petrify.killsLeft && this.run.weapon === this.weapon) { const n = Petrify.killsLeft(this.run); return isFinite(n) ? n : null; } } catch (e) { /* fall through */ }
+    const c = this.stoneCost();
+    return c > 0 ? Math.max(0, Math.ceil((1 - (this.weapon.stone || 0)) / c - 1e-6)) : null;
   }
 
   stoneCost() {

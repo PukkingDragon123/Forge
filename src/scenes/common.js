@@ -47,13 +47,11 @@ export function bark(charId, kind, rng = rnd) {
 export function hud(ui, game, opts = {}) {
   const run = game.run;
   if (!run) return {};
-  // just a heart, a purse and a whisper of where you are: no panels, no portraits
+  // just a heart and a whisper of where you are: no panels, no portraits
   const low = run.hp < run.maxHp * 0.3;
   ui.icon('heart', 10, 10, low && Math.sin(performance.now() / 140) > 0.4 ? { alpha: 0.6 } : {});
   ui.text(`${run.hp}/${run.maxHp}`, 26, 11, { color: low ? '#ff7a6a' : '#ffd8c8', outline: '#140c10' });
-  if (ui.hit('hud-hp', 8, 8, 64, 16, { cursor: false, sound: false }).hover) ui.tooltip({ title: 'Health', body: 'Lose it all and the curse drags you back to the campfire.' });
-  ui.icon('coin', 82, 10);
-  ui.text(String(run.coins), 98, 11, { color: COLORS.gold, outline: '#140c10' });
+  if (ui.hit('hud-hp', 8, 8, 64, 16, { cursor: false, sound: false }).hover) ui.tooltip({ title: 'Health', body: 'At zero, you turn to stone.' });
   ui.text(REGIONS[run.region].name, ui.w - (ui.touch ? 38 : 10), 11, { align: 'right', color: '#e8d8c0', outline: '#140c10' });
   let bagClicked = false;
   if (opts.bag !== false) {
