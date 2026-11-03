@@ -53,7 +53,7 @@ while ((Date.now() - t0) / 1000 < +secs) {
   if (st.err) log.push(`${el}s driver: ${st.tag} ${st.err}`);
   const key = st.tag.split(':')[0];
   if (st.tag !== last) { log.push(`${el}s ${st.tag} hp=${st.hp} act=${st.act} node=${st.node}`); last = st.tag; }
-  if (key !== (shot.k || '') || Date.now() - lastShot > 20000) { shot.k = key; lastShot = Date.now(); await shot(key.replace(/[@:]/g, '-')); }
+  if (key !== (shot.k || '') || Date.now() - lastShot > 8000) { shot.k = key; lastShot = Date.now(); await shot(key.replace(/[@:]/g, '-')); }
 }
 writeFileSync(`${out}/log.txt`, log.join('\n'));
 console.log(log.join('\n'));
