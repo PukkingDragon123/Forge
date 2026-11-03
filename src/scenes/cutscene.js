@@ -1171,16 +1171,15 @@ SCRIPTS.boss = (c, p) => {
         } },
       // the roar
       { dur: 2.4,
-        cam: { pos: [stand.clone().addScaledVector(fwd, 0.1), stand.clone().addScaledVector(fwd, 0.5)], look: [spawn.clone().setY(mh * 0.7), spawn.clone().setY(mh * 0.75)], fov: [52, 46], roll: [0.04, -0.03] },
+        cam: { pos: [stand.clone().lerp(spawn.clone().setY(stand.y), 0.3), stand.clone().lerp(spawn.clone().setY(stand.y), 0.42)], look: [spawn.clone().setY(mh * 0.7), spawn.clone().setY(mh * 0.75)], fov: [50, 44], roll: [0.04, -0.03] },
         at: [[0.25, (c) => {
           c.act(mon, isMedusa ? ['laugh', 'roar'] : ['roar', 'special'], {});
           c.sfx(isMedusa ? 'medusa_laugh' : 'herald_roar'); c.punch = 6; c.haptic(60);
           c.burst(spawn.clone().setY(mh * 0.7), glow, { size: 0.35, r: 3, flash: 0.25, shake: 0.9, n: 60 });
-          if (arms) arms.play('guard');
         }]] },
       // name card, and the fight begins
       { dur: 3.2,
-        cam: { pos: [stand], look: [spawn.clone().setY(mh * 0.55)], fov: 60 },
+        cam: { pos: [stand.clone().lerp(spawn.clone().setY(stand.y), 0.2)], look: [spawn.clone().setY(mh * 0.55)], fov: 56 },
         enter: (c) => { c.act(mon, ['idle'], { loop: true }); if (arms) arms.play('idle'); c.titleCard(nameOf(id), titleOf(id), { at: 0.1, dur: 2.8, bottom: glow, line: glow }); },
         at: [[2.6, (c) => { c.fadeTo = 1; c.fadeRate = 1.6; }]] },
     ],

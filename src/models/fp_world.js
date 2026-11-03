@@ -196,7 +196,9 @@ function tunnel(act, seed, o) {
 }
 
 // ---------------------------------------------------------------------------- junction
-const JR = 3.1, JCZ = -3.4, STUB = 7.2;
+const JR = 2.8, JCZ = -3.4, STUB = 7.2;
+// stand near the way in, so the side mouths sit ~42° off forward (inside the view) and forward is straight on
+const JSTAND = JCZ + (JR - 0.2) / Math.tan((42 * Math.PI) / 180);
 function junction(act, seed, o) {
   const A = ACT_STYLES[act], r = rngOf(seed * 11 + act * 71 + 5);
   const exits = (o.exits && o.exits.length ? o.exits : [-1, 0, 1]).filter((d, i, a) => a.indexOf(d) === i);
@@ -215,43 +217,67 @@ function junction(act, seed, o) {
   if (act === 2) L.edit(-1.1, 1.1, JCZ - 1.1, JCZ + 1.1, (x, z) => Math.hypot(x, z - JCZ) < 0.9, { floor: -0.2, mat: MAT.LAVA });
   L.finish();
   const P = new Piece(L, A, seed);
-  const center = { x: 0, z: JCZ, r: 1.35 };
+  // the heart of the junction sits in a back corner, between the mouths, never across a line of sight
+  const center = { x: 0, z: JCZ, r: 1.0 };
+  const side = r() < 0.5 ? -1 : 1, hx = side * 1.75, hz = JCZ - 1.6;
+  const heart = { x: hx, z: hz, r: 0.6 };
   if (act === 0) {
     // a pillar of old roots grown through the dome down into the floor, glowing at the knuckles
-    P.op(-0.8, 0.8, JCZ - 0.8, JCZ + 0.8, (w) => {
-      for (let k = 0; k < 6; k++) { let px = vx(0) + Math.cos(k) * 6, pz = vx(JCZ) + Math.sin(k) * 6; for (let y = -1; y < vx(4.3); y++) { px += Math.sin(y * 0.08 + k) * 0.25; pz += Math.cos(y * 0.07 + k * 2) * 0.25; const rr = 2.2 + Math.sin(y * 0.05 + k) * 0.8; for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) if (dx * dx + dz * dz <= rr * rr) w.set(Math.round(px + dx), y, Math.round(pz + dz), h3(dx, y, k, 2) > 0.985 ? glowC(A.glow) : tone(A.root, 0.25 + h3(dx, y, dz, k) * 0.4)); } }
-      fern(w, A, vx(0.6), 0, vx(JCZ + 0.3), 9, 3, 3); fern(w, A, vx(-0.6), 0, vx(JCZ - 0.4), 8, 4, 2);
+    P.op(hx - 0.7, hx + 0.7, hz - 0.7, hz + 0.7, (w) => {
+      for (let k = 0; k < 5; k++) { let px = vx(hx) + Math.cos(k * 1.3) * 4, pz = vx(hz) + Math.sin(k * 1.3) * 4; for (let y = -1; y < vx(4.2); y++) { px += Math.sin(y * 0.08 + k) * 0.18; pz += Math.cos(y * 0.07 + k * 2) * 0.18; const rr = 1.8 + Math.sin(y * 0.05 + k) * 0.6; for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) if (dx * dx + dz * dz <= rr * rr) w.set(Math.round(px + dx), y, Math.round(pz + dz), h3(dx, y, k, 2) > 0.985 ? glowC(A.glow) : tone(A.root, 0.25 + h3(dx, y, dz, k) * 0.4)); } }
+      fern(w, A, vx(hx - side * 0.5), 0, vx(hz + 0.4), 8, 3, 3);
     });
-    P.lamp(0, 1.4, JCZ, A.glow, 2.6, 0.7);
+    P.lamp(hx, 1.4, hz + 0.3, A.glow, 2.6, 0.8);
   } else if (act === 1) {
     P.water(-1.3, 1.3, JCZ - 1.3, JCZ + 1.3, -0.08);
-    P.op(-1, 1, JCZ - 1, JCZ + 1, (w) => { crystalCluster(w, 0, vx(-0.4), vx(JCZ), 30, A.crystal, 7, 5); lilyPads(w, A, vx(0), -2, vx(JCZ), 20, seed, 5); });
-    P.lamp(0, 1.2, JCZ, A.crystal, 3.4, 1.4);
+    P.op(-1, 1, JCZ - 1, JCZ + 1, (w) => lilyPads(w, A, vx(0), -2, vx(JCZ), 20, seed, 5));
+    P.op(hx - 0.6, hx + 0.6, hz - 0.6, hz + 0.6, (w) => crystalCluster(w, vx(hx), 0, vx(hz), 28, A.crystal, 7, 5));
+    P.lamp(0, 0.3, JCZ, A.water, 2.4, 0.9);
+    P.lamp(hx, 1.0, hz + 0.3, A.crystal, 3, 1.3);
   } else if (act === 2) {
     P.lava(-1.1, 1.1, JCZ - 1.1, JCZ + 1.1, -0.12);
-    P.op(-1.4, 1.4, JCZ - 1.4, JCZ + 1.4, (w) => { for (let k = 0; k < 4; k++) PR.chain(w, vx(Math.cos(k * 1.57) * 1.2), vx(4.1), vx(JCZ + Math.sin(k * 1.57) * 1.2), 0, vx(1.6), vx(JCZ), 2); PR.brazier(w, 0, vx(0.9), vx(JCZ), '#ff8a3a'); });
-    P.flame(0, 1.55, JCZ, 1.0, 'fire'); P.lamp(0, 0.6, JCZ, '#ff6a1a', 3.6, 1.5);
+    P.op(hx - 0.8, hx + 0.8, hz - 0.8, hz + 0.8, (w) => { for (let k = 0; k < 3; k++) PR.chain(w, vx(hx + Math.cos(k * 2.1) * 0.5), vx(4.0), vx(hz + Math.sin(k * 2.1) * 0.5), vx(hx), vx(1.6), vx(hz), 2); PR.brazier(w, vx(hx), vx(0.9), vx(hz), '#ff8a3a'); });
+    P.flame(hx, 1.55, hz, 0.9, 'fire'); P.lamp(0, 0.4, JCZ, '#ff6a1a', 3.2, 1.4); P.lamp(hx, 1.6, hz, '#ffa040', 3, 1.2);
+    P.lights.push({ x: hx, y: 1.6, z: hz, c: '#ffa040', i: 2, r: 4 });
   } else {
     // a coiled stone serpent on a plinth, flowers at its foot
-    P.op(-1, 1, JCZ - 1, JCZ + 1, (w) => {
-      cyl(w, 0.5, vx(JCZ) + 0.5, 0, 8, 14, 13, (px, py, pz) => tone(A.brick, 0.4 + (py === 7 ? 0.2 : 0) + h3(px, py, pz, 1) * 0.1));
-      for (let k = 0; k < 220; k++) { const t = k / 220, a = t * Math.PI * 6, rr = 11 - t * 7; const x = Math.cos(a) * rr, z = Math.sin(a) * rr, y = 8 + t * 30; ell(w, x, y, vx(JCZ) + z, 2.6 - t, 2.4 - t, 2.6 - t, (px, py, pz) => (h3(px, py, pz, 4) > 0.9 ? glowC(A.glow) : tone(A.brick, 0.35 + h3(px, py, pz, 2) * 0.3))); }
-      fern(w, A, vx(0.9), 0, vx(JCZ + 0.6), 8, 1, 4); fern(w, A, vx(-0.9), 0, vx(JCZ - 0.5), 8, 2, 4);
+    P.op(hx - 0.7, hx + 0.7, hz - 0.7, hz + 0.7, (w) => {
+      cyl(w, vx(hx) + 0.5, vx(hz) + 0.5, 0, 7, 11, 10, (px, py, pz) => tone(A.brick, 0.4 + (py === 6 ? 0.2 : 0) + h3(px, py, pz, 1) * 0.1));
+      for (let k = 0; k < 180; k++) { const t = k / 180, a = t * Math.PI * 5, rr = 8 - t * 5; ell(w, vx(hx) + Math.cos(a) * rr, 7 + t * 26, vx(hz) + Math.sin(a) * rr, 2.3 - t, 2.1 - t, 2.3 - t, (px, py, pz) => (h3(px, py, pz, 4) > 0.9 ? glowC(A.glow) : tone(A.brick, 0.35 + h3(px, py, pz, 2) * 0.3))); }
+      fern(w, A, vx(hx - side * 0.55), 0, vx(hz + 0.45), 7, 1, 4);
     });
-    P.lamp(0, 2, JCZ + 0.6, A.glow, 3, 0.9);
-    P.shaft(0, 5.2, JCZ, 1.2, 5.2, '#fff0c8', 0.35);
+    P.lamp(hx, 1.6, hz + 0.6, A.glow, 3, 0.9);
+    P.shaft(hx, 5.0, hz, 1.0, 5.0, '#fff0c8', 0.35);
   }
   // arches over each mouth (ribs proud of the wall) and a lamp deep in each stub (hints are optional)
   for (const s of stubs) {
     const hint = (o.hints || []).find((h) => h.dir === s.dir);
     P.lamp(s.deep.x, 1.1, s.deep.z, hint ? hint.color : A.lamp2, 2.4, hint ? 1.4 : 0.35);
+    // light just inside each mouth so the opening reads from the stand, plus a stone arch proud of the wall
+    const inX = s.dir === 0 ? 0 : s.dir * (JR + 0.6), inZ = s.dir === 0 ? JCZ - JR - 0.6 : JCZ;
+    P.lamp(inX, 1.5, inZ, A.lamp, 2.6, 0.9);
+    P.op(s.mouth.x - 1.6, s.mouth.x + 1.6, s.mouth.z - 1.6, s.mouth.z + 1.6, (w) => {
+      const along = s.dir === 0, X = vx(s.mouth.x), Z = vx(s.mouth.z), top = vx(2.62);
+      for (let k = 0; k <= 30; k++) {
+        const a = Math.PI - (k / 30) * Math.PI, u = Math.round(Math.cos(a) * 35), v = Math.round(Math.sin(a) * (top - 44) + 44 * (Math.sin(a) > 0 ? 1 : 0));
+        for (let du = -2; du <= 2; du++) for (let dv = -2; dv <= 2; dv++) {
+          const px = along ? X + u + du : X, pz = along ? Z : Z + u + du;
+          const c = (k + Math.floor(dv / 2)) % 4 === 0 ? A.mortar : tone(A.brick, 0.5 + h3(k, du, dv, 3) * 0.2);
+          w.set(px - (along ? 0 : s.dir), v + dv, pz + (along ? 1 : 0), c);
+        }
+      }
+      for (const sgn of [-1, 1]) for (let y = 0; y < 44; y++) for (let d = -2; d <= 2; d++) { const px = along ? X + sgn * 35 + d : X - s.dir, pz = along ? Z + 1 : Z + sgn * 35 + d; w.set(px, y, pz, (y % 7) === 0 ? A.mortar : tone(A.brick, 0.45 + h3(y, d, sgn, 4) * 0.2)); }
+    });
     if (hint) P.lights.push({ x: s.deep.x, y: 1.1, z: s.deep.z, c: hint.color, i: 1.6, r: 4 });
   }
-  decorate(P, act, r, -STUB, STUB, JCZ - STUB, 0.6, { torches: 3.2, clear: [center, ...stubs.map((s) => ({ x: s.mouth.x, z: s.mouth.z, r: 0.9 }))], torchAvoid: stubs.map((s) => ({ x: s.mouth.x, z: s.mouth.z, r: 1.6 })), banners: act === 2 ? 0 : 2 });
+  // keep every line of sight from the stand to a mouth free of hanging roots, plants and rubble
+  const sight = [];
+  for (const st2 of stubs) for (let k = 0; k <= 8; k++) { const t = k / 8; sight.push({ x: st2.mouth.x * t, z: JSTAND + (st2.mouth.z - JSTAND) * t, r: 0.8 }); }
+  decorate(P, act, r, -STUB, STUB, JCZ - STUB, 0.6, { torches: 3.2, clear: [center, heart, ...sight, ...stubs.map((s) => ({ x: s.mouth.x, z: s.mouth.z, r: 0.9 }))], torchAvoid: stubs.map((s) => ({ x: s.mouth.x, z: s.mouth.z, r: 1.6 })), banners: act === 2 ? 0 : 2 });
   P.lamp(0, 3, JCZ, A.lamp, 6, 0.35);
   const exitsA = stubs.map((s) => ({ dir: s.dir, yaw: s.yaw, pos: V(s.mouth.x, EYE, s.mouth.z), mouth: s.mouth.clone(), look: s.deep.clone(), end: { pos: s.end.clone(), yaw: s.yaw } }));
-  const anchors = { stand: V(0, EYE, JCZ + 1.4), center: V(0, 0, JCZ), enter: V(0, EYE, 0.3), look: V(0, EYE, JCZ - 3), exits: exitsA, start: V(0, 0, 0) };
-  anchors.path = pathCurve([[0, EYE, 0.3], [0, EYE, -0.8], [0, EYE, JCZ + 1.4]]);
+  const anchors = { stand: V(0, EYE, JSTAND), center: V(0, 0, JCZ), enter: V(0, EYE, 0.3), look: V(0, EYE, JCZ - 3), exits: exitsA, start: V(0, 0, 0) };
+  anchors.path = pathCurve([[0, EYE, 0.3], [0, EYE, (0.3 + JSTAND) / 2], [0, EYE, JSTAND]]);
   return finishPiece(P, 'junction', act, anchors, { stream: true, sync: [-JR - 0.5, JR + 0.5, JCZ - JR - 0.5, 0.6] });
 }
 

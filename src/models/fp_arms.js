@@ -83,11 +83,12 @@ const DESIGN = {
         P.cap([0, 2, 0], [0, -nF + 1, 0], 7.4, 8, metalT(C.iron, 8));
         skin(P, (x, y) => y >= 0 || y <= -nF + 3, C.brass[2]);
         studRing(P, 1, 10, C.brass[3]); studRing(P, -nF + 2, 10, C.brass[3]);
-        for (const vy of [-5, -9, -13]) P.paint((x, y, z) => {
-          if (y < vy - 1 || y > vy) return undefined;
-          const a = Math.atan2(x + 0.5, z + 0.5), d = Math.hypot(x + 0.5, z + 0.5), r = 7.4 + 0.6 * clamp(-y / nF, 0, 1);
-          if (a < -0.4 || a > 2.6) return undefined;
-          return d > r - 1.8 ? null : d > r - 3 ? G(C.coal[1 + Math.floor(hash(x, y, z, 77) * 3)]) : undefined;
+        // two thin vents on the outer side, coals glinting through (embers, not a lamp, this close to the eye)
+        for (const vy of [-7, -12]) P.paint((x, y, z) => {
+          if (y !== vy) return undefined;
+          const a = Math.atan2(x + 0.5, z + 0.5);
+          if (a < 0.7 || a > 2.1 || !P.surface(x, y, z)) return undefined;
+          return G(C.coal[hash(x, y, z, 77) > 0.5 ? 1 : 2]);
         });
       }
     },
@@ -191,6 +192,24 @@ function glove(P, side, open, col, o = {}) {
   P.loft(-1, 2, () => [5.8 * r, 5.8 * r], (x, y, z) => (typeof col === 'function' ? col(x, y, z) : col), { shell: 1.5 });
 }
 
+/**
+ * Lighting cap for things right under the camera: a lamp a hand's breadth away can't blow them out
+ * past ~1.2× their own colour (no glowing-orange gloves); emissive flashes and glow voxels still shine.
+ */
+function litCap(mat) {
+  if (mat.userData.litCap) return mat;
+  mat.userData.litCap = true;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev && prev(sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = min(outgoingLight - totalEmissiveRadiance, diffuseColor.rgb * 1.2) + totalEmissiveRadiance;\n#include <opaque_fragment>');
+  };
+  const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
+  mat.customProgramCacheKey = () => key() + '|litcap';
+  mat.needsUpdate = true;
+  return mat;
+}
+
 // ------------------------------------------------------------------ props the hands hold
 function mesh(part, offset, mat, glowMat) {
   const { solid, glow } = part.geometry(VS, offset, { glowIntensity: 2.6 });
@@ -239,8 +258,8 @@ function buildTorch(mat, glowMat) {
     }
   });
   g.add(mesh(P, [0, 0, 0], mat, glowMat));
-  const light = new THREE.PointLight(0xffa050, 2.2, 6, 1.6);
-  light.position.set(0, 0.2, 0);
+  const light = new THREE.PointLight(0xffa050, 1.6, 7, 1.6);
+  light.position.set(0, 0.32, -0.06); // at the flame tip, ahead of the hand
   g.add(light);
   g.userData.light = light;
   return g;
@@ -310,9 +329,9 @@ const ANIMS = {
     ]),
     smear: [0.55, 0.64], flare: [0.4, 0.95],
   },
-  mine: { loop: true, f: (b, t) => sway({ R: H([0.17, -0.2, -0.34], [0.35, 0.25, 0.85]), L: null }, t, 0.004, 2) },
+  mine: { loop: true, f: (b, t) => sway({ R: H([0.2, -0.2, -0.34], [0.35, 0.25, 0.85]), L: null }, t, 0.004, 2) },
   mineHit: {
-    dur: 0.5, impact: 0.42, f: (b, k) => keyed({ R: H([0.17, -0.2, -0.34], [0.35, 0.25, 0.85]), L: null }, k, [
+    dur: 0.5, impact: 0.42, f: (b, k) => keyed({ R: H([0.2, -0.2, -0.34], [0.35, 0.25, 0.85]), L: null }, k, [
       [0, null], [0.18, { R: H([0.18, -0.15, -0.3], [0.75, 0.25, 0.7]) }, sm], [0.42, { R: H([0.03, -0.26, -0.5], [-1.3, 0, 0.45]) }, inQ],
       [0.58, { R: H([0.04, -0.27, -0.48], [-1.2, 0, 0.45]) }, outQ], [1, null, sm],
     ]), smear: [0.3, 0.44], then: 'mine',
@@ -374,8 +393,8 @@ export class FPArms {
     this.group.name = 'fp_arms_' + this.charId;
     this.root = new THREE.Group(); // sways with the camera's turns
     this.group.add(this.root);
-    this.mat = voxToon();
-    this.mat.color.setScalar(0.8); // this close to the camera every torch hits them: sit a touch darker
+    this.mat = litCap(voxToon());
+    this.mat.color.setScalar(0.85); // this close to the camera every torch hits them: sit a touch darker
     this.glowMat = voxGlow();
     const geo = heroGeo(this.charId);
     const add = (geoPair, parent) => {
@@ -435,7 +454,7 @@ export class FPArms {
       m.rotation.set(0, 0, 0);
       this.side.R.mount.add(m);
       m.traverse((o) => { o.castShadow = false; o.frustumCulled = false; });
-      for (const bm of m.userData.bladeMats || []) if (bm.color) bm.color.setScalar(0.82);
+      for (const bm of m.userData.bladeMats || []) if (bm.color) { bm.color.setScalar(0.85); litCap(bm); }
       this.item = m;
       if (kind === 'weapon') this.weapon = m;
     } else if (kind === 'map') {
@@ -558,7 +577,8 @@ export class FPArms {
       l.intensity = 2.0 + Math.sin(this.t * 13) * 0.25 + Math.sin(this.t * 31.7) * 0.15;
     }
     // signature glow: coals, runes, ore all breathe and blaze on a flare
-    this.glowMat.color.setScalar(0.75 + Math.sin(this.t * 3.1) * 0.08 + Math.sin(this.t * 11) * (this.charId === 'bran' ? 0.06 : 0) + this.flare * 1.4);
+    // (embers, not lamps: the glow stays low until a flare so the hands never outshine the scene)
+    this.glowMat.color.setScalar((this.charId === 'bran' ? 0.32 : 0.55) + Math.sin(this.t * 3.1) * 0.05 + Math.sin(this.t * 11) * (this.charId === 'bran' ? 0.05 : 0) + this.flare * 1.2);
   }
   /** Where the left hand holds the pickaxe haft (below the right hand along the handle). */
   _pickLeft(R) {
