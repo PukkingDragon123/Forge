@@ -1,6 +1,7 @@
 // Item instances + text helpers.
 import { MATERIALS, QUALITY, RARITY } from '../data/materials.js';
 import { SHAPES, rotateCells } from '../data/shapes.js';
+import { STEW_FX, STEW_FX_ORDER } from '../data/stews.js';
 
 let UID = 1;
 export function makeItem(id, q = 2, extra = {}) {
@@ -54,13 +55,21 @@ export function itemTooltip(it) {
   const q = QUALITY[it.q ?? 2];
   const lines = [];
   if (m.weapon) lines.push(`{@sword} ${m.desc}`);
-  else lines.push(m.desc);
+  else if (!m.cook) lines.push(m.desc);
   if (m.pick && m.pdesc) lines.push(`{@pickaxe} ${m.pdesc}`);
   if (m.bag) lines.push(`{@bag} ${m.bag.text}`);
+  if (m.cook) lines.push(`{@campfire} ` + cookSummary(m.cook));
   return {
     title: m.name,
     color: RARITY[m.rarity].color,
     body: `{${m.rarity}}${RARITY[m.rarity].name}{/} · {${q.color}}${q.name}{/}\n` + lines.join('\n') + (m.flavor ? `\n{dim}${m.flavor}{/}` : ''),
     w: 170,
   };
+}
+
+/** One short line for an ingredient's cooking effects, e.g. "+6 HP, regen 1". */
+export function cookSummary(c) {
+  const parts = STEW_FX_ORDER.filter((k) => c[k]).map((k) => `{${STEW_FX[k].tag}}${STEW_FX[k].label(c[k])}{/}`);
+  if (c.salt) parts.push('{gold}seasons{/}');
+  return parts.join(', ');
 }

@@ -86,6 +86,16 @@ class ForgeController {
       }
     }
   }
+  /** Switch between forging a blade and a pickaxe (camp). */
+  setMode(mode) {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.bps = this.run.blueprints.filter((b) => (mode === 'pickaxe' ? b === 'pickaxe' : b !== 'pickaxe'));
+    this.bp = mode === 'pickaxe' ? 'pickaxe' : this.run.lastBp && this.bps.includes(this.run.lastBp) ? this.run.lastBp : this.bps[0];
+    this.sel = [];
+    this.turnPage(mode === 'pickaxe' ? 1 : -1);
+    this.refresh();
+  }
   slots() { return BLUEPRINTS[this.bp].slots; }
   toggle(it) {
     const i = this.sel.indexOf(it);
@@ -175,13 +185,12 @@ class ForgeController {
     const now = this.now();
     const start = now + 0.35;
     // rhythm runs on the wall clock (the AudioContext may be suspended); audio is scheduled with an offset
-    au.metronome(bpm, 4, au.time() + 0.35);
-    const t0 = start + beat * 4;
-    const pattern = bp.rhythm.slice();
-    // variation: occasionally swap a beat for an off-beat so it never feels identical
-    if (pattern.length > 3 && rnd.chance(0.5)) { const k = rnd.int(1, pattern.length - 2); if (!pattern.includes(pattern[k] + 1) && pattern[k] + 1 < 8) pattern[k] += 1; }
+    // v4: one short three-beat hammer after a two-beat count-in
+    au.metronome(bpm, 2, au.time() + 0.35);
+    const t0 = start + beat * 2;
+    const pattern = rnd.chance(0.5) ? [0, 2, 4] : [0, 2, 3];
     this.notes = pattern.map((p, i) => ({ time: t0 + p * beat / 2, i, res: null, dx: [-34, 26, -10, 38, -22, 14, 0][i % 7], dy: [-3, 2, -5, 0, 3, -2, 1][i % 7] }));
-    this.hammer = { start, t0, beat, end: this.notes[this.notes.length - 1].time + 0.5, combo: 0, heat: 1, countIn: [0, 1, 2, 3].map((k) => start + k * beat) };
+    this.hammer = { start, t0, beat, end: this.notes[this.notes.length - 1].time + 0.5, combo: 0, heat: 1, countIn: [0, 1].map((k) => start + k * beat) };
     this.hits = [];
     this.tw.to(this.anim, { hide: 1 }, 0.45, { ease: 'inBack' });
     if (this.opts.rig && this.opts.anvil) {
@@ -441,7 +450,7 @@ class ForgeController {
       const s = scrap(268, 52, { seed: 5, nails: 1 });
       const tx = 480 - 134, ty = y0 - 172; // above the mould, between the book and the slate
       ui.img(s, tx, ty);
-      ui.text('Lay ore & part cards in the mould. Each adds\n{chips}Chips{/} or {mult}Mult{/}. Mix them for synergies,\nthen pull the FORGE plaque!', tx + s.inner.x + 2, ty + s.inner.y, { color: INK, maxW: s.inner.w });
+      ui.text('Cards → mould → pull {gold}FORGE{/}.\n{chips}Chips{/} × {mult}Mult{/} = damage.', tx + s.inner.x + 2, ty + s.inner.y, { color: INK, maxW: s.inner.w });
       if (this.sel.length) { save.data.seen.tips.forge = true; save.write(); }
     }
   }
@@ -470,13 +479,18 @@ class ForgeController {
       });
     }
     // paper index tabs along the top edge
-    const tabs = this.mode === 'weapon' ? ['forge', 'codex'] : ['forge', 'tools', 'codex'];
+    const camp = !!this.opts.camp;
+    const tabs = camp ? ['blade', 'pick', 'codex'] : this.mode === 'weapon' ? ['forge', 'codex'] : ['forge', 'tools', 'codex'];
+    const onTab = (t) => (t === 'blade' ? this.tab === 'forge' && this.mode === 'weapon' : t === 'pick' ? this.tab === 'forge' && this.mode === 'pickaxe' : this.tab === t);
     tabs.forEach((t, i) => {
-      const on = this.tab === t;
+      const on = onTab(t);
       const tx = x + BOOK.w - 70 - (tabs.length - 1 - i) * 58, ty = y - 16 + (on ? 0 : 4);
       ui.img(indexTabCanvas(54, 24, on), tx, ty);
       ui.text(t[0].toUpperCase() + t.slice(1), tx + 27, ty + 7, { align: 'center', color: on ? RED_INK : FAINT });
-      if (ui.hit('tab-' + t, tx, ty, 54, 18).clicked && this.state === 'select' && t !== this.tab) { const dir = i > tabs.indexOf(this.tab) ? 1 : -1; this.tab = t; this.turnPage(dir); }
+      if (ui.hit('tab-' + t, tx, ty, 54, 18).clicked && this.state === 'select' && !on) {
+        if (t === 'blade' || t === 'pick') { this.tab = 'forge'; this.setMode(t === 'pick' ? 'pickaxe' : 'weapon'); }
+        else { const dir = i > tabs.findIndex(onTab) ? 1 : -1; this.tab = t; this.turnPage(dir); }
+      }
     });
     ui.img(bookCanvas(), x, y);
     const L = { x, y, lx: x + 22, rx: x + BOOK.w / 2 + 12, pw: BOOK.w / 2 - 34, top: y + 22, bottom: y + BOOK.h - 18 };
@@ -493,13 +507,13 @@ class ForgeController {
     }
     // the "skip" choice: a tag tied to the book's corner
     if (this.state === 'select') {
-      const label = this.mode === 'pickaxe' ? 'Old pick only' : this.opts.emergency ? 'Fists!' : 'No weapon';
+      const label = this.opts.camp ? 'Not now' : this.mode === 'pickaxe' ? 'Old pick only' : this.opts.emergency ? 'Fists!' : 'No weapon';
       const c = tag(100, 30, { seed: 9 });
       const kx = x + BOOK.w - 108, ky = y + BOOK.h + 2;
       const h = ui.hit('forge-skip', kx, ky, 100, c.height);
       ui.img(c, kx, ky - (h.hover ? 2 : 0));
       ui.text(label, kx + 50, ky + c.inner.y + Math.round((c.inner.h - 7) / 2) - (h.hover ? 2 : 0), { align: 'center', color: INK });
-      if (h.hover) ui.tooltip(this.mode === 'pickaxe' ? 'Dig with your trusty old pick: 3 strikes.' : 'Fight bare-handed or try to flee.');
+      if (h.hover) ui.tooltip(this.opts.camp ? 'Leave the anvil.' : this.mode === 'pickaxe' ? 'Dig with your trusty old pick: 3 strikes.' : 'Fight bare-handed or try to flee.');
       if (h.clicked) this.done(null);
     }
     void ctx;
@@ -521,7 +535,7 @@ class ForgeController {
       ui.text(`${bp.speed}s swing · crit ×${bp.crit}`, L.lx + L.pw / 2, L.top + 136, { align: 'center', font: 'small', color: FAINT });
       let ex = L.lx + 4;
       for (const e of Object.keys(ELEMENT_ICON)) if (this.res.el[e] > 0) { ui.icon(ELEMENT_ICON[e], ex, L.top + 148); ui.text(String(this.res.el[e]), ex + 10, L.top + 149, { font: 'small', color: INK }); ex += 24; }
-    } else ui.text('Base: 3 swings', L.lx + L.pw / 2, L.top + 136, { align: 'center', font: 'small', color: FAINT });
+    } else ui.text(`${3 + ((this.res.pick && this.res.pick.strikes) || 0)} swings per vein`, L.lx + L.pw / 2, L.top + 136, { align: 'center', font: 'small', color: FAINT });
 
     // ---- right page: notes on the foe, synergies, the recipe hint
     let ry = L.top;

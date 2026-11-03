@@ -5,11 +5,13 @@ import { CameraRig, FlickerLight } from '../gfx/camera.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildWeaponMesh, crackWeapon } from '../models/weapons3d.js';
 import { toon } from '../gfx/materials.js';
+import { buildFPArms } from '../models/fp_arms.js';
 
 export class CharPreview extends Scene {
   enter() {
     const q = new URLSearchParams(location.search);
     this.q = q;
+    if (q.get('fp')) return this.enterFP(q);
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0d0a10);
     scene.fog = new THREE.FogExp2(0x0d0a10, 0.05);
@@ -31,7 +33,7 @@ export class CharPreview extends Scene {
       const t0 = performance.now();
       const c = buildCharacter(id);
       console.log(`build ${id} ${(performance.now() - t0).toFixed(1)}ms`);
-      c.group.position.set(-1.95 + i * 1.3, 0, 0);
+      c.group.position.set(-1.5 + i * 1.0, 0, 0);
       scene.add(c.group);
       if (q.get('seated')) c.setSeated(true, 0.3);
       c.play(q.get('anim') || 'idle', { then: q.get('anim') });
@@ -70,9 +72,11 @@ export class CharPreview extends Scene {
         c.group.rotation.y = +(q.get('prot') ?? 0.6);
         scene.add(c.group);
         if (q.get('hold')) { c.hold(buildWeaponMesh({ bp: q.get('bp') || BP[id], ids: ['iron', 'coal', 'ruby'], el: { fire: 3 }, grade: 4 })); c.showBackItem(false); }
+        if (q.get('seated')) c.setSeated(true, +q.get('seated'));
         c.play(anim === 'block' || anim === 'idleCombat' ? anim : 'idleCombat');
         for (let k = 0; k < 40; k++) c.update(1 / 60);
         c.play(anim, { then: anim });
+        if (q.get('stone')) { const st = q.get('stone').split(',').map(Number); c.setStone(st[i % st.length]); }
         for (let k = 0, m = Math.round(+t * 60); k < m; k++) c.update(1 / 60);
         return c;
       });
@@ -103,16 +107,53 @@ export class CharPreview extends Scene {
     const [cid, cmode] = cam.split('_');
     const idx = ids.indexOf(cid);
     const HEAD = { bran: 1.53, elio: 1.21, durgan: 0.9, clover: 1.12 };
-    if (idx >= 0 && cmode === 'body') { const x = -1.95 + idx * 1.3; const h = HEAD[cid] * 0.55; this.rig.cut([x + 0.4, h + 0.25, 2.6], [x, h, 0], 34); }
+    if (idx >= 0 && cmode === 'body') { const x = -1.5 + idx * 1.0; const h = HEAD[cid] * 0.55; this.rig.cut([x + 0.4, h + 0.25, 2.6], [x, h, 0], 34); }
     else if (idx >= 0) { const ch = this.chars.find((c) => c.id === cid) || this.chars[0]; const hp = ch.headPos(); const h = hp.y - (ch.headTop || 0.3) * 0.55; const x = ch.group.position.x; this.rig.cut([x + 0.25, h + 0.12, 1.9], [x, h - 0.02, 0], 28); }
-    else if (cam === 'faces') this.rig.cut([0, 1.0, 3.2], [0, 0.95, 0], 34);
+    else if (cam === 'faces') this.rig.cut([0, 0.72, 3.0], [0, 0.62, 0], 34);
     else if (q.get('weapons') && q.get('wcam')) { const x = -2.6 + +q.get('wcam') * 0.65; this.rig.cut([x, 0.75, 1.5], [x, 0.72, 0], 34); }
     else if (q.get('weapons')) this.rig.cut([0, 0.75, 3.4], [0, 0.72, 0], 40);
-    else if (q.get('poses')) { const n = this.posed.length, sp = +(q.get('sp') || 0.95); this.rig.cut([0, 0.95, 1.2 + n * sp * 1.05], [0, 0.8, 0], 34); }
-    else if (cam === 'wide') this.rig.cut([0, 1.1, 6.2], [0, 0.85, 0], 34);
+    else if (q.get('poses')) { const n = this.posed.length, sp = +(q.get('sp') || 0.95); this.rig.cut([0, 0.62, 1.0 + n * sp * 1.0], [0, 0.42, 0], 34); }
+    else if (cam === 'wide') this.rig.cut([0, 0.85, 4.8], [0, 0.55, 0], 34);
     this.ff = +(q.get('t') || 0);
   }
+  /** First-person arms bench: ?fp=bran&hold=weapon&anim=swing&t=0.2&freeze=1 */
+  enterFP(q) {
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d0a10);
+    scene.fog = new THREE.FogExp2(0x0d0a10, 0.12);
+    const cam = new THREE.PerspectiveCamera(62, 16 / 9, 0.05, 60);
+    cam.position.set(0, 0.95, 0);
+    scene.add(cam);
+    this.world = { scene, camera: cam, post: {} };
+    this.fpCam = cam;
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 14), toon('#4a3a30'));
+    floor.position.set(0, -0.1, -5); scene.add(floor);
+    for (const x of [-1.6, 1.6]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4, 14), toon('#3a2e28')); w.position.set(x, 2, -5); scene.add(w); }
+    const back = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.4), toon('#33282a')); back.position.set(0, 2, -9); scene.add(back);
+    scene.add(new THREE.HemisphereLight(0x9a8ab0, 0x2a1a14, 0.7));
+    const key = new FlickerLight(0xffa050, 5, 8, { amount: 0.12 }); key.position.set(0.6, 1.4, -0.6); scene.add(key); this.fire = key;
+    const rim = new THREE.PointLight(0x6a9aff, 3, 8, 1.6); rim.position.set(-1.2, 1.6, -3); scene.add(rim);
+    const arms = buildFPArms(q.get('fp'));
+    cam.add(arms.group);
+    const kind = q.get('hold') || 'weapon';
+    if (kind === 'weapon') arms.hold('weapon', buildWeaponMesh({ bp: q.get('bp') || 'sword', ids: ['iron', 'coal', 'ruby'], el: { fire: 2 }, grade: 3 }));
+    else arms.hold(kind);
+    if (kind === 'map') { const c = document.createElement('canvas'); c.width = 128; c.height = 80; const x = c.getContext('2d'); x.fillStyle = '#e8d8b0'; x.fillRect(0, 0, 128, 80); x.strokeStyle = '#5a3a20'; x.lineWidth = 2; x.beginPath(); x.moveTo(20, 70); x.lineTo(60, 40); x.lineTo(100, 12); x.moveTo(60, 40); x.lineTo(30, 14); x.stroke(); for (const [a, b] of [[20, 70], [60, 40], [100, 12], [30, 14]]) { x.fillStyle = '#8a2a1a'; x.fillRect(a - 4, b - 4, 8, 8); } const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; arms.setMapTexture(t); }
+    const anim = q.get('anim') || 'idle';
+    arms.play(anim, { then: q.get('then') || undefined });
+    this.arms = arms;
+    this.speed = +(q.get('speed') || 0);
+    const ff = +(q.get('t') || 0);
+    for (let i = 0, n = Math.round(ff / 0.016); i < n; i++) arms.update(0.016, { speed: this.speed });
+    this.chars = [];
+  }
   update(dt) {
+    if (this.arms) {
+      if (!this.q.get('freeze')) this.arms.update(dt, { speed: this.speed });
+      if (this.q.get('turn')) this.fpCam.rotation.y = Math.sin(this.time * 2) * 0.4;
+      this.fire.tick(this.time);
+      return;
+    }
     if (this.ff > 0) { const n = Math.ceil(this.ff / 0.016); for (let i = 0; i < n; i++) this.chars.forEach((c) => c.update(0.016)); this.ff = 0; }
     this.fire.tick(this.time);
     if (this.q.get('walk')) this.chars.forEach((c, i) => { c.group.position.x += dt * 0.8; if (c.group.position.x > 3) c.group.position.x -= 5.6; });
@@ -121,6 +162,7 @@ export class CharPreview extends Scene {
     this.rig.update(dt);
   }
   draw(ui) {
+    if (this.arms) { ui.text(`fp=${this.q.get('fp')} anim=${this.q.get('anim') || 'idle'}`, 6, 6, { font: 'small', color: '#9d8f7d' }); return; }
     ui.text(`anim=${this.q.get('anim') || 'idle'}  fps ${this.game.fps.toFixed(0)}`, 6, 6, { font: 'small', color: '#9d8f7d' });
   }
 }

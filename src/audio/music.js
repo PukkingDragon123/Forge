@@ -394,6 +394,100 @@ const DEFS = {
       { kind: 'sparkle', inst: 'bell', density: 0.08, grid: 2, oct: 24, vol: 0.04, from: 2 },
     ],
   },
+  // ------------------------------------------------------------ v4 tracks
+  // the crew's dungeon camp: warm, lilting, a little lute and a soft hand drum
+  camp: {
+    bpm: 72, vol: 0.9, bpc: 1, swing: 0.2, key: 62, scale: MAJOR,
+    chords: [C(50, 4, 7, 11), C(47, 3, 7, 10), C(43, 4, 7, 11), C(45, 4, 7, 10)],
+    layers: [
+      { kind: 'arp', inst: 'pluck', pat: 'x..x..x.x..x..x.', order: 'updown', oct: 12, span: 2, dur: 1.5, vol: 0.15, bright: 0.4 },
+      { kind: 'bass', inst: 'pluck', pat: 'x.......5.......', oct: -12, dur: 2, vol: 0.2, bright: 0.25 },
+      { kind: 'pad', inst: 'pad', oct: 12, vol: 0.045, wave: 'triangle', cut: 750, from: 1 },
+      { kind: 'lead', inst: 'whistle', density: 0.22, grid: 2, oct: 12, vol: 0.06, from: 1 },
+      { kind: 'sparkle', inst: 'bell', density: 0.06, grid: 4, oct: 24, vol: 0.03, ratio: 3.5, from: 2 },
+      { kind: 'drum', inst: 'brush', pat: '....x.......x...', vol: 0.35, from: 2 },
+      { kind: 'drum', inst: 'tak', pat: 'x.......x..?....', vol: 0.3, from: 3 },
+    ],
+  },
+  // act 0, the Mossy Undercroft: drips, a hushed marimba, roots and ruins
+  delve0: {
+    bpm: 74, vol: 0.85, bpc: 2, key: 62, scale: DORIAN,
+    chords: [C(50, 3, 7, 10), C(48, 4, 7, 14), C(46, 4, 7, 11), C(45, 3, 7)],
+    layers: [
+      { kind: 'pad', inst: 'pad', oct: 0, vol: 0.045, wave: 'triangle', cut: 650 },
+      { kind: 'bass', inst: 'sub', pat: 'x...............', oct: -12, dur: 3, vol: 0.16 },
+      { kind: 'arp', inst: 'marimba', pat: 'x...x.x...x.....', order: 'random', oct: 12, span: 2, vol: 0.08 },
+      { kind: 'sparkle', inst: 'bell', density: 0.07, grid: 2, oct: 24, vol: 0.03, ratio: 3.5, from: 1 },
+      { kind: 'lead', inst: 'whistle', density: 0.12, grid: 4, oct: 12, vol: 0.045, from: 2 },
+      { kind: 'drum', inst: 'heart', pat: 'x...............', vol: 0.18, from: 1 },
+    ],
+  },
+  // act 1, the Crystal Cistern: glassy, watery lydian
+  delve1: {
+    bpm: 68, vol: 0.85, bpc: 2, key: 65, scale: LYDIAN,
+    chords: [C(41, 4, 7, 11), C(43, 4, 7, 14), C(45, 3, 7, 10), C(40, 3, 7, 10)],
+    layers: [
+      { kind: 'pad', inst: 'glass', oct: 12, vol: 0.06, cut: 2000 },
+      { kind: 'arp', inst: 'bell', pat: 'x..x..x..x..x...', order: 'random', oct: 24, span: 2, dur: 1.4, vol: 0.05, ratio: 3.5, index: 1.2 },
+      { kind: 'bass', inst: 'sub', pat: 'x...............', oct: -12, dur: 3, vol: 0.15 },
+      { kind: 'fx', inst: 'bubble', density: 0.12, grid: 4, oct: 24, vol: 0.03, from: 1 },
+      { kind: 'lead', inst: 'whistle', density: 0.1, grid: 4, oct: 12, vol: 0.045, from: 2 },
+    ],
+  },
+  // act 2, the Ember Foundry: low drones, distant anvils, a slow march
+  delve2: {
+    bpm: 80, vol: 0.85, bpc: 1, key: 48, scale: [0, 2, 3, 5, 7, 8, 11],
+    chords: [C(36, 3, 7), C(44, 4, 7), C(41, 3, 7), C(43, 4, 7)],
+    layers: [
+      { kind: 'drone', inst: 'drone', fixed: 36, oct: -12, vol: 0.11, cut: 260 },
+      { kind: 'drum', inst: 'lowtom', pat: 'x.......x.....x.', vol: 0.35 },
+      { kind: 'drum', inst: 'anvil', pat: '............x...', vol: 0.45, from: 1 },
+      { kind: 'drum', inst: 'chain', pat: '......?.........', vol: 0.5 },
+      { kind: 'pad', inst: 'pad', oct: 12, vol: 0.03, cut: 600, from: 1 },
+      { kind: 'lead', inst: 'pluck', density: 0.16, grid: 2, oct: 12, vol: 0.07, bright: 0.6, from: 2 },
+    ],
+  },
+  // act 3, Medusa's Garden: hijaz harp, breathy choir, an eerie hush
+  delve3: {
+    bpm: 64, vol: 0.9, bpc: 2, key: 52, scale: HIJAZ,
+    chords: [C(40, 4, 7), C(41, 4, 7), C(38, 3, 7), C(40, 4, 7)],
+    layers: [
+      { kind: 'pad', inst: 'choir', oct: 12, vol: 0.04 },
+      { kind: 'drone', inst: 'drone', fixed: 40, oct: -12, vol: 0.08, cut: 300 },
+      { kind: 'arp', inst: 'pluck', pat: 'x.x...x.x...x...', order: 'updown', oct: 12, span: 2, dur: 1.6, vol: 0.09, bright: 0.85 },
+      { kind: 'sparkle', inst: 'bell', density: 0.06, grid: 4, oct: 24, vol: 0.03, ratio: 1.41, index: 2.4, from: 1 },
+      { kind: 'drum', inst: 'heart', pat: 'x..x............', vol: 0.25, from: 2 },
+    ],
+  },
+  // the escape: driving toms, a breathless ostinato
+  chase: {
+    bpm: 164, vol: 0.85, bpc: 1, key: 50, scale: MINOR,
+    chords: [C(38, 3, 7), C(46, 4, 7), C(43, 3, 7), C(45, 4, 7)],
+    layers: [
+      { kind: 'drum', inst: 'kick', pat: 'x..x..x.x..x..x.', vol: 0.75 },
+      { kind: 'drum', inst: 'lowtom', pat: '..x...x...x.x.xx', vol: 0.5 },
+      { kind: 'drum', inst: 'hat', pat: 'xxxxxxxxxxxxxxxx', vol: 0.45 },
+      { kind: 'drum', inst: 'snare', pat: '....x.......x...', vol: 0.6, fill: '....x...x.x.xxxx' },
+      { kind: 'bass', inst: 'distbass', pat: 'x.xx.xx.x.xx.xx.', oct: -12, vol: 0.1, cut: 1200 },
+      { kind: 'arp', inst: 'pluck', pat: 'xxxxxxxxxxxxxxxx', order: 'up', oct: 12, span: 1, dur: 0.3, vol: 0.06, bright: 0.85 },
+      { kind: 'stab', inst: 'brass', pat: 'x.....x.........', oct: 12, vol: 0.05, dur: 0.3, from: 1 },
+    ],
+  },
+  // the gorgon herself: heavy hijaz, choir and taiko-like toms
+  medusa: {
+    bpm: 136, vol: 0.85, bpc: 1, key: 52, scale: HIJAZ,
+    chords: [C(40, 4, 7), C(41, 4, 7), C(38, 3, 7), C(36, 4, 7)],
+    layers: [
+      { kind: 'drum', inst: 'kick', pat: 'x..x..x.x..x..x.', vol: 0.8 },
+      { kind: 'drum', inst: 'lowtom', pat: 'x...x...x.x.x...', vol: 0.55, fill: 'x.x.x.x.xxxxXXXX' },
+      { kind: 'drum', inst: 'snare', pat: '....x.......x...', vol: 0.7 },
+      { kind: 'drum', inst: 'hat', pat: 'x.xxx.xxx.xxx.xx', vol: 0.45 },
+      { kind: 'bass', inst: 'distbass', pat: 'xx.xx.xxx.xx.xx.', oct: -12, vol: 0.1, cut: 1300 },
+      { kind: 'pad', inst: 'choir', oct: 12, vol: 0.06 },
+      { kind: 'arp', inst: 'pluck', pat: 'x.xx.x.xx.x.xx.x', order: 'random', oct: 12, span: 2, dur: 0.6, vol: 0.08, bright: 0.9, from: 1 },
+      { kind: 'lead', inst: 'lead', wave: 'sawtooth', density: 0.32, grid: 2, oct: 12, vol: 0.045, from: 2 },
+    ],
+  },
 };
 
 // victory: a short fanfare (non-looping)

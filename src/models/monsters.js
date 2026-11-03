@@ -2,20 +2,31 @@
 // rig); vox_mon.js voxelizes it at ~1/40 of the creature's height, paints every voxel (hue-shifted palettes, pixel
 // patterns, emissive eyes/runes/crystals) and meshes one rigid voxel part per bone, so the rig animates it like a
 // voxel puppet. Hits knock voxel chunks loose; deaths burst into them. buildMonster(id) → Monster (see class docs).
-// Models face −X (toward the player on the left), feet at y = 0, 1 unit ≈ 1 m.
+// FACING: archetypes are authored with the head toward −X, but every Monster wraps its rig in a `facing` group
+// turned so that at `group.rotation.y = 0` the creature FACES +Z (toward a first-person camera placed on +Z) and
+// its attacks lunge toward +Z. Feet at y = 0, 1 unit ≈ 1 m. bounds / hitPoint / mouthPoint / cutPoints are in
+// group space with that facing (front = bounds.max.z).
+// PETRIFY (Medusa's stone, v4): setStone(k) 0..1 sweeps stone up the body (frozen at 1), stoneCracks() → world
+// points for glowing tap targets, crackAt(i) opens one (chips fly), shatter() → { pieces, update(dt), done,
+// dispose() } bursts the statue into rubble + glinting ore chunks (call its update every frame yourself).
 import * as THREE from 'three';
 import { MONSTERS } from '../data/monsters.js';
 import { ParticleSystem } from '../gfx/particles.js';
 import { clamp, damp, ease } from '../core/math.js';
 import { Sculpt, makePrim, roundCone, ADD, SUB, PAINT, BIND } from './monster_kit.js';
 import { voxelizeMonster } from './vox_mon.js';
-import { VoxelBurst } from './vox_mon_fx.js';
+import { VoxelBurst, stoneUniforms, petrifyMaterial, StatueShatter } from './vox_mon_fx.js';
+import * as MEDUSA from './medusa.js';
 import { NORMAL_ARCHES } from './monster_normals.js';
 import { BOSS_ARCHES } from './monster_bosses.js';
 import { RPG_ARCHES } from './vox_mon_rpg.js';
 import { RPG_ARCHES2 } from './vox_mon_rpg2.js';
 
-const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES, ...RPG_ARCHES, ...RPG_ARCHES2 };
+import { SNAKE_ARCHES } from './vox_mon_snakes.js';
+
+const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES, ...RPG_ARCHES, ...RPG_ARCHES2, ...SNAKE_ARCHES };
+/** Authored −X front → +Z front (see FACING above). */
+export const FACE_YAW = Math.PI / 2;
 
 // state → duration (seconds). States missing here hold until the next play().
 const DUR = { attack: 0.45, multi: 0.9, special: 0.9, hurt: 0.3, die: 1.2, intro: 0.9, roar: 1.4 };
@@ -58,8 +69,13 @@ export class Monster {
     this.seed = SEED++;
     this.group = new THREE.Group();
     this.group.name = 'monster:' + id;
+    this.facing = new THREE.Group();
+    this.facing.name = 'facing';
+    this.facing.rotation.y = FACE_YAW;
+    this.group.add(this.facing);
     this.root = new THREE.Group();
-    this.group.add(this.root);
+    this.facing.add(this.root);
+    this.stone = 0; this.cracks = []; this._crackSrc = null; this._shake = 0; this.shattered = null;
     this.sculpt = new Sculpt();
     this.bones = []; this.boneIdx = {}; this._frames = new Map();
     this.parts = {};
@@ -80,13 +96,13 @@ export class Monster {
     this.emitters = [];
     this.layers = [];
     this.onDone = null;
-    this.scale = this.boss ? 1 : this.md.scale || 1;
+    this.scale = this.md.scale || 1; // old bosses were sculpted at full size and carry scale 1 in their data
     this.arch.build(this, this.md);
     this._buildMesh();
     this.root.scale.setScalar(this.scale);
     if (this.emitters.length) {
       this.fx = new ParticleSystem(260, { additive: true });
-      this.group.add(this.fx.object);
+      this.facing.add(this.fx.object); // emitter positions are authored in root space
     }
     this.play(id === 'mimic' ? 'disguise' : 'idle');
     this.update(0);
@@ -173,6 +189,9 @@ export class Monster {
     this.mat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(GLOW_I, GLOW_I, GLOW_I), fog: false });
     this.layerMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(GLOW_I * 1.2, GLOW_I * 1.2, GLOW_I * 1.2), fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    // Medusa's stone runs through all three materials (shared uniforms)
+    this.stoneU = stoneUniforms(VOXEL);
+    for (const mm of [this.mat, this.glowMat, this.layerMat]) petrifyMaterial(mm, this.stoneU);
     this.mats = [this.mat, this.glowMat];
     this.layerMeshes = [];
     for (const part of g.parts) {
@@ -227,18 +246,109 @@ export class Monster {
   emitter(e) { this.emitters.push({ acc: 0, ...e }); }
   _finalizePoints() {
     const s = this.scale;
-    const v = (a) => new THREE.Vector3(a[0] * s, a[1] * s + this.fly, -a[2] * s);
+    // authored root space (z mirrored at runtime) → group space through the facing turn
+    const v = (a) => new THREE.Vector3(a[0] * s, a[1] * s + this.fly, -a[2] * s).applyAxisAngle(_Y, FACE_YAW);
     // bind-pose bounds (skinning every vertex on the CPU for an exact box is needlessly slow)
-    const box = this.geo.bbox.clone().applyMatrix4(this.root.matrixWorld);
+    const inv = new THREE.Matrix4().copy(this.group.matrixWorld).invert();
+    const box = this.geo.bbox.clone().applyMatrix4(this.root.matrixWorld).applyMatrix4(inv);
     this.height = this._height ? this._height * this.scale + this.fly : Math.max(0.3, box.max.y);
     this.bounds = box;
-    if (this._hit) this.hitPoint = v(this._hit); else this.hitPoint.set((box.min.x + box.max.x) / 2, box.max.y * 0.6, 0);
-    if (this._mouth) this.mouthPoint = v(this._mouth); else this.mouthPoint.set(box.min.x, box.max.y * 0.6, 0);
+    const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+    if (this._hit) this.hitPoint = v(this._hit); else this.hitPoint.set(cx, box.max.y * 0.6, cz);
+    if (this._mouth) this.mouthPoint = v(this._mouth); else this.mouthPoint.set(cx, box.max.y * 0.6, box.max.z);
     if (this._cuts) this.cutPoints = this._cuts.map(v);
     else {
       this.cutPoints = [];
-      for (let i = 0; i < 5; i++) this.cutPoints.push(new THREE.Vector3(box.min.x + ((i + 0.5) / 5) * (box.max.x - box.min.x), box.min.y + (box.max.y - box.min.y) * (0.35 + 0.3 * ((i * 7) % 3) / 2), 0));
+      for (let i = 0; i < 5; i++) this.cutPoints.push(new THREE.Vector3(box.min.x + ((i + 0.5) / 5) * (box.max.x - box.min.x), box.min.y + (box.max.y - box.min.y) * (0.35 + 0.3 * ((i * 7) % 3) / 2), box.max.z * 0.8));
     }
+  }
+
+  // ------------------------------------------------------------ petrify (Medusa's stone)
+  /** 0..1 — stone sweeps up from the feet; animation slows and freezes at 1. */
+  setStone(k) {
+    this.stone = clamp(k, 0, 1);
+    this.stoneU.uStone.value = this.stone;
+  }
+  /** Front-surface world points (3–6 by size) where the statue can be cracked open. Stable across calls. */
+  stoneCracks() {
+    if (!this._crackSrc) {
+      const n = this.boss ? 6 : this.def.tier === 'elite' ? 5 : this.height < 0.7 ? 3 : 4;
+      this.group.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(this.group.matrixWorld).invert();
+      const pts = this.chunkSrc.filter((c) => !c.glow).map((c) => ({ c, g: c.bone.localToWorld(c.lp.clone()).applyMatrix4(inv) }));
+      const b = this.bounds, H = Math.max(0.2, b.max.y - Math.max(0, b.min.y)), W = Math.max(0.2, b.max.x - b.min.x);
+      const cx = (b.min.x + b.max.x) / 2;
+      const chosen = [];
+      for (let i = 0; i < n; i++) {
+        // bands up the body, alternating left/right of centre, always on the side facing +Z
+        const y0 = b.min.y + H * (0.14 + (0.72 * i) / Math.max(1, n - 1)) - H * 0.1, y1 = y0 + H * 0.2;
+        const side = n > 2 ? (i % 2 ? 1 : -1) * W * 0.16 : 0;
+        let best = null, bs = -Infinity;
+        for (const p of pts) {
+          if (p.g.y < y0 || p.g.y > y1 || chosen.includes(p)) continue;
+          const sc = p.g.z * 3 - Math.abs(p.g.x - cx - side) * 1.5;
+          if (sc > bs) { bs = sc; best = p; }
+        }
+        if (best) chosen.push(best);
+      }
+      // small or wispy bodies: top up to three with the frontmost points left
+      while (chosen.length < Math.min(3, pts.length)) {
+        let best = null, bs = -Infinity;
+        for (const p of pts) { if (chosen.includes(p) || chosen.some((q) => q.g.distanceTo(p.g) < H * 0.12)) continue; if (p.g.z > bs) { bs = p.g.z; best = p; } }
+        if (!best) break;
+        chosen.push(best);
+      }
+      if (!chosen.length) chosen.push({ c: null, g: this.hitPoint.clone() });
+      this._crackSrc = chosen.map((p) => ({ c: p.c, g: p.g.clone().add(new THREE.Vector3(0, 0, VOXEL * 0.8)) }));
+      this.cracks = this._crackSrc.map(() => ({ open: 0, target: 0 }));
+    }
+    return this._crackSrc.map((p) => this.group.localToWorld(p.g.clone()));
+  }
+  /** Open crack i: a glowing seam spreads, chips of stone burst toward the camera side. */
+  crackAt(i) {
+    const pts = this.stoneCracks();
+    if (i < 0 || i >= pts.length) return;
+    const cr = this.cracks[i];
+    cr.target = 1;
+    this._shake = Math.min(0.5, this._shake + 0.22);
+    const lp = this._crackSrc[i].g;
+    for (let k = 0; k < (this.boss ? 18 : 12); k++) {
+      const grey = 0.08 + Math.random() * 0.22, ore = Math.random() < 0.2;
+      const col = ore ? this._oreRgb() : [grey, grey * 1.02, grey * 1.06];
+      this.burst.emit(lp, col, [(Math.random() - 0.5) * 2.4, 1 + Math.random() * 2.4, 0.8 + Math.random() * 2.2], 0.7 + Math.random() * 0.6, ore);
+    }
+  }
+  _oreRgb() {
+    const hx = this.md.ore || this.md.accent || this.md.eye || '#ffd25e';
+    const c = new THREE.Color(hx);
+    return [c.r, c.g, c.b];
+  }
+  /** Burst the statue: the body vanishes into tumbling rubble and glinting ore chunks. */
+  shatter() {
+    if (this.shattered) return this.shattered;
+    this.group.updateMatrixWorld(true);
+    const size = VOXEL * (this.boss ? 2.2 : this.def.tier === 'elite' ? 1.7 : 1.4);
+    const S = new StatueShatter(this.group, size, this.boss ? 700 : this.def.tier === 'elite' ? 480 : 300);
+    const inv = new THREE.Matrix4().copy(this.group.matrixWorld).invert();
+    const c = new THREE.Vector3((this.bounds.min.x + this.bounds.max.x) / 2, this.height * 0.45, (this.bounds.min.z + this.bounds.max.z) / 2);
+    const src = this.chunkSrc;
+    const want = Math.min(S.max, Math.round(src.length * 1.4) + 40);
+    const ore = this._oreRgb();
+    for (let i = 0; i < want; i++) {
+      const sm = src[i % src.length];
+      const p = sm.bone.localToWorld(sm.lp.clone()).applyMatrix4(inv);
+      p.x += (Math.random() - 0.5) * size; p.y += (Math.random() - 0.5) * size; p.z += (Math.random() - 0.5) * size;
+      const d = p.clone().sub(c); d.y = Math.max(0, d.y);
+      const sp = 0.9 + Math.random() * 1.4;
+      const isOre = Math.random() < (this.boss ? 0.16 : 0.12);
+      const lum = sm.c[0] * 0.3 + sm.c[1] * 0.59 + sm.c[2] * 0.11, g = 0.06 + Math.min(0.4, lum * 0.8 + 0.06) * (0.8 + Math.random() * 0.4);
+      // rubble slumps outward and down; ore chunks pop up a little higher so they catch the eye
+      S.add(p, isOre ? ore : [g, g * 1.03, g * 1.1], [d.x * sp * 1.3 + (Math.random() - 0.5) * 0.6, (isOre ? 1.6 : 0.6) + Math.random() * 1.6, d.z * sp * 0.9 + Math.random() * 0.5], isOre, isOre ? 1.2 : 1);
+    }
+    this.root.visible = false;
+    if (this.fx) this.fx.object.visible = false;
+    this.shattered = { pieces: S.pieces, update: (dt) => S.update(dt), get done() { return S.done; }, dispose: () => S.dispose(), _s: S };
+    return this.shattered;
   }
 
   // ------------------------------------------------------------ runtime API
@@ -267,6 +377,34 @@ export class Monster {
   get introDur() { return this.boss ? 2.6 : DUR.intro; }
 
   update(dt) {
+    // stone: world-space sweep bounds, cracks opening, a small shudder when one is hit
+    if (this.stone > 0 || this.cracks.length) {
+      this.group.updateMatrixWorld();
+      const by = this.group.matrixWorld.elements[13], sy = new THREE.Vector3().setFromMatrixScale(this.group.matrixWorld).y;
+      this.stoneU.uStBase.value = by + (this.bounds ? this.bounds.min.y : 0) * sy;
+      this.stoneU.uStTop.value = by + this.height * sy;
+      this.stoneU.uCrackR.value = Math.max(0.12, Math.min(0.45, this.height * 0.2)) * sy;
+      if (this._crackSrc) {
+        const pts = this._crackSrc;
+        for (let i = 0; i < 6; i++) {
+          const v4 = this.stoneU.uCracks.value[i], cr = this.cracks[i];
+          if (!cr) { v4.w = 0; continue; }
+          cr.open += (cr.target - cr.open) * Math.min(1, dt * 9);
+          const w = this.group.localToWorld(pts[i].g.clone());
+          v4.set(w.x, w.y, w.z, cr.open);
+        }
+      }
+    }
+    if (this._shake > 0) { this._shake = Math.max(0, this._shake - dt * 1.6); this._shT = (this._shT || 0) + dt; this.facing.position.x = Math.sin(this._shT * 90) * 0.02 * this._shake; }
+    else this.facing.position.x = 0;
+    if (this.stone >= 1) {
+      // frozen statue: no breathing, no particles; hit chips still fly
+      if (this.fx) this.fx.object.visible = false;
+      if (this.burst.active) this.burst.update(dt, 0);
+      if (this.flashT > 0) { this.flashT -= dt; const k = Math.max(0, this.flashT / this.flashDur), c = this.flashColor; this.mat.color.setRGB(1 + c.r * k * 2.2, 1 + c.g * k * 2.2, 1 + c.b * k * 2.2); }
+      return;
+    }
+    dt *= 1 - this.stone * 0.9; // the stone slows it down as it spreads
     this.t += dt;
     this.st += dt;
     const e = this.env, st = this.st, s = this.state;
@@ -399,7 +537,17 @@ export class Monster {
   }
 }
 
-export function buildMonster(id) { return new Monster(id); }
+export function buildMonster(id) {
+  const def = MONSTERS[id];
+  // Medusa is a character-style model (models/medusa.js) that speaks the Monster API
+  if (def && def.model && def.model.arch === 'medusa' && MEDUSA.buildMedusa) {
+    const m = MEDUSA.buildMedusa();
+    if (m && !m.def) m.def = def;
+    if (m && !m.id) m.id = id;
+    return m;
+  }
+  return new Monster(id);
+}
 /** Drop cached sculpt meshes (dev/benchmarks). */
 export function clearMonsterCache() { GEO_CACHE.clear(); }
 export const MONSTER_ARCHETYPES = Object.keys(ARCH);

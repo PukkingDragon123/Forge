@@ -1,8 +1,8 @@
-// 5×5 polyomino backpack with rotation, overflow and adjacency bonuses.
+// 6×5 polyomino backpack with rotation, overflow and adjacency bonuses (ores are bulky in v4).
 import { cellsOf, matOf } from './items.js';
 
 export class Backpack {
-  constructor(w = 5, h = 5) {
+  constructor(w = 6, h = 5) {
     this.w = w; this.h = h;
     this.items = [];     // placed
     this.overflow = [];  // waiting to be placed or discarded

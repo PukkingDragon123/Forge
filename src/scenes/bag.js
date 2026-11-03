@@ -1,10 +1,12 @@
 // Backpack overlay: your open leather backpack lies on the cave floor in the lantern light. Its
-// 5×5 stitched pockets hold the items; new loot waits on a burlap cloth beside it; junk goes down
-// the crack in the floor. Drag to arrange, R / right-click / wheel rotates.
+// 6×5 stitched pockets hold the items (ores are bulky); new loot waits on a burlap cloth beside it;
+// junk goes down the crack in the floor. Drag to arrange, R / right-click / wheel rotates;
+// right-click (or EAT) a forage item to eat it raw. Your blade, its stone and your stews sit on top.
 import { Scene } from '../core/game.js';
-import { itemSprite } from '../art/sprites.js';
+import { itemSprite, weaponSprite } from '../art/sprites.js';
 import { matOf, itemTooltip, cellsOf } from '../systems/items.js';
-import { RARITY } from '../data/materials.js';
+import { RARITY, MATERIALS } from '../data/materials.js';
+import { killsLeft } from '../systems/petrify.js';
 import { RECIPES } from '../data/blueprints.js';
 import { COLORS } from '../ui/font.js';
 import { engrave } from './forgeui.js';
@@ -157,8 +159,9 @@ export class BagOverlay extends Scene {
       if (inp.actionPressed('rotate') || (inp.rpressed && !inp.longPress) || inp.wheel) { d.item.rot = (d.item.rot + (inp.wheel < 0 ? 3 : 1)) % 4; game.audio && game.audio.play('rotate'); }
       // touch: a second finger turns or reads what the first one holds
       ui.touchButton('rotate', ui.w - 52, ui.h - 132, 30, { icon: 'tool', label: 'ROTATE', style: 'brass' });
-      if (d.item.id === 'recipe_scroll' && d.item.recipe) ui.touchButton('read', ui.w - 52, ui.h - 204, 26, { icon: 'scroll', label: 'READ', style: 'jade' });
-      if (inp.actionPressed('read') && d.item.id === 'recipe_scroll') {
+      const edible = MATERIALS[d.item.id].cook && MATERIALS[d.item.id].cook.heal;
+      if ((d.item.id === 'recipe_scroll' && d.item.recipe) || edible) ui.touchButton('read', ui.w - 52, ui.h - 204, 26, { icon: edible ? 'heart' : 'scroll', label: edible ? 'EAT' : 'READ', style: 'jade' });
+      if (inp.actionPressed('read') && (d.item.id === 'recipe_scroll' || edible)) {
         d.item.rot = d.rot0;
         if (d.from === 'bag') bag.place(d.item, d.x0, d.y0, d.rot0) || bag.toOverflow(d.item);
         this.drag = null; ui.dragging = false;
@@ -211,8 +214,11 @@ export class BagOverlay extends Scene {
       const b = bonus[hoverItem.uid];
       if (b) tt.body += `\n{gold}Bag bonus:{/} ${b.q ? '+1 quality ' : ''}${b.chips ? `{chips}+${b.chips} chips{/} ` : ''}${b.mult ? `{mult}+${b.mult} mult{/}` : ''} {dim}(${b.from.join(', ')}){/}`;
       if (hoverItem.id === 'recipe_scroll') tt.body += ui.touch ? '\n{gold}Lift it, then tap READ.{/}' : '\n{gold}Right-click to read.{/}';
+      else if (MATERIALS[hoverItem.id].cook && MATERIALS[hoverItem.id].cook.heal) tt.body += ui.touch ? '\n{gold}Lift it, then tap EAT.{/}' : '\n{gold}Right-click to eat.{/}';
       ui.tooltip(tt);
     }
+
+    this.drawGear(ui, L);
 
     // hints on a tag; the brass "done" plaque
     this.drawTag(ui, L.cloth.x + L.cloth.w / 2, L.cloth.y + L.cloth.h + 10, ui.touch ? 'drag to arrange · ROTATE turns what you hold' : 'drag to arrange · R or right-click rotates', { seed: 5, string: 6 });
@@ -241,6 +247,29 @@ export class BagOverlay extends Scene {
     void COLORS;
   }
 
+  /** Your blade (and how much of it is stone), your pickaxe and the stews you've eaten. */
+  drawGear(ui, L) {
+    const run = this.game.run;
+    const x = L.cloth.x + 4, y = 34;
+    const w = run.weapon;
+    if (w) {
+      ui.img(weaponSprite(w, 48), x, y - 4);
+      ui.text(w.name, x + 54, y + 2, { color: '#f0dcb0', outline: '#140c10', maxW: 170 });
+      const st = Math.min(1, w.stone || 0), bw = 110;
+      ui.rect(x + 54, y + 18, bw, 6, '#140c10');
+      ui.rect(x + 55, y + 19, Math.round((bw - 2) * (1 - st)), 4, '#c8d0d8');
+      ui.rect(x + 55 + Math.round((bw - 2) * (1 - st)), y + 19, Math.round((bw - 2) * st), 4, '#6a6a64');
+      const left = killsLeft(run);
+      ui.text(st >= 1 ? '{bad}all stone{/}' : `${Math.round(st * 100)}% stone · ${left === Infinity ? '∞' : left} kills`, x + 54, y + 28, { font: 'small', color: '#cbb89a', outline: '#140c10' });
+    } else ui.text('No blade — the old pickaxe', x, y + 8, { font: 'small', color: '#cbb89a', outline: '#140c10' });
+    ui.icon('pickaxe', x + 186, y + 2);
+    ui.text(`${(run.pick && run.pick.swings) || 3} swings`, x + 200, y + 3, { font: 'small', color: '#cbb89a', outline: '#140c10' });
+    run.buffs.forEach((b, i) => {
+      ui.icon(b.icon || 'campfire', x + 186, y + 16 + i * 12);
+      ui.text(`${b.name} ·${b.fights}`, x + 200, y + 17 + i * 12, { font: 'small', color: '#efe2c8', outline: '#140c10', maxW: 120 });
+    });
+  }
+
   pick(it, from) {
     this.drag = { item: it, from, x0: it.x, y0: it.y, rot0: it.rot };
     if (from === 'bag') this.game.run.bag.remove(it);
@@ -249,6 +278,14 @@ export class BagOverlay extends Scene {
 
   contextAction(it) {
     const run = this.game.run;
+    const cookFx = MATERIALS[it.id].cook;
+    if (cookFx && cookFx.heal) {
+      run.removeItem(it);
+      const n = run.heal(cookFx.heal);
+      this.game.audio && this.game.audio.play('slurp');
+      this.game.ui.float(`+${n}`, this.game.input.x, this.game.input.y - 16, { color: '#7dff9a' });
+      return;
+    }
     if (it.id === 'recipe_scroll' && it.recipe) {
       run.removeItem(it);
       const fresh = run.learnRecipe(it.recipe);

@@ -14,6 +14,7 @@ import { noise2, clamp, smoothstep, hexToRgb } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
 import { S, VWorld, vx, C, glowC, mixC, ramp, tone, bayer, box, ell, cyl, cylX, sag, makeLightRig, meshWorld, worldMeshes, h3, NOAO } from './stage_vox_kit.js';
 import * as PR from './stage_vox_props.js';
+import { buildCampMenu, buildCampsite } from './stage_vox_camp.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const pal = (a) => a.map(C);
@@ -1082,6 +1083,8 @@ function buildCrossroads(st, B, ri, opts) {
  * opts: { tunnel, room, length, seed, npc:false, choices (crossroads) }
  */
 export function buildStage(kind, regionIdx = 0, opts = {}) {
+  if (kind === 'campmenu') { const t0 = performance.now(); const st = buildCampMenu(Stage, opts); st.buildMs = performance.now() - t0; return st; }
+  if (kind === 'campsite') { const t0 = performance.now(); const st = buildCampsite(Stage, regionIdx); st.buildMs = performance.now() - t0; return st; }
   const ri = kind === 'tomb' ? 5 : clamp(regionIdx | 0, 0, 5);
   const R = kind === 'campfire' ? CAMP : REG[ri];
   const st = new Stage(kind, ri, R);
@@ -1097,5 +1100,5 @@ export function buildStage(kind, regionIdx = 0, opts = {}) {
   st.buildMs = performance.now() - t0;
   return st;
 }
-export const STAGE_KINDS = ['arena', 'tomb', 'corridor', 'room', 'wall', 'campfire', 'crossroads'];
+export const STAGE_KINDS = ['arena', 'tomb', 'corridor', 'room', 'wall', 'campfire', 'crossroads', 'campmenu', 'campsite'];
 export { REG as STAGE_PALETTES };

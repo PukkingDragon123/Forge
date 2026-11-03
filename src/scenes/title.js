@@ -1,408 +1,388 @@
-// Main menu: a voxel cave camp around a campfire and a stew pot (stage_vox 'campfire'). The four
-// explorers sit on logs around the fire; they are people of few words, so their personality shows
-// in what they do (Bran hammers, Elio reads, Durgan dozes and pokes the fire, Clover fidgets) and
-// only now and then in a short exchange. Click one to hear what they can do and to descend with them.
-// Everything else is an object in the camp: Elio's books (codex), a scroll (prologue), the
-// lantern (settings) and a slate of chalked tallies (your runs).
+// Main menu: the crew's camp deep in an old dungeon (stage_vox 'campmenu'; 'campfire' until it exists).
+// It opens straight on the four forgers resting by the fire — no loading screen, no story scroll:
+// Durgan stirs the stew, Bran polishes a blade (or dozes), Elio reads with Kindle bobbing beside him,
+// Clover counts diamonds, and Pip the mole-dog sleeps in his bed. They hardly talk; what they do is
+// the menu. Tap a forger and the camera pushes in on them; a small card shows who they are; Choose
+// starts the story. Settings and the codex are objects in the camp (the lantern, Elio's book).
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
 import { CameraRig } from '../gfx/camera.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildStage } from '../models/stage_vox.js';
-import { REGIONS } from '../data/regions.js';
+import { buildPet } from '../models/pet.js';
+import { buildWeaponMesh } from '../models/weapons3d.js';
+import { buildOreModel } from '../models/ore_voxel.js';
 import { noteCanvas, tagCanvas } from '../art/handpaint.js';
-import { speech, dim } from './common.js';
+import { campAnchors, playFirst } from '../art/cutscene_art.js';
+import { dim } from './common.js';
 import { startRun } from './flow.js';
 import { CHARACTERS, CHARACTER_ORDER } from '../data/characters.js';
 import { BLUEPRINTS, RECIPES } from '../data/blueprints.js';
-import { MATERIALS } from '../data/materials.js';
+import * as STEW_DATA from '../data/stews.js';
 import { SYNERGIES } from '../systems/forge.js';
-import { logo, materialSprite } from '../art/sprites.js';
+import { logo } from '../art/sprites.js';
 import { COLORS } from '../ui/font.js';
 import { save } from '../core/save.js';
-import { clamp } from '../core/math.js';
+import { clamp, ease } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
-import { STORIES } from '../data/stories.js';
 
-const ROUTINE = { bran: 'hammer', elio: 'read', durgan: 'sit', clover: 'sit' };
-const SEAT_OF = { elio: 0, clover: 1, durgan: 2, bran: 3 };
-// little things they do instead of talking: [anim, seconds, fire-poke?]
-const HABITS = {
-  bran: [['shrug', 2.2], ['cheer', 1.6], ['idle', 2.5]],           // eyes a blade, stretches his back
-  elio: [['point', 1.8, true], ['laugh', 1.6], ['idle', 2.4]],     // feeds Kindle a twig, giggles at a page
-  durgan: [['sleep', 6], ['point', 1.6, true], ['shrug', 1.8]],    // dozes off, pokes the embers
-  clover: [['cheer', 1.4], ['point', 1.6, true], ['laugh', 1.4], ['wave', 1.4]], // stretches, fidgets
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const v3 = (a) => (!a ? null : a.isVector3 ? a.clone() : Array.isArray(a) ? V(a[0], a[1], a[2]) : V(a.x || 0, a.y || 0, a.z || 0));
+const faceTo = (from, to) => Math.atan2(to.x - from.x, to.z - from.z);
+
+// what each forger does while resting: [anim names, first one that exists wins]
+const ROUTINE = {
+  durgan: ['stir', 'sit'],
+  bran: ['polish', 'sit'],
+  elio: ['read', 'sit'],
+  clover: ['count', 'sit'],
 };
-const ARGUMENTS = [
-  [['durgan', 'That was MY last biscuit.'], ['clover', 'Finders keepers~'], ['durgan', 'It was IN MY BEARD.']],
-  [['clover', 'Durgan, your snoring caused a cave-in.'], ['durgan', 'Gnomes do NOT snore.'], ['bran', 'You really do, mate.']],
-  [['elio', 'Kindle, not on the pages!'], ['clover', 'Hehe, toasted spellbook.']],
-  [['bran', 'Who wants a new frying pan?'], ['durgan', 'Can it be an axe?'], ['bran', '…It can be an axe.']],
-  [['clover', 'Bet I find more gold than all of you.'], ['durgan', 'Bet you trip on a rail first.']],
-  [['elio', 'Do you think the Lord gets lonely down there?'], ['bran', 'He broke my favorite hammer.'], ['durgan', 'He broke EVERYONE\'S everything.']],
-  [['durgan', 'The stone on my arm spread again.'], ['bran', 'Then we go deeper. Tonight.']],
-];
-const OPENERS = [
-  [['clover', 'Stew\'s ready?'], ['bran', 'Almost.']],
-  [['elio', 'Kindle\'s purring.'], ['durgan', 'Hmph. Fire doesn\'t purr.']],
-  [['bran', 'Who\'s going down first?'], ['clover', 'Not it!']],
-];
-const STORY = [
-  'Deep beneath the Old Hollow Mine, four friends found a door that should never have been opened.',
-  'Inside slept the Cursed Lord. When he woke, he laid his curse upon them all…',
-  '"Every blade you forge shall shatter. Every friend you love shall turn to stone."',
-  'Now one of them must descend — forging, fighting and breaking weapon after weapon — to end the curse forever.',
-];
+// little things they do now and then: [anims, seconds]
+const HABITS = {
+  durgan: [[['stir'], 6], [['laugh'], 1.6], [['sleep'], 5]],
+  bran: [[['polish'], 6], [['sleep'], 6], [['shrug'], 2]],
+  elio: [[['read'], 6], [['laugh'], 1.6], [['cast', 'point'], 1.8]],
+  clover: [[['count'], 6], [['cheer'], 1.4], [['laugh'], 1.6]],
+};
+// the gesture a forger makes when you pick them
+const GREET = { bran: ['cheer', 'wave'], elio: ['cast', 'wave'], durgan: ['shrug', 'cheer'], clover: ['wave'] };
+const HELLO = { bran: 'Ready when you are.', elio: 'Kindle says hi!', durgan: 'Stew first.', clover: 'Ooh, me?' };
 
 export class TitleScene extends Scene {
-  enter(params = {}) {
+  enter() {
     const scene = new THREE.Scene();
-    this.stage = buildStage('campfire', 0);
+    try { this.stage = buildStage('campmenu', 0); this.menuStage = true; } catch (e) { this.stage = buildStage('campfire', 0); this.menuStage = false; }
     this.stage.attach(scene);
-    const C0 = this.stage.camera;
-    this.rig = new CameraRig(C0.fov);
-    this.rig.sway = 0.035;
-    this.rig.cut(C0.pos, C0.look, C0.fov);
-    this.stage.setCamera(this.rig.camera);
-    this.home = { pos: C0.pos.slice(), look: C0.look.slice(), fov: C0.fov };
-    this.world = { scene, camera: this.rig.camera, post: { bloom: 0.85, threshold: 0.78, vignette: 0.38, outline: 0.6, edge: 0.35, saturation: 1.12, contrast: 1.04 } };
-    const A = this.stage.anchors;
+    const A = (this.A = campAnchors(this.stage));
+    const C0 = (A.cams && A.cams.menu) || this.stage.camera || { pos: [0, 2.6, 6.2], look: [0, 0.7, 0], fov: 38 };
+    this.home = { pos: (v3(C0.pos) || V(0, 2.6, 6.2)).toArray(), look: (v3(C0.look) || V(0, 0.7, 0)).toArray(), fov: C0.fov || 38 };
+    this.rig = new CameraRig(this.home.fov);
+    this.rig.sway = 0.03;
+    // the first frame starts a touch further out and settles in while the dark fades
+    const p0 = V(...this.home.pos).add(V(0, 0.35, 0.9));
+    this.rig.cut(p0.toArray(), this.home.look, this.home.fov + 3);
+    this.rig.moveTo(this.home.pos, this.home.look, this.home.fov, 2.6, 'outCubic');
+    this.stage.setCamera && this.stage.setCamera(this.rig.camera);
+    this.world = { scene, camera: this.rig.camera, post: { bloom: 0.9, threshold: 0.76, vignette: 0.42, outline: 0.6, edge: 0.35, saturation: 1.14, contrast: 1.05, exposure: 1 } };
+    this.post0 = { ...this.world.post };
+    // the crew
     this.chars = {};
     for (const id of CHARACTER_ORDER) {
-      const seat = A.seats[SEAT_OF[id] ?? 0];
+      const seat = A.seats[id];
       const c = buildCharacter(id);
-      c.group.position.set(seat.pos.x, 0, seat.pos.z);
-      // face the fire (Bran faces his anvil), but front-row explorers never turn fully away from us
-      const look = id === 'bran' ? A.anvil : A.fire;
-      let home = Math.atan2(look.x - seat.pos.x, look.z - seat.pos.z);
-      if (seat.pos.z > 0) home = Math.sign(home) * Math.min(Math.abs(home), 1.65);
-      c.home = home;
-      c.group.rotation.y = home;
-      c.seatHeight = seat.height;
-      c.seatPos = seat.pos.clone().setY(0);
-      c.setSeated && c.setSeated(true, c.seatHeight);
       c.id = id;
+      c.group.position.copy(seat.pos);
+      c.home = seat.facing;
+      c.group.rotation.y = seat.facing;
+      c.seatHeight = seat.height;
+      c.setSeated && c.setSeated(true, seat.height);
       scene.add(c.group);
-      c.play(ROUTINE[id], { loop: true });
       this.chars[id] = c;
     }
-    this.focus = null;
-    this.bubbles = [];
-    this.convo = null;
-    this.convoT = 5 + rnd.float(0, 2); // one brief exchange a little after the menu appears…
-    this.firstConvo = true;
-    this.habitT = 3 + rnd.float(0, 3);
-    this.acts = {}; // id -> seconds left in a habit
-    this.state = save.data.seen.intro || params.skipintro ? 'menu' : 'story';
-    this.introCut = this.state === 'story' && !!this.game.scenes.cutscene;
-    const pending = STORIES.find((st) => save.data.stats.bestRegion >= st.need && !save.data.unlocks.story.includes(st.id));
-    if (pending && this.state === 'menu') { this.tale = { story: pending, i: -1, t: 1.2 }; this.state = 'tale'; }
-    this.storyIdx = 0; this.storyT = 0;
-    this.panel = null;
+    // Bran's blade to polish, a fistful of diamonds for Clover
+    try { this.blade = buildWeaponMesh({ bp: 'sword', ids: ['iron', 'iron', 'silver'], grade: 3 }); } catch (e) { this.blade = null; }
+    try { this.gem = buildOreModel('diamond', { res: 14, glow: 2 }); this.gem.scale.setScalar(0.18); } catch (e) { this.gem = null; }
+    for (const id of CHARACTER_ORDER) this.routine(this.chars[id]);
+    // Pip asleep in his bed by the fire
+    try {
+      this.pip = buildPet();
+      this.pip.group.position.copy(A.petBed);
+      this.pip.group.rotation.y = faceTo(A.petBed, A.fire) + 0.8;
+      this.pip.play('sleep');
+      scene.add(this.pip.group);
+    } catch (e) { this.pip = null; }
+    this.focus = null; this.zoom = null; this.panel = null;
+    this.state = 'menu';
+    this.acts = {};
+    this.habitT = 4 + rnd.float(0, 3);
+    this.bubble = null;
+    this.fadeIn = 1; this.fade = 0;
+    this.hintT = 0; this.picked = false;
+    this.zzzT = 0;
     this.crackle = this.game.audio.loop('campfire');
-    this.game.audio.music('campfire');
-    this.hammerT = 0;
-    this.fade = 0;
+    this.game.audio.music('camp');
   }
   exit() { this.crackle && this.crackle.stop(1); }
 
   project(v) { return this.rig.project(v, 960, 540); }
-  headOf(c) { return c.headPos ? c.headPos() : c.group.localToWorld(new THREE.Vector3(0, 1.2, 0)); }
+  headOf(c) { return c.headPos ? c.headPos() : c.group.localToWorld(V(0, 0.8, 0)); }
 
-  say(id, text, dur = 2.8) {
-    if (!text) return; // bark() and friends return '' when the explorer stays quiet
-    this.bubbles = this.bubbles.filter((b) => b.id !== id);
-    this.bubbles.push({ id, text, t: dur, dur });
+  routine(c) {
+    const anim = playFirst(c, ROUTINE[c.id] || ['sit'], { loop: true });
+    // a blade for Bran to polish, a diamond for Clover to count
+    if (c.id === 'bran' && this.blade) c.hold(anim === 'polish' || anim === 'sit' ? this.blade : null, 'right');
+    if (c.id === 'clover' && this.gem) c.hold(this.gem, 'right');
+  }
+  habit(id) {
     const c = this.chars[id];
-    if (c && !this.acts[id] && c.anim !== 'hammer' && c.anim !== 'read' && !this.focus) c.play('sitTalk', { loop: true });
-    for (const o of CHARACTER_ORDER) if (o !== id && o !== this.focus) { const oc = this.chars[o]; oc.lookAt && oc.lookAt(this.headOf(c)); }
-  }
-  routine(c) { c.play(ROUTINE[c.id], { loop: true }); }
-
-  /** Start the prologue: the cinematic overlay when it exists, else the painted letterbox story. */
-  playPrologue(first = false) {
-    if (this.game.scenes.cutscene) {
-      this.state = 'cut';
-      this.game.pushOverlay('cutscene', { id: 'prologue', onDone: () => { this.state = 'menu'; if (first) { save.data.seen.intro = true; save.write(); } } });
-    } else { this.state = 'story'; this.storyIdx = 0; this.storyT = 0; }
+    const [names, dur] = rnd.pick(HABITS[id]);
+    if (!playFirst(c, names, { loop: true })) return;
+    this.acts[id] = dur;
   }
 
+  // ------------------------------------------------------------------ picking a forger
+  pick(id) {
+    if (this.focus === id || this.state !== 'menu') return;
+    if (this.focus) this.release(true);
+    this.focus = id; this.picked = true;
+    delete this.acts[id];
+    const c = this.chars[id];
+    const A = this.A;
+    // camera: a cinematic push-in that arcs around to frame the forger left of centre
+    const seat = A.seats[id].pos;
+    const head = this.headOf(c);
+    // forgers face the fire, so the close-up is shot from the fire side (an across-the-campfire shot),
+    // leaning toward the menu camera so the room behind stays the one we know
+    const inward = V(A.fire.x - seat.x, 0, A.fire.z - seat.z);
+    if (inward.lengthSq() < 1e-4) inward.set(0, 0, 1);
+    inward.normalize();
+    const camDir = V(this.home.pos[0] - seat.x, 0, this.home.pos[2] - seat.z).normalize();
+    const out = inward.multiplyScalar(0.65).addScaledVector(camDir, 0.35).normalize();
+    const right = V(out.z, 0, -out.x);
+    const zc = A.cams && A.cams.zoom && A.cams.zoom[id];
+    const endPos = zc ? v3(zc.pos) : head.clone().addScaledVector(out, 1.55).add(V(0, 0.2, 0)).addScaledVector(right, -0.15);
+    const endLook = zc ? v3(zc.look) : head.clone().add(V(0, -0.12, 0)).addScaledVector(right, 0.42);
+    const startPos = this.rig.pos.clone(), startLook = this.rig.look.clone();
+    const mid = startPos.clone().lerp(endPos, 0.5).add(V(0, 0.45, 0)).addScaledVector(right, -0.7);
+    this.zoom = {
+      t: 0, dur: 1.55, fov0: this.rig.fov, fov1: zc ? zc.fov || 28 : 28,
+      pos: new THREE.CatmullRomCurve3([startPos, mid, endPos], false, 'centripetal'),
+      look0: startLook, look1: endLook, endPos, endLook, out, right,
+    };
+    // the forger stands, turns to us and does their thing; the others look over
+    c.setSeated && c.setSeated(false);
+    const camPos = endPos.clone();
+    this.turnFrom = c.group.rotation.y; this.turnTo = faceTo(c.group.position, camPos); this.turnT = 0;
+    playFirst(c, GREET[id] || ['wave'], { onDone: () => this.focus === id && playFirst(c, ['idle'], { loop: true }) });
+    c.setExpression && c.setExpression('happy');
+    c.hold(null, 'right');
+    for (const o of CHARACTER_ORDER) if (o !== id) { const oc = this.chars[o]; oc.lookAt && oc.lookAt(this.headOf(c)); }
+    this.bubble = { id, text: HELLO[id] || '', t: 2.4, dur: 2.4, delay: 0.9 };
+    this.game.audio.play('ui_pop');
+    this.game.audio.play('transition', { vol: 0.4 });
+    if (id === 'clover' || id === 'elio') this.game.audio.play('sparkle', { vol: 0.4 });
+    this.postTarget = { vignette: 0.66, saturation: 1.04, exposure: 0.97 };
+    this.cardT = 0;
+  }
+  release(quick = false) {
+    const id = this.focus;
+    const c = this.chars[id];
+    if (c) {
+      c.setSeated && c.setSeated(true, c.seatHeight);
+      c.group.rotation.y = c.home;
+      c.setExpression && c.setExpression('neutral');
+      this.routine(c);
+    }
+    for (const o of CHARACTER_ORDER) this.chars[o].lookAt && this.chars[o].lookAt(null);
+    this.focus = null; this.zoom = null; this.bubble = null;
+    this.postTarget = null;
+    if (!quick) this.rig.moveTo(this.home.pos, this.home.look, this.home.fov, 1.2, 'inOutCubic');
+  }
+  choose() {
+    const id = this.focus;
+    if (!id || this.state !== 'menu') return;
+    this.state = 'leaving';
+    this.game.audio.play('ui_pop');
+    this.game.audio.play('stew_bubble', { vol: 0.6 });
+    // a last little push toward the forger, then into the story
+    const z = this.zoom;
+    const p = this.rig.pos.clone().lerp(this.headOf(this.chars[id]), 0.25);
+    this.rig.moveTo(p.toArray(), z ? z.endLook.toArray() : null, (this.rig.fov || 30) - 3, 0.9, 'inOutSine');
+    this.co.start(function* () {
+      let t = 0;
+      while (t < 0.85) { t += this.game.ui.dt || 0.016; this.fade = clamp(t / 0.85); yield null; }
+      startRun(this.game, id);
+    }.bind(this));
+  }
+
+  // ------------------------------------------------------------------ frame
   update(dt) {
-    if (this.introCut) { this.introCut = false; this.playPrologue(true); }
-    this.stage.update(dt, this.time);
+    this.stage.update && this.stage.update(dt, this.time);
     for (const id in this.chars) this.chars[id].update(dt);
-    const A = this.stage.anchors;
-    // camera: a slow breath around the fire, a push-in on the chosen explorer, or follow the leaver
-    if (this.state === 'leaving') { /* driven by the coroutine */ }
-    else if (this.focus) {
-      const c = this.chars[this.focus];
-      const head = this.headOf(c);
-      const out = new THREE.Vector3(c.seatPos.x, 0, c.seatPos.z + 2.4).sub(A.fire).setY(0).normalize();
-      const pos = head.clone().addScaledVector(out, 3.3).add(new THREE.Vector3(0, 0.45, 0));
-      const right = new THREE.Vector3(out.z, 0, -out.x); // camera-right: the explorer sits left of frame, the panel right
-      const look = head.clone().add(new THREE.Vector3(0, -0.45, 0)).addScaledVector(right, 0.75);
-      this.rig.aim(pos.toArray(), look.toArray(), 34, 2.6);
-    } else {
-      const b = this.time * 0.18;
-      this.rig.aim([this.home.pos[0] + Math.sin(b) * 0.25, this.home.pos[1] + Math.sin(b * 0.7) * 0.06, this.home.pos[2]], this.home.look, this.home.fov, 1.6);
+    if (this.pip) this.pip.update(dt);
+    if (this.gem && this.gem.parent) this.gem.rotation.y += dt * 1.2;
+    this.fadeIn = Math.max(0, this.fadeIn - dt * 1.6);
+    // camera
+    const z = this.zoom;
+    if (z && this.state === 'menu') {
+      if (z.t < z.dur) {
+        z.t = Math.min(z.dur, z.t + dt);
+        const k = ease.inOutCubic(z.t / z.dur);
+        const p = z.pos.getPoint(k), l = z.look0.clone().lerp(z.look1, k);
+        this.rig.cut(p.toArray(), l.toArray(), z.fov0 + (z.fov1 - z.fov0) * k);
+        this.rig.roll = 0.07 * Math.sin(k * Math.PI);
+      } else {
+        // a slow breathing drift around the forger
+        const b = this.time * 0.35;
+        const p = z.endPos.clone().addScaledVector(z.right, Math.sin(b) * 0.08).add(V(0, Math.sin(b * 0.7) * 0.03, 0));
+        this.rig.aim(p.toArray(), z.endLook.toArray(), z.fov1, 3);
+      }
+    } else if (!this.focus && this.state === 'menu' && !this.rig.move) {
+      const b = this.time * 0.16;
+      this.rig.aim([this.home.pos[0] + Math.sin(b) * 0.22, this.home.pos[1] + Math.sin(b * 0.7) * 0.05, this.home.pos[2]], this.home.look, this.home.fov, 1.4);
     }
     this.rig.update(dt);
-    // speech: rare, short exchanges (never while an explorer is in focus)
-    for (const b of this.bubbles) b.t -= dt;
-    this.bubbles = this.bubbles.filter((b) => b.t > 0);
+    // the chosen forger turns to face us
+    if (this.focus && this.turnT < 1) {
+      this.turnT = Math.min(1, this.turnT + dt * 2.6);
+      const c = this.chars[this.focus];
+      const d = Math.atan2(Math.sin(this.turnTo - this.turnFrom), Math.cos(this.turnTo - this.turnFrom));
+      c.group.rotation.y = this.turnFrom + d * ease.outCubic(this.turnT);
+    }
+    // grade eases toward the focus look (the others sink a little into the dark)
+    const P = this.world.post, T = this.postTarget || this.post0;
+    for (const k of ['vignette', 'saturation', 'exposure']) if (T[k] !== undefined) P[k] += (T[k] - P[k]) * (1 - Math.exp(-dt * 4));
+    // body language while nobody is picked
     if (!this.focus && this.state === 'menu') {
-      this.convoT -= dt;
-      if (this.convoT <= 0) {
-        if (!this.convo) this.convo = { lines: (this.firstConvo ? rnd.pick(OPENERS) : rnd.pick(ARGUMENTS)).slice(0, 3), i: 0 };
-        const [id, text] = this.convo.lines[this.convo.i];
-        this.say(id, text);
-        const c = this.chars[id];
-        if (/!|\?/.test(text) && c.anim === 'sitTalk') c.play(rnd.pick(['argue', 'laugh', 'point', 'shrug']), { onDone: () => c.play('sitTalk', { loop: true }) });
-        this.convo.i++;
-        this.convoT = 2.6;
-        if (this.convo.i >= this.convo.lines.length) {
-          this.convo = null; this.firstConvo = false;
-          this.convoT = 40 + rnd.float(0, 20); // …then at most one short exchange every 40–60 s
-          this.co.start(function* () { let w = 3; while (w > 0) { w -= this.game.ui.dt || 0.016; yield null; } this.settle(); }.bind(this));
-        }
-      }
-      // body language in between
       this.habitT -= dt;
       if (this.habitT <= 0) {
-        this.habitT = 5 + rnd.float(0, 6);
-        const free = CHARACTER_ORDER.filter((id) => !this.acts[id] && !this.bubbles.some((b) => b.id === id));
+        this.habitT = 6 + rnd.float(0, 6);
+        const free = CHARACTER_ORDER.filter((id) => !this.acts[id]);
         if (free.length) this.habit(rnd.pick(free));
       }
     }
     for (const id in this.acts) {
       this.acts[id] -= dt;
-      if (this.acts[id] <= 0) { delete this.acts[id]; const c = this.chars[id]; if (c && this.focus !== id && this.state !== 'leaving') this.routine(c); }
+      if (this.acts[id] <= 0) { delete this.acts[id]; const c = this.chars[id]; if (c && this.focus !== id && this.state === 'menu') this.routine(c); }
     }
-    if (this.state === 'tale') {
-      const tl = this.tale;
-      tl.t -= dt;
-      if (tl.t <= 0 || (this.game.input.pressed && tl.i >= 0)) {
-        tl.i++;
-        if (tl.i >= tl.story.lines.length) { save.learn('unlocks.story', tl.story.id); this.state = 'menu'; this.tale = null; this.settle(); }
-        else { const [id, text] = tl.story.lines[tl.i]; this.say(id, text, 4); tl.t = 3.2; }
+    if (this.bubble) { if (this.bubble.delay > 0) this.bubble.delay -= dt; else { this.bubble.t -= dt; if (this.bubble.t <= 0) this.bubble = null; } }
+    // the stew: steam and the odd bubble; Pip snores
+    const P3 = this.stage.P;
+    if (P3) {
+      const pot = this.A.pot;
+      if (rnd.chance(dt * 5)) P3.alpha.emit({ pos: [pot.x + rnd.float(-0.12, 0.12), pot.y + 0.32, pot.z + rnd.float(-0.12, 0.12)], vel: [rnd.float(-0.04, 0.06), rnd.float(0.25, 0.45), 0], spread: 0.04, life: [1.8, 3], size: [1, 2], sizeEnd: 4, color: ['#e8dcd0', '#d0c4c8'], alpha: 0.32, fadeIn: 0.4, swirl: 0.4 });
+      if (rnd.chance(dt * 1.2)) P3.add.emit({ pos: [pot.x + rnd.float(-0.1, 0.1), pot.y + 0.3, pot.z + rnd.float(-0.1, 0.1)], vel: [0, 0.3, 0], spread: 0.05, life: [0.3, 0.6], size: 1, color: ['#ffd27a', '#ffb04a'], glow: 2 });
+      if (this.pip && this.pip.anim !== 'happy') {
+        this.zzzT -= dt;
+        if (this.zzzT <= 0) { this.zzzT = 2.4; const b = this.A.petBed; P3.alpha.emit({ pos: [b.x, b.y + 0.3, b.z], vel: [0.05, 0.22, 0], spread: 0.02, life: [1.2, 1.8], size: [1, 2], color: '#e8e0f0', alpha: 0.5, fadeIn: 0.2 }); }
       }
     }
-    // Bran's hammer: sparks and a soft clang
-    const bran = this.chars.bran;
-    if (bran && bran.anim === 'hammer') {
-      this.hammerT += dt;
-      if (this.hammerT > 1.1) {
-        this.hammerT = 0;
-        const a = A.anvil;
-        this.stage.P.add.emit({ pos: [a.x - 0.1, 0.5, a.z], radial: [0.6, 1.6], radialUp: 1.2, count: 12, life: [0.2, 0.5], size: 1, color: ['#fff0b0', '#ffb040'], glow: 4, gravity: 6 });
-        if (!this.focus) this.game.audio.play('anvil_ring', { vol: 0.18 });
-      }
-    }
-  }
-  /** Everyone stops looking at the last speaker and goes back to what they were doing. */
-  settle() {
-    for (const o of CHARACTER_ORDER) { const c = this.chars[o]; if (o === this.focus) continue; c.lookAt && c.lookAt(null); if (!this.acts[o] && c.anim === 'sitTalk') this.routine(c); }
-  }
-  habit(id) {
-    const c = this.chars[id];
-    const [anim, dur, poke] = rnd.pick(HABITS[id] || [['idle', 2]]);
-    c.play(anim, { loop: true });
-    this.acts[id] = dur;
-    if (poke) {
-      c.lookAt && c.lookAt(new THREE.Vector3(0, 0.3, 0));
-      this.co.start(function* () {
-        let w = 0.6; while (w > 0) { w -= this.game.ui.dt || 0.016; yield null; }
-        this.stage.P.add.emit({ pos: [0, 0.35, 0], radial: [0.4, 1.4], radialUp: 2, count: 18, life: [0.6, 1.4], size: 1, color: ['#ffd27a', '#ff8a3a', '#fff0b0'], glow: 3.5, gravity: -0.4 });
-        this.game.audio.play('sizzle', { vol: 0.12 });
-        if (this.stage.fireLight) this.stage.fireLight.intensity += 3;
-        w = dur; while (w > 0) { w -= this.game.ui.dt || 0.016; yield null; }
-        c.lookAt && c.lookAt(null);
-      }.bind(this));
-    }
+    if (rnd.chance(dt * 0.12) && !this.focus) this.game.audio.play('stew_bubble', { vol: 0.25 });
+    if (this.focus && this.game.input.actionPressed('back')) this.release();
   }
 
-  pick(id) {
-    if (this.focus === id) return;
-    if (this.focus) this.release();
-    this.focus = id;
-    delete this.acts[id];
-    this.bubbles = []; // the focused explorer's greeting is the only line on screen
-    this.convo = null; this.convoT = Math.max(this.convoT, 20);
-    const c = this.chars[id];
-    c.setSeated && c.setSeated(false);
-    c.group.rotation.y = Math.atan2(this.rig.camera.position.x - c.group.position.x, this.rig.camera.position.z - c.group.position.z) * 0.6 + c.home * 0.4;
-    c.play('wave', { onDone: () => this.focus === id && c.play('idle', { loop: true }) });
-    c.setExpression && c.setExpression('happy');
-    this.game.audio.play('ui_pop');
-    const greet = CHARACTERS[id].barks.start && CHARACTERS[id].barks.start[0];
-    if (greet) { this.bubbles.push({ id, text: greet, t: 3, dur: 3 }); }
-    for (const o of CHARACTER_ORDER) if (o !== id) { const oc = this.chars[o]; oc.lookAt && oc.lookAt(this.headOf(c)); }
-  }
-  release() {
-    const c = this.chars[this.focus];
-    if (c) { c.setSeated && c.setSeated(true, c.seatHeight); c.group.rotation.y = c.home; this.routine(c); c.setExpression && c.setExpression('neutral'); }
-    for (const o of CHARACTER_ORDER) this.chars[o].lookAt && this.chars[o].lookAt(null);
-    this.bubbles = [];
-    this.focus = null;
-  }
-
-  descend() {
-    const id = this.focus;
-    this.state = 'leaving';
-    this.bubbles = [];
-    const c = this.chars[id];
-    const A = this.stage.anchors;
-    this.game.audio.play('transition');
-    for (const o of CHARACTER_ORDER) if (o !== id) { const oc = this.chars[o]; oc.play('wave', { loop: true }); oc.setExpression && oc.setExpression('happy'); oc.lookAt && oc.lookAt(this.headOf(c)); }
-    const friend = CHARACTER_ORDER.find((o) => o !== id);
-    this.say(friend, rnd.pick(['Come back in one piece!', 'Save us some ore!', 'Go get him!']), 3);
-    const cam = this.rig;
-    this.co.start(function* () {
-      c.setSeated && c.setSeated(false);
-      c.play('walk', { loop: true });
-      // walk around the fire (front-row explorers pass in front of it), then into the mine
-      const p0 = c.group.position.clone(), tgt = new THREE.Vector3(A.mineEntrance.x + 0.2, 0, A.mineEntrance.z + 1.2);
-      const path = [p0];
-      const a0 = Math.atan2(p0.z, p0.x), a1 = Math.atan2(tgt.z, tgt.x);
-      let d = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0));
-      if (p0.z > 0 && d < 0) d += Math.PI * 2;
-      if (Math.abs(d) > 0.5) {
-        const R = p0.z > 0 ? 2.7 : Math.max(1.7, Math.hypot(p0.x, p0.z)), n = Math.ceil(Math.abs(d) / 0.45);
-        for (let k = 1; k <= n; k++) { const a = a0 + (d * k) / n; path.push(new THREE.Vector3(Math.cos(a) * R, 0, Math.sin(a) * R)); }
-      }
-      path.push(tgt, new THREE.Vector3(A.mineEntrance.x, 0, A.mineEntrance.z), new THREE.Vector3(A.mineDeep.x, 0, A.mineDeep.z));
-      // the camera rises to a wide shot of the camp and watches them go into the dark
-      cam.moveTo([0.6, 3.5, 5.6], [-1.5, 0.6, -2.3], 36, 2.4, 'inOutSine');
-      for (let i = 1; i < path.length; i++) {
-        const a = path[i - 1], b = path[i], len = a.distanceTo(b), dur = len / 1.6;
-        c.group.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
-        let t = 0;
-        while (t < dur) {
-          t += this.game.ui.dt || 0.016;
-          c.group.position.lerpVectors(a, b, Math.min(1, t / dur));
-          if (i === path.length - 1) this.fade = clamp(t / dur, 0, 1) * 0.6;
-          yield null;
-        }
-      }
-      let f = 0;
-      while (f < 0.6) { f += this.game.ui.dt || 0.016; this.fade = 0.6 + (f / 0.6) * 0.4; yield null; }
-      startRun(this.game, id);
-    }.bind(this));
-  }
-
-  // ------------------------------------------------------------------------ UI
-  tag(ui, x, y, text, color = '#3a2214') {
+  // ------------------------------------------------------------------ UI
+  tag(ui, x, y, text, color = '#3a2214', alpha = 1) {
     const w = ui.measure(text) + 16;
     const c = tagCanvas(w);
-    const bx = Math.round(clamp(x - c.width / 2, 4, ui.w - c.width - 4));
-    ui.img(c, bx, Math.round(clamp(y, 4, ui.h - 24)));
-    ui.text(text, bx + 10, Math.round(clamp(y, 4, ui.h - 24)) + 11, { color });
+    const bx = Math.round(clamp(x - c.width / 2, 4, ui.w - c.width - 4)), by = Math.round(clamp(y, 4, ui.h - 24));
+    ui.img(c, bx, by, { alpha });
+    ui.ctx.globalAlpha = alpha;
+    ui.text(text, bx + 10, by + 11, { color });
+    ui.ctx.globalAlpha = 1;
   }
-  /** Screen rect around a world anchor (r: half-size in metres). */
   rectOf(v, r = 0.3, up = 0.3) {
-    const c = this.project(v.clone().add(new THREE.Vector3(0, up, 0)));
-    const e = this.project(v.clone().add(new THREE.Vector3(r, up, 0)));
-    const s = Math.max(14, Math.abs(e.x - c.x));
-    return { x: c.x - s, y: c.y - s, w: s * 2, h: s * 2, cx: c.x, cy: c.y - s };
+    const c = this.project(v.clone().add(V(0, up, 0)));
+    const e = this.project(v.clone().add(V(r, up, 0)));
+    const s = Math.max(16, Math.abs(e.x - c.x));
+    return { x: c.x - s, y: c.y - s, w: s * 2, h: s * 2, cx: c.x, cy: c.y - s, behind: c.behind };
   }
 
   draw(ui) {
-    if (this.fade > 0) ui.rect(0, 0, ui.w, ui.h, '#050406', this.fade);
-    if (this.state === 'cut') return;
-    if (this.state === 'story') return this.drawStory(ui);
-    // speech bubbles
-    for (const b of this.bubbles) {
-      const c = this.chars[b.id];
-      if (!c) continue;
-      const p = this.project(this.headOf(c));
-      if (p.behind) continue;
-      speech(ui, p.x, p.y - 4, b.text, { maxW: 140, alpha: clamp(b.t * 3, 0, 1) * clamp((b.dur - b.t) * 6, 0, 1) });
-    }
-    if (this.state === 'tale') {
-      ui.rect(0, 0, ui.w, 34, '#050406'); ui.rect(0, ui.h - 34, ui.w, 34, '#050406');
-      ui.text(`{gold}Campfire tale:{/} ${this.tale.story.title}`, ui.w / 2, 12, { align: 'center' });
-      ui.text('{dim}click to continue{/}', ui.w - 10, ui.h - 20, { align: 'right', font: 'small' });
-      return;
-    }
-    if (this.state === 'leaving') return;
-    // the explorers are the menu
-    for (const id of CHARACTER_ORDER) {
-      const c = this.chars[id];
-      const top = this.project(this.headOf(c));
-      const feet = this.project(c.group.position);
-      const hgt = Math.max(30, feet.y - top.y + 16), wdt = Math.max(30, hgt * 0.62);
-      const hit = ui.hit('char-' + id, top.x - wdt / 2, top.y - 10, wdt, hgt + 4, { cursor: 'hand', sound: false });
-      if (hit.hover && this.focus !== id && !this.panel) this.tag(ui, top.x, top.y - 40, `${CHARACTERS[id].name}, ${CHARACTERS[id].title}`, CHARACTERS[id].color);
-      if (hit.clicked && !this.panel) this.pick(id);
-    }
-    if (this.focus) return this.drawCharPanel(ui);
-    const lg = logo(1);
-    const bob = Math.round(Math.sin(this.time * 1.2) * 2);
-    ui.img(lg, Math.round(ui.w / 2 - lg.width / 2), 14 + bob);
-    // camp objects instead of menu buttons
-    const A = this.stage.anchors;
-    const obj = (key, v, r, up, label, fn) => {
-      const o = this.rectOf(v, r, up);
-      const h = ui.hit('obj-' + key, o.x, o.y, o.w, o.h, { sound: false });
-      if (h.hover && !this.panel) this.tag(ui, o.cx, o.y - 26, label);
-      if (h.clicked && !this.panel) { this.game.audio.play('ui_pop'); fn(); }
-    };
-    obj('codex', A.books, 0.32, 0.12, 'Forge Codex', () => { this.panel = 'codex'; });
-    obj('prologue', A.scroll, 0.28, 0.05, 'The story so far', () => this.playPrologue(false));
-    obj('settings', A.lantern, 0.22, 0, 'Settings', () => { this.panel = 'settings'; });
-    const st = save.data.stats;
-    obj('slate', A.slate, 0.32, 0, `Runs ${st.runs} · Wins ${st.wins} · Deepest: ${REGIONS[st.bestRegion || 0].name}`, () => {});
-    if (!this.panel && this.time > 2 && this.time < 30) this.tag(ui, ui.w / 2, ui.h - 40 + Math.round(Math.sin(this.time * 2) * 2), (ui.touch ? 'Tap an explorer by the fire to choose who descends' : 'Click an explorer by the fire to choose who descends'));
-    if (this.panel === 'codex') this.drawCodex(ui);
-    if (this.panel === 'settings') this.drawSettings(ui);
-  }
-
-  drawCharPanel(ui) {
-    const id = this.focus, C = CHARACTERS[id];
-    const W = 270, H = 300, x = ui.w - W - 16, y = 70;
-    ui.img(noteCanvas(W, H, 21), x, y);
-    const ink = '#3a2214';
-    ui.text(C.name, x + 18, y + 18, { color: '#6a2a10' });
-    ui.text(C.title, x + 18, y + 31, { color: ink });
-    ui.icon('heart', x + W - 90, y + 18); ui.text(`${C.hp}`, x + W - 76, y + 19, { color: '#8a2a20' });
-    ui.icon('coin', x + W - 50, y + 18); ui.text(`${C.coins}`, x + W - 36, y + 19, { color: '#7a5a10' });
-    ui.text(C.blurb, x + 18, y + 48, { maxW: W - 36, color: '#4a3220' });
-    let yy = y + 48 + ui.layout(C.blurb, 'body', W - 36).length * 11 + 8;
-    for (const p of C.passives) {
-      ui.icon(p.icon, x + 18, yy + 1);
-      ui.text(`{#7a3a10}${p.name}{/}`, x + 32, yy, { color: ink });
-      ui.text(p.text, x + 32, yy + 11, { maxW: W - 50, color: '#4a3220' });
-      yy += 13 + ui.layout(p.text, 'body', W - 50).length * 11 + 4;
-    }
-    ui.text('Starting kit', x + 18, yy + 2, { color: '#7a5634' });
-    C.start.forEach((m, i) => {
-      const sx = x + 18 + i * 22, sy = yy + 14;
-      ui.img(materialSprite(m, 32), sx - 4, sy - 4, { scale: 0.6 });
-      if (ui.hit('kit' + id + i, sx, sy, 20, 20).hover) ui.tooltip({ title: MATERIALS[m].name, body: MATERIALS[m].desc });
-    });
-    if (ui.button('descend', x + 18, y + H - 40, 160, 24, `Descend with ${C.name}`, { style: 'gold', icon: 'pickaxe', key: 'SPACE' }) || this.game.input.actionPressed('confirm')) this.descend();
-    if (ui.button('back', x + W - 82, y + H - 40, 64, 24, 'Back', { style: 'wood' }) || this.game.input.actionPressed('back')) this.release();
-    const idx = CHARACTER_ORDER.indexOf(id);
-    if (this.game.input.actionPressed('right')) this.pick(CHARACTER_ORDER[(idx + 1) % 4]);
-    if (this.game.input.actionPressed('left')) this.pick(CHARACTER_ORDER[(idx + 3) % 4]);
-  }
-
-  drawStory(ui) {
-    this.storyT += ui.dt;
-    ui.rect(0, 0, ui.w, 44, '#050406'); ui.rect(0, ui.h - 64, ui.w, 64, '#050406');
-    const text = STORY[this.storyIdx];
-    const n = Math.floor(this.storyT * 40);
-    ui.text(text.slice(0, n), ui.w / 2, ui.h - 50, { align: 'center', maxW: 560, color: '#f4ecd8' });
-    ui.text('{dim}click to continue{/}', ui.w - 12, ui.h - 16, { align: 'right', font: 'small' });
-    if (this.game.input.pressed || this.game.input.actionPressed('confirm')) {
-      if (n < text.length) this.storyT = 99;
-      else {
-        this.storyIdx++; this.storyT = 0;
-        this.game.audio.play('page_turn');
-        if (this.storyIdx >= STORY.length) { this.state = 'menu'; save.data.seen.intro = true; save.write(); }
+    if (this.state === 'leaving') { this.drawFade(ui); return; }
+    // the forgers are the menu
+    if (!this.panel) {
+      for (const id of CHARACTER_ORDER) {
+        const c = this.chars[id];
+        const top = this.project(this.headOf(c));
+        const feet = this.project(c.group.position);
+        if (top.behind) continue;
+        const hgt = Math.max(44, feet.y - top.y + 30), wdt = Math.max(40, hgt * 0.8);
+        const hit = ui.hit('char-' + id, top.x - wdt / 2, top.y - 22, wdt, hgt + 6, { cursor: 'hand', sound: false });
+        if (hit.hover && this.focus !== id && !ui.touch) this.tag(ui, top.x, top.y - 44, CHARACTERS[id].name, CHARACTERS[id].color);
+        if (hit.clicked) this.pick(id);
       }
     }
-    this.world.post = { ...this.world.post, saturation: this.storyIdx === 2 ? 0.6 : 1.12 };
+    // a word from the picked forger
+    if (this.bubble && this.bubble.delay <= 0 && this.bubble.text) {
+      const c = this.chars[this.bubble.id], b = this.bubble;
+      const p = this.project(this.headOf(c).add(V(0, 0.18, 0)));
+      if (!p.behind) this.speech(ui, p.x, p.y - 6, b.text, clamp(b.t * 3) * clamp((b.dur - b.t) * 6));
+    }
+    if (this.focus) { this.drawCard(ui); this.drawFade(ui); return; }
+    // the logo, small and floating over the camp
+    const lg = logo(1);
+    const bob = Math.round(Math.sin(this.time * 1.1) * 2);
+    const la = clamp((this.time - 0.4) * 1.5);
+    ui.img(lg, Math.round(ui.w / 2 - lg.width / 2), 12 + bob, { alpha: la });
+    // camp objects: the lantern (settings) and Elio's book (codex)
+    if (!this.panel) {
+      const obj = (key, v, r, up, label, fn) => {
+        if (!v) return;
+        const o = this.rectOf(v, r, up);
+        if (o.behind) return;
+        const h = ui.hit('obj-' + key, o.x, o.y, o.w, o.h, { sound: false, cursor: 'hand' });
+        if (h.hover && !ui.touch) this.tag(ui, o.cx, o.y - 26, label);
+        if (h.clicked) { this.game.audio.play('ui_pop'); fn(); }
+      };
+      obj('codex', this.A.books, 0.3, 0.12, 'Codex', () => { this.panel = 'codex'; this.game.audio.play('page_turn'); });
+      obj('settings', this.A.lantern, 0.24, 0, 'Settings', () => { this.panel = 'settings'; });
+      // gear in the corner for touch players (the lantern can be small on a phone)
+      if (ui.touch && ui.iconButton('settings-gear', ui.w - 26, ui.h - 30, 'tool', { size: 20 })) this.panel = 'settings';
+    }
+    // one tiny hint, until someone is picked
+    if (!this.panel && !this.picked && this.time > 2.2) {
+      const a = clamp((this.time - 2.2) * 1.2) * (0.75 + 0.25 * Math.sin(this.time * 2.4));
+      ui.ctx.globalAlpha = a;
+      ui.text(ui.touch ? 'tap a forger' : 'pick a forger', ui.w / 2, ui.h - 22, { align: 'center', color: '#f4e6c8', outline: '#140c10' });
+      ui.ctx.globalAlpha = 1;
+    }
+    if (this.panel === 'codex') this.drawCodex(ui);
+    if (this.panel === 'settings') this.drawSettings(ui);
+    this.drawFade(ui);
+  }
+  drawFade(ui) {
+    const a = Math.max(this.fade, ease.inOutSine(clamp(this.fadeIn)));
+    if (a > 0.003) ui.rect(0, 0, ui.w, ui.h, '#040306', a);
+  }
+  speech(ui, x, y, text, alpha) {
+    const w = ui.measure(text) + 14, h = 18;
+    const bx = Math.round(clamp(x - w / 2, 4, ui.w - w - 4)), by = Math.round(y - h - 6);
+    ui.ctx.globalAlpha = alpha;
+    ui.rect(bx + 1, by, w - 2, h, '#f6ecd8'); ui.rect(bx, by + 1, w, h - 2, '#f6ecd8');
+    ui.rect(bx + 1, by + h - 1, w - 2, 1, '#c8b494');
+    ui.rect(Math.round(x) - 2, by + h, 5, 2, '#f6ecd8'); ui.rect(Math.round(x) - 1, by + h + 2, 3, 2, '#f6ecd8');
+    ui.text(text, bx + 7, by + 5, { color: '#3a2214' });
+    ui.ctx.globalAlpha = 1;
+  }
+
+  /** The forger's card: who they are, three perks in a few words, and Choose. */
+  drawCard(ui) {
+    const id = this.focus, C = CHARACTERS[id];
+    this.cardT = (this.cardT || 0) + ui.dt;
+    const k = ease.outCubic(clamp((this.cardT - 0.75) * 2.6));
+    if (k <= 0) return;
+    const touch = ui.touch;
+    const W = 236, H = touch ? 196 : 182;
+    const x = Math.round(ui.w - W - 26 + (1 - k) * 40), y = Math.round(ui.h / 2 - H / 2 - 10);
+    // ui.img/icon reset the alpha after each draw, so every piece carries it
+    ui.img(noteCanvas(W, H, 21 + CHARACTER_ORDER.indexOf(id)), x, y, { alpha: k });
+    const ink = '#3a2214';
+    const txt = (str, tx, ty, o) => { ui.ctx.globalAlpha = k; ui.text(str, tx, ty, o); ui.ctx.globalAlpha = 1; };
+    ui.big(C.name, x + 18, y + 14, { scale: 2, top: C.color || '#e8a060', bottom: '#5a2a14', outline: '#2a160c', align: 'left', valign: 'top', alpha: k });
+    txt(C.title || '', x + 18, y + 40, { color: '#6a4a30' });
+    ui.icon('heart', x + W - 52, y + 16, { alpha: k }); txt(`${C.hp}`, x + W - 38, y + 17, { color: '#8a2a20' });
+    const perks = (C.perks || C.passives || []).slice(0, 3);
+    perks.forEach((p, i) => {
+      const yy = y + 62 + i * 24;
+      ui.icon(p.icon || 'star', x + 18, yy + 2, { alpha: k });
+      const line = p.short || p.name || '';
+      txt(line, x + 36, yy + 3, { color: ink, maxW: W - 52 });
+    });
+    if (k < 1) return;
+    const bw = touch ? 120 : 108, bh = touch ? 30 : 24;
+    if (ui.button('choose', x + 18, y + H - bh - 14, bw, bh, 'Choose', { style: 'gold', icon: 'pickaxe', key: touch ? undefined : 'SPACE' }) || this.game.input.actionPressed('confirm')) this.choose();
+    if (ui.button('back', x + W - 70, y + H - bh - 14, 52, bh, 'Back', { style: 'wood' })) this.release();
+    // arrows: the next forger
+    const idx = CHARACTER_ORDER.indexOf(id);
+    if (this.game.input.actionPressed('right')) this.pick(CHARACTER_ORDER[(idx + 1) % 4]);
+    else if (this.game.input.actionPressed('left')) this.pick(CHARACTER_ORDER[(idx + 3) % 4]);
+    // a click on the camp away from the card and the forger goes back to the wide shot
+    else if (this.game.input.pressed && !this.game.input.consumed && ui.mx < x - 10 && this.zoom && this.zoom.t >= this.zoom.dur) {
+      const c = this.chars[id], top = this.project(this.headOf(c)), feet = this.project(c.group.position);
+      const onHer = Math.abs(ui.mx - top.x) < 70 && ui.my > top.y - 30 && ui.my < feet.y + 20;
+      if (!onHer) this.release();
+    }
   }
 
   drawCodex(ui) {
@@ -411,19 +391,30 @@ export class TitleScene extends Scene {
     const W = Math.min(420, ui.w - 20), H = 250, x = ui.w / 2 - W / 2, y = ui.h / 2 - H / 2;
     ui.panel('parchment', x, y, W, H, { seed: 12 });
     const ink = '#3a2618';
-    ui.text('The Forge Codex', x + W / 2, y + 10, { align: 'center', color: ink });
-    const d = save.data.discovered;
-    ui.text(`{#7a3a00}Secret weapons ${d.recipes.length}/${Object.keys(RECIPES).length}{/}`, x + 14, y + 28, { color: ink });
+    ui.text('Codex', x + W / 2, y + 10, { align: 'center', color: ink });
+    const d = save.data.discovered || { recipes: [], synergies: [] };
+    const known = d.recipes || [];
+    ui.text(`{#7a3a00}Weapons ${known.length}/${Object.keys(RECIPES).length}{/}`, x + 14, y + 28, { color: ink });
     Object.entries(RECIPES).forEach(([rid, r], i) => {
-      const known = d.recipes.includes(rid);
-      const cx = x + 14 + (i % 2) * (W / 2 - 8), cy = y + 42 + Math.floor(i / 2) * 22;
-      ui.icon(BLUEPRINTS[r.bp].icon, cx, cy + 1, { alpha: known ? 1 : 0.35 });
-      ui.text(known ? r.name : '? ? ?', cx + 12, cy, { color: known ? '#7a3a00' : '#9a8a7a' });
-      if (known) r.ings.forEach((m, k) => ui.img(materialSprite(m, 10), cx + 12 + k * 11, cy + 10));
-      else ui.text(r.hint, cx + 12, cy + 10, { font: 'small', color: '#9a8a7a', maxW: W / 2 - 30 });
+      const kn = known.includes(rid);
+      const cx = x + 14 + (i % 2) * (W / 2 - 8), cy = y + 42 + Math.floor(i / 2) * 16;
+      ui.icon(BLUEPRINTS[r.bp] ? BLUEPRINTS[r.bp].icon : 'sword', cx, cy + 1, { alpha: kn ? 1 : 0.35 });
+      ui.text(kn ? r.name : '? ? ?', cx + 12, cy, { color: kn ? '#7a3a00' : '#9a8a7a' });
     });
-    const sy = y + 42 + Math.ceil(Object.keys(RECIPES).length / 2) * 22 + 4;
-    ui.text(`{#7a3a00}Synergies found ${d.synergies.length}/${SYNERGIES.length}:{/} ${d.synergies.map((s) => SYNERGIES.find((q) => q.id === s)?.name).filter(Boolean).join(', ') || '{dim}none yet{/}'}`, x + 14, Math.min(sy, y + H - 40), { color: ink, maxW: W - 28, font: 'small' });
+    let sy = y + 46 + Math.ceil(Object.keys(RECIPES).length / 2) * 16;
+    const STEWS = STEW_DATA.STEWS || {};
+    const sk = Object.keys(STEWS);
+    if (sk.length && sy < y + H - 60) {
+      const ks = d.stews || [];
+      ui.text(`{#7a3a00}Stews ${ks.filter((s) => STEWS[s]).length}/${sk.length}{/}`, x + 14, sy, { color: ink });
+      sk.slice(0, 8).forEach((sid, i) => {
+        const kn = ks.includes(sid);
+        ui.text(kn ? STEWS[sid].name : '? ? ?', x + 14 + (i % 2) * (W / 2 - 8), sy + 14 + Math.floor(i / 2) * 12, { color: kn ? '#7a3a00' : '#9a8a7a', font: 'small' });
+      });
+      sy += 14 + Math.ceil(Math.min(8, sk.length) / 2) * 12 + 6;
+    }
+    const syn = d.synergies || [];
+    ui.text(`{#7a3a00}Synergies ${syn.length}/${SYNERGIES.length}{/}`, x + 14, Math.min(sy, y + H - 40), { color: ink, font: 'small' });
     if (ui.button('codex-close', x + W - 70, y + H - 26, 60, 18, 'Close', { style: 'wood' }) || this.game.input.actionPressed('back')) this.panel = null;
     ui.unblock();
   }
@@ -441,7 +432,7 @@ export class TitleScene extends Scene {
       ui.rect(sx, yy + 3, sw, 3, '#2a1d22');
       ui.rect(sx, yy + 3, Math.round(sw * s[key]), 3, '#ffb63d');
       ui.rect(sx + Math.round(sw * s[key]) - 2, yy, 4, 9, '#fff6e0');
-      const h = ui.hit('sl' + key, sx - 4, yy - 3, sw + 8, 14);
+      const h = ui.hit('sl' + key, sx - 4, yy - 5, sw + 8, 18);
       if (h.down || (h.hover && this.game.input.down)) { s[key] = clamp((ui.mx - sx) / sw, 0, 1); this.game.audio.setVolumes({ master: s.master, music: s.music, sfx: s.sfx }); }
       if (h.clicked) { save.write(); this.game.audio.play('blip'); }
     };

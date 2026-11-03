@@ -353,4 +353,130 @@ export const SFX = {
     },
   },
   kindle_cast: { vol: 0.85, verb: 0.25, fn: (s) => { s.tone({ f: 600, f2: 1500, sweep: 0.12, dur: 0.18, vol: 0.12 }); s.fm({ t: 0.08, f: 2093, ratio: 2, index: 1.2, dur: 0.3, vol: 0.06 }); return 0.4; } },
+  // ---------------------------------------------------------------- v4: Medusa's curse, Pip, first-person
+  hiss: { vol: 0.9, verb: 0.25, fn: (s) => { s.noise({ dur: 0.75, a: 0.09, vol: 0.2, filter: BP(5200, 6800, 1.1) }); s.noise({ dur: 0.6, a: 0.05, vol: 0.08, filter: HP(7500) }); s.noise({ t: 0.05, dur: 0.5, a: 0.1, vol: 0.06, filter: BP(2600, 3400, 2) }); return 0.8; } },
+  snake_rattle: { vol: 0.85, verb: 0.2, fn: (s) => { for (let i = 0; i < 24; i++) s.noise({ t: i * 0.032 + r(0, 0.006), dur: 0.014, vol: 0.16 * (1 - i / 30), filter: BP(r(4200, 5200), null, 2.5) }); return 0.85; } },
+  petrify: {
+    vol: 0.95, verb: 0.45, fn: (s) => {
+      s.tone({ type: 'sawtooth', f: 220, f2: 82, dur: 1.5, a: 0.05, vol: 0.05, filter: LP(1400, 300), vib: { rate: 7, depth: 0.02 } });
+      s.tone({ type: 'sine', f: 660, f2: 330, dur: 1.2, a: 0.02, vol: 0.05, vib: { rate: 9, depth: 0.03 } });
+      s.noise({ dur: 1.6, a: 0.9, vol: 0.16, filter: LP(500, 2400), brown: true });
+      for (let i = 0; i < 26; i++) s.noise({ t: 0.1 + (i / 26) ** 0.7 * 1.4, dur: r(0.008, 0.02), vol: 0.1 + i * 0.006, filter: BP(r(1400, 4200), null, 2) });
+      thud(s, { t: 1.45, f: 120, f2: 45, dur: 0.3, vol: 0.35 });
+      return 1.8;
+    },
+  },
+  stone_crack: { vol: 0.95, verb: 0.2, fn: (s) => { s.noise({ dur: 0.02, vol: 0.5, filter: HP(1800) }); crackle(s, 7, { spread: 0.12, vol: 0.22 }); s.tone({ f: 170, f2: 90, dur: 0.1, vol: 0.18 }); s.noise({ t: 0.04, dur: 0.25, a: 0.01, vol: 0.08, filter: LP(1800, 500), brown: true }); return 0.3; } },
+  stone_shatter: {
+    vol: 1, verb: 0.35, fn: (s) => {
+      s.kick({ f: 110, end: 35, dur: 0.45, vol: 0.7 });
+      s.noise({ dur: 0.08, vol: 0.5, filter: HP(1200) });
+      s.noise({ dur: 0.9, a: 0.005, vol: 0.28, filter: LP(2200, 300), brown: true });
+      for (let i = 0; i < 14; i++) thud(s, { t: r(0.05, 0.7), f: r(200, 420), f2: r(80, 140), dur: 0.07, vol: r(0.06, 0.14), nf: 1500 });
+      crackle(s, 16, { spread: 0.6, vol: 0.14 });
+      return 1.1;
+    },
+  },
+  slurp: { vol: 0.85, verb: 0.08, fn: (s) => { s.noise({ dur: 0.38, a: 0.06, vol: 0.2, filter: BP(520, 1700, 4) }); s.tone({ t: 0.32, f: 340, f2: 170, dur: 0.12, vol: 0.12 }); s.tone({ t: 0.46, type: 'triangle', f: 520, f2: 760, sweep: 0.08, dur: 0.12, vol: 0.06 }); return 0.6; } },
+  stew_bubble: { vol: 0.7, verb: 0.15, fn: (s) => { for (let i = 0; i < 5; i++) { const f = r(110, 230); s.tone({ t: i * 0.09 + r(0, 0.05), f, f2: f * r(2.2, 3), sweep: 0.06, dur: 0.08, vol: 0.09 }); } return 0.55; } },
+  ladle: { vol: 0.85, verb: 0.15, fn: (s) => { clink(s, { f: 1400, ratio: 1.9, index: 1.5, dur: 0.18, vol: 0.08 }); s.noise({ t: 0.06, dur: 0.32, a: 0.04, vol: 0.12, filter: BP(900, 500, 1.2) }); for (let i = 0; i < 3; i++) s.tone({ t: 0.12 + i * 0.07, f: r(300, 500), f2: r(700, 1000), sweep: 0.04, dur: 0.05, vol: 0.05 }); return 0.5; } },
+  trip: { vol: 0.95, verb: 0.12, fn: (s) => { whoosh(s, { dur: 0.22, f: 700, f2: 2600, vol: 0.18 }); s.tone({ t: 0.05, type: 'triangle', f: 520, f2: 300, dur: 0.18, vol: 0.12, vib: { rate: 16, depth: 0.04 } }); thud(s, { t: 0.32, f: 150, f2: 55, dur: 0.22, vol: 0.5 }); s.noise({ t: 0.32, dur: 0.2, vol: 0.1, filter: LP(900) }); return 0.6; } },
+  statue_break: {
+    vol: 1, verb: 0.35, fn: (s) => {
+      s.noise({ dur: 0.05, vol: 0.5, filter: HP(1500) });
+      for (let i = 0; i < 12; i++) s.fm({ t: r(0, 0.35), f: r(900, 3200), ratio: r(1.3, 2.6), index: r(1, 3), dur: r(0.1, 0.35), vol: 0.06 });
+      thud(s, { f: 190, f2: 70, dur: 0.14, vol: 0.35 });
+      crackle(s, 10, { t: 0.05, spread: 0.4, vol: 0.12 });
+      s.tone({ t: 0.25, type: 'sine', f: 140, f2: 60, dur: 1.4, a: 0.3, vol: 0.06 });
+      return 1.6;
+    },
+  },
+  ground_split: {
+    vol: 1, verb: 0.5, fn: (s) => {
+      s.kick({ f: 55, end: 22, dur: 1.6, vol: 1 });
+      s.noise({ dur: 2.2, a: 0.15, vol: 0.32, filter: LP(180, 1200), brown: true });
+      for (let i = 0; i < 30; i++) s.noise({ t: (i / 30) * 1.8 + r(0, 0.05), dur: r(0.01, 0.03), vol: 0.22, filter: BP(r(800, 3200), null, 1.5) });
+      for (let i = 0; i < 6; i++) thud(s, { t: 0.3 + i * 0.28, f: r(90, 140), f2: 40, dur: 0.25, vol: 0.25 });
+      s.tone({ t: 0.8, type: 'sawtooth', f: 98, f2: 92, dur: 1.6, a: 0.6, vol: 0.05, filter: LP(600), vib: { rate: 5, depth: 0.02 } });
+      return 2.4;
+    },
+  },
+  medusa_laugh: {
+    vol: 0.95, verb: 0.6, fn: (s) => {
+      const notes = [740, 698, 659, 622, 587];
+      notes.forEach((f, i) => {
+        const t = i * 0.19;
+        s.tone({ t, type: 'triangle', f: f * 1.06, f2: f, sweep: 0.12, dur: 0.17, a: 0.01, vol: 0.09, vib: { rate: 11, depth: 0.025 }, filter: BP(1600, null, 1.2) });
+        s.tone({ t, type: 'sine', f: f * 2, f2: f * 1.9, dur: 0.15, a: 0.01, vol: 0.03 });
+        s.noise({ t, dur: 0.12, a: 0.01, vol: 0.05, filter: BP(3200, null, 3) });
+      });
+      s.noise({ t: 0.9, dur: 1.0, a: 0.2, vol: 0.08, filter: BP(5800, 7200, 1.2) });
+      s.tone({ t: 0.95, type: 'sine', f: 1175, f2: 880, dur: 0.9, a: 0.05, vol: 0.04, vib: { rate: 6, depth: 0.03 } });
+      return 2.0;
+    },
+  },
+  medusa_whisper: {
+    vol: 0.9, verb: 0.6, fn: (s) => {
+      for (let i = 0; i < 6; i++) s.noise({ t: i * 0.22 + r(0, 0.06), dur: r(0.15, 0.28), a: 0.05, vol: 0.09, filter: BP(r(1800, 3600), r(2400, 5200), 3) });
+      s.noise({ dur: 1.5, a: 0.4, vol: 0.06, filter: BP(6200, 5000, 1.5) });
+      s.tone({ type: 'sine', f: 196, f2: 207, dur: 1.5, a: 0.5, vol: 0.05, vib: { rate: 3, depth: 0.01 } });
+      return 1.6;
+    },
+  },
+  gaze: {
+    vol: 1, verb: 0.6, fn: (s) => {
+      s.kick({ f: 70, end: 28, dur: 1.2, vol: 0.8 });
+      for (const [f, k] of [[220, 0], [277, 0.04], [330, 0.08], [415, 0.12]]) s.fm({ t: k, f, f2: f * 2, ratio: 1.5, index: 3, dur: 1.4, vol: 0.06, idxDecay: 0.8 });
+      s.tone({ type: 'sawtooth', f: 55, dur: 1.5, a: 0.02, vol: 0.08, filter: LP(400, 2400, 4) });
+      s.noise({ dur: 1.4, a: 0.3, vol: 0.14, filter: HP(3000, 9000) });
+      return 1.6;
+    },
+  },
+  pip_yip: { vol: 0.85, verb: 0.12, fn: (s) => { s.tone({ type: 'triangle', f: 900, f2: 1500, sweep: 0.05, dur: 0.12, vol: 0.14 }); s.tone({ t: 0.06, type: 'triangle', f: 1400, f2: 760, sweep: 0.08, dur: 0.1, vol: 0.1 }); return 0.2; } },
+  pip_bark: { vol: 0.85, verb: 0.15, fn: (s) => { for (const t of [0, 0.2]) { s.tone({ t, type: 'square', f: 640, f2: 420, dur: 0.1, vol: 0.06, filter: LP(2200) }); s.noise({ t, dur: 0.08, vol: 0.12, filter: BP(1300, null, 1.5) }); } return 0.35; } },
+  pip_dig: { vol: 0.8, verb: 0.1, fn: (s) => { for (let i = 0; i < 6; i++) s.noise({ t: i * 0.07 + r(0, 0.02), dur: r(0.04, 0.07), vol: 0.14, filter: LP(r(900, 1600)), brown: i % 2 === 0 }); for (let i = 0; i < 3; i++) thud(s, { t: r(0.05, 0.4), f: r(160, 240), f2: 90, dur: 0.05, vol: 0.06 }); return 0.5; } },
+  pip_whine: { vol: 0.85, verb: 0.2, fn: (s) => { s.tone({ type: 'sine', f: 880, f2: 1250, sweep: 0.25, dur: 0.6, a: 0.05, vol: 0.1, vib: { rate: 9, depth: 0.03 } }); s.tone({ t: 0.35, type: 'sine', f: 1200, f2: 780, sweep: 0.3, dur: 0.35, vol: 0.07 }); return 0.75; } },
+  pip_lick: { vol: 0.7, verb: 0.05, fn: (s) => { for (let i = 0; i < 3; i++) s.noise({ t: i * 0.11, dur: 0.07, a: 0.02, vol: 0.12, filter: BP(1800, 900, 3) }); return 0.35; } },
+  footstep_stone: { vol: 0.6, verb: 0.2, fn: (s) => { s.noise({ dur: 0.05, vol: 0.16, filter: BP(r(1400, 2200), null, 1.2) }); s.tone({ f: r(110, 140), f2: 60, dur: 0.05, vol: 0.1 }); crackle(s, 2, { spread: 0.04, vol: 0.04 }); return 0.07; } },
+  footstep_water: { vol: 0.6, verb: 0.25, fn: (s) => { s.noise({ dur: 0.14, a: 0.01, vol: 0.14, filter: BP(1300, 600, 0.9) }); s.tone({ t: 0.03, f: r(500, 800), f2: r(1100, 1500), sweep: 0.04, dur: 0.05, vol: 0.04 }); return 0.16; } },
+  run_breath: { vol: 0.7, verb: 0.08, fn: (s) => { s.noise({ dur: 0.18, a: 0.07, vol: 0.09, filter: BP(1100, 1600, 1.5) }); s.noise({ t: 0.22, dur: 0.22, a: 0.04, vol: 0.11, filter: BP(900, 700, 1.4) }); return 0.45; } },
+  vein_glint: { vol: 0.7, verb: 0.4, fn: (s) => { s.fm({ f: r(2600, 3400), ratio: 2.01, index: 1.1, dur: 0.5, vol: 0.06 }); s.fm({ t: 0.06, f: r(3600, 4400), ratio: 2.01, index: 0.9, dur: 0.4, vol: 0.04 }); s.noise({ dur: 0.3, a: 0.05, vol: 0.03, filter: HP(7000) }); return 0.6; } },
+  pick_hit: { vol: 0.95, verb: 0.15, fn: (s) => { clink(s, { f: r(1500, 1900), ratio: 2.3, index: 2, dur: 0.16, vol: 0.12 }); crackle(s, 5, { spread: 0.1, vol: 0.18 }); thud(s, { f: 160, f2: 70, dur: 0.1, vol: 0.3 }); return 0.25; } },
+  pick_perfect: { vol: 1, verb: 0.3, fn: (s) => { clink(s, { f: 2093, ratio: 2.01, index: 1.8, dur: 0.5, vol: 0.14 }); thud(s, { f: 190, f2: 70, dur: 0.12, vol: 0.35 }); chime(s, [1319, 1760, 2349], { t: 0.08, gap: 0.05, vol: 0.07, dur: 0.6 }); crackle(s, 8, { spread: 0.15, vol: 0.2 }); return 0.8; } },
+  pick_miss: { vol: 0.9, verb: 0.15, fn: (s) => { thud(s, { f: 110, f2: 55, dur: 0.12, vol: 0.3 }); s.noise({ t: 0.03, dur: 0.18, a: 0.02, vol: 0.12, filter: BP(2600, 1200, 2) }); s.tone({ t: 0.05, type: 'square', f: 180, f2: 150, dur: 0.12, vol: 0.04, filter: LP(900) }); return 0.25; } },
+  chest_creak: { vol: 0.9, verb: 0.3, fn: (s) => { creak(s, { f: 110, f2: 82, dur: 0.95, vol: 0.13, rate: 19, ff: 700 }); creak(s, { t: 0.3, f: 150, f2: 120, dur: 0.6, vol: 0.06, ff: 1100 }); s.noise({ t: 0.85, dur: 0.15, vol: 0.12, filter: LP(600) }); return 1.1; } },
+  map_unfold: { vol: 0.8, verb: 0.15, fn: (s) => { for (let i = 0; i < 3; i++) s.noise({ t: i * 0.12, dur: 0.16, a: 0.04, vol: 0.12, filter: BP(r(900, 1400), r(2400, 3200), 0.8) }); crackle(s, 10, { spread: 0.4, vol: 0.05 }); return 0.5; } },
+  map_fold: { vol: 0.8, verb: 0.1, fn: (s) => { s.noise({ dur: 0.18, a: 0.05, vol: 0.12, filter: BP(1300, 2400, 0.8) }); crackle(s, 5, { spread: 0.15, vol: 0.05 }); thud(s, { t: 0.18, f: 200, f2: 120, dur: 0.05, vol: 0.08 }); return 0.28; } },
+  cook_add: { vol: 0.85, verb: 0.15, fn: (s) => { s.tone({ f: r(240, 320), f2: r(700, 900), sweep: 0.05, dur: 0.08, vol: 0.14 }); s.noise({ t: 0.02, dur: 0.16, a: 0.01, vol: 0.12, filter: BP(1200, 700, 1) }); for (let i = 0; i < 3; i++) s.tone({ t: 0.1 + i * 0.07, f: r(150, 260), f2: r(400, 600), sweep: 0.05, dur: 0.06, vol: 0.05 }); return 0.35; } },
+  cook_done: { vol: 0.9, verb: 0.3, fn: (s) => { for (let i = 0; i < 6; i++) s.tone({ t: i * 0.05, f: r(140, 240), f2: r(420, 700), sweep: 0.05, dur: 0.07, vol: 0.06 }); chime(s, [784, 988, 1175, 1568], { t: 0.3, gap: 0.07, vol: 0.08 }); s.noise({ t: 0.3, dur: 0.6, a: 0.2, vol: 0.04, filter: HP(5000) }); return 1.2; } },
+  guard: { vol: 0.95, verb: 0.15, fn: (s) => { s.fm({ f: 620, ratio: 1.41, index: 3, dur: 0.22, vol: 0.14 }); s.noise({ dur: 0.04, vol: 0.26, filter: BP(1600, null, 1) }); thud(s, { f: 110, f2: 65, dur: 0.1, vol: 0.28 }); return 0.25; } },
+  herald_roar: {
+    vol: 1, verb: 0.5, fn: (s) => {
+      s.noise({ dur: 1.6, a: 0.15, vol: 0.26, filter: BP(4800, 3600, 0.9) });
+      growl(s, { f: 62, f2: 50, dur: 1.4, a: 0.2, vol: 0.26, ff: 1000, dist: 12, rate: 16 });
+      for (let i = 0; i < 18; i++) s.noise({ t: 0.9 + i * 0.03, dur: 0.012, vol: 0.12, filter: BP(4600, null, 2.5) });
+      s.kick({ f: 66, end: 26, dur: 1.0, vol: 0.6 });
+      return 1.7;
+    },
+  },
+  swallow: { vol: 0.8, verb: 0.05, fn: (s) => { s.tone({ f: 260, f2: 140, dur: 0.12, vol: 0.12 }); s.noise({ dur: 0.1, vol: 0.06, filter: LP(700) }); return 0.15; } },
+  yum: { vol: 0.8, verb: 0.15, fn: (s) => { s.tone({ type: 'triangle', f: 520, f2: 700, sweep: 0.15, dur: 0.22, vol: 0.09, vib: { rate: 7, depth: 0.02 } }); s.tone({ t: 0.22, type: 'triangle', f: 700, f2: 560, sweep: 0.2, dur: 0.3, vol: 0.08, vib: { rate: 7, depth: 0.02 } }); chime(s, [1568, 2093], { t: 0.2, gap: 0.06, vol: 0.04 }); return 0.6; } },
+  stinger: {
+    vol: 1, verb: 0.5, fn: (s) => {
+      s.kick({ f: 80, end: 30, dur: 0.8, vol: 0.9 });
+      for (const f of [233, 247, 349, 466]) s.tone({ type: 'sawtooth', f, dur: 1.2, a: 0.01, vol: 0.045, filter: LP(2600, 500) });
+      s.noise({ dur: 0.4, a: 0.005, vol: 0.2, filter: HP(2500, 800) });
+      return 1.3;
+    },
+  },
+  heartbeat: { vol: 0.9, verb: 0.1, fn: (s) => { s.kick({ f: 70, end: 35, dur: 0.22, vol: 0.6 }); s.kick({ t: 0.24, f: 62, end: 32, dur: 0.22, vol: 0.45 }); return 0.5; } },
+  hug: { vol: 0.8, verb: 0.15, fn: (s) => { s.noise({ dur: 0.25, a: 0.06, vol: 0.1, filter: LP(900) }); chime(s, [659, 784, 988], { t: 0.12, gap: 0.08, vol: 0.06, dur: 0.8 }); return 0.9; } },
+  rescue: {
+    vol: 1, verb: 0.5, fn: (s) => {
+      chime(s, [523, 659, 784, 1047, 1319], { gap: 0.09, vol: 0.09, dur: 1.4 });
+      for (const f of [261.6, 329.6, 392]) s.tone({ t: 0.4, type: 'triangle', f, dur: 1.6, a: 0.2, vol: 0.06 });
+      s.noise({ t: 0.3, dur: 1.2, a: 0.3, vol: 0.05, filter: HP(5500) });
+      return 2.0;
+    },
+  },
 };

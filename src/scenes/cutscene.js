@@ -1,4 +1,4 @@
-// Cutscenes: real-time 3D cinematics staged with the game's own voxel sets, explorers and monsters.
+// Cutscenes: real-time 3D cinematics staged with the game's own voxel sets, forgers and monsters.
 // A cutscene is a list of shots. Each shot has a duration, a camera move (Catmull-Rom paths for the
 // position and the look target, eased FOV and roll, handheld sway, trauma shake) and timed cues that
 // drive actors (anims, walks, monster intros and roars, weapon shatters, stone creep), lights
@@ -16,9 +16,13 @@ import { buildMonster } from '../models/monsters.js';
 import { buildProp } from '../models/props.js';
 import { buildWeaponMesh, shatterPieces, updateShards, crackWeapon } from '../models/weapons3d.js';
 import { ParticleSystem, Debris } from '../gfx/particles.js';
-import { glowSprite, beam, aimBeam, waveRing, waveWall, shockSphere, stoneify, buildShaft, buildSealWall } from '../art/cutscene_art.js';
+import { glowSprite, beam, aimBeam, waveRing, waveWall, shockSphere, stoneify, campAnchors, playFirst, buildBowl, buildOldMap, buildCrack, standInSerpent } from '../art/cutscene_art.js';
+import { buildFP } from '../models/fp_world.js';
+import { buildPet } from '../models/pet.js';
+import { buildMedusa, buildMedusaTotem } from '../models/medusa.js';
+import { buildFPArms } from '../models/fp_arms.js';
+import { buildOreModel } from '../models/ore_voxel.js';
 import { tagCanvas } from '../art/handpaint.js';
-import { REGIONS } from '../data/regions.js';
 import { MONSTERS } from '../data/monsters.js';
 import { CHARACTERS, CHARACTER_ORDER } from '../data/characters.js';
 import { clamp, ease, noise2, hexToRgb, lerp, angleLerp, damp } from '../core/math.js';
@@ -53,8 +57,21 @@ function spec(v, k) {
 }
 function parseId(id) {
   const m = /^([a-z]+)_(.+)$/.exec(id || '');
-  if (!m) return [id || 'prologue', null];
+  if (!m) return [id || 'intro', null];
   return [m[1], /^\d+$/.test(m[2]) ? +m[2] : m[2]];
+}
+
+/** A small cream speech bubble with a tail (forgers say ≤ 8 words). */
+function bubble(ui, x, y, text, alpha = 1) {
+  const w = ui.measure(text) + 14, h = 18;
+  const bx = Math.round(clamp(x - w / 2, 4, ui.w - w - 4)), by = Math.round(y - h - 6);
+  ui.ctx.globalAlpha = alpha;
+  ui.rect(bx + 1, by, w - 2, h, '#f6ecd8', alpha); ui.rect(bx, by + 1, w, h - 2, '#f6ecd8', alpha);
+  ui.rect(bx + 1, by + h - 1, w - 2, 1, '#c8b494', alpha);
+  ui.rect(Math.round(x) - 2, by + h, 5, 2, '#f6ecd8', alpha); ui.rect(Math.round(x) - 1, by + h + 2, 3, 2, '#f6ecd8', alpha);
+  ui.ctx.globalAlpha = alpha;
+  ui.text(text, bx + 7, by + 5, { color: '#3a2214' });
+  ui.ctx.globalAlpha = 1;
 }
 
 // ================================================================== the player
@@ -84,7 +101,8 @@ export class Cine {
     const run = game.run;
     this.who = CHARACTERS[p.char] ? p.char : run && CHARACTERS[run.char] ? run.char : 'bran';
     const [kind, arg] = parseId(id);
-    const script = SCRIPTS[kind] || SCRIPTS.prologue;
+    const script = SCRIPTS[kind] || SCRIPTS.intro;
+    this.bubbles = [];
     const def = script(this, { ...p, arg });
     this.shots = def.shots;
     this.hold = !!(p.hold || def.hold);
@@ -110,37 +128,6 @@ export class Cine {
         for (const l of dyn) l.intensity *= s.lightK;
         for (const l of stat) l.intensity = l.userData.cineBase * s.lightK;
         for (const f of st.flames || []) { f.mesh.visible = s.flameK > 0.02; f.mesh.material.color.setScalar(1.8 * s.flameK); }
-      },
-    };
-    group.visible = false;
-    this.sets[name] = s;
-    return s;
-  }
-  /** The old lift shaft through the layers, with the lift, its lantern and passing lamps. */
-  shaftSet(name, bands, o = {}) {
-    const sh = buildShaft(bands, o);
-    const group = new THREE.Group();
-    group.add(sh.group);
-    this.scene.add(group);
-    const lift = buildProp('elevator');
-    lift.position.set(0, o.y0 ?? -0.6, 0);
-    group.add(lift);
-    const lan = buildProp('lantern', { light: false });
-    lan.position.set(0.62, 1.62, 0.5);
-    lift.add(lan);
-    const hemi = new THREE.HemisphereLight(new THREE.Color(o.sky || '#5a5a8a'), new THREE.Color(o.ground || '#3a2214'), 0.55);
-    group.add(hemi);
-    const key = this.light(lift, 'point', o.lamp || '#ffc070', 4.2, V(0.62, 1.55, 0.6), { dist: 7, decay: 1.4, fl: 0.12 });
-    const pool = [0, 1, 2].map(() => this.light(group, 'point', '#ffc070', 0, V(), { dist: 5.5, decay: 1.5 }));
-    const rimL = this.light(group, 'point', bands[bands.length - 1].glow, 0, V(0, -sh.depth, 0), { dist: 18, decay: 1.1 });
-    const s = {
-      name, group, shaft: sh, lift, lantern: lan, hemi, key, pool, rim: rimL, lightK: 1,
-      fog: new THREE.FogExp2(new THREE.Color(o.fog || '#0c0812'), o.fogD ?? 0.035), background: new THREE.Color(o.bg || '#05040a'),
-      update: (dt, t) => {
-        const y = lift.position.y;
-        const near = sh.lamps.slice().sort((a, b) => Math.abs(a.pos.y - y - 1) - Math.abs(b.pos.y - y - 1)).slice(0, 3);
-        near.forEach((L, i) => { const l = pool[i]; l.position.copy(L.pos); l.color.set(L.col); l.userData.k = 3.2 * (0.85 + 0.15 * noise2(t * 6, i)); });
-        rimL.position.set(0, Math.max(-sh.depth, y - 9), 0);
       },
     };
     group.visible = false;
@@ -194,6 +181,116 @@ export class Cine {
   /** Stone over an actor: returns its uniforms; `y` is where the stone line starts. */
   stone(o, seam = '#c86bff', y = -0.2) { const u = stoneify(o.group || o, seam); u.uStone.value = y; o._stone = u; return u; }
   stoneTo(o, y, dur, e = 'inOutSine') { const u = o._stone; return this.tween(dur, (k, a) => (u.uStone.value = lerp(a, y, k)), e, null, () => u.uStone.value); }
+
+  // -------------------------------------------------------------- v4 sets + actors
+  /** The crew's dungeon camp ('campmenu'; the older 'campfire' stage until it exists), anchors normalised at s.C. */
+  campSet(name) {
+    let s;
+    try { s = this.stageSet(name, 'campmenu', 0); } catch (e) { s = this.stageSet(name, 'campfire', 0); }
+    s.C = campAnchors(s.stage);
+    return s;
+  }
+  /** A first-person world from fp_world: tunnel | junction | chamber | chase. */
+  fpSet(name, kind, act = 0, opts = {}) {
+    const st = buildFP(kind, act, opts);
+    const group = st.group;
+    this.scene.add(group);
+    st.setCamera && st.setCamera(this.camera);
+    const s = {
+      name, group, stage: st, A: st.anchors || {}, fog: st.fog, background: st.background, lightK: 1, flameK: 1, fp: true,
+      update: (dt, t) => { st.update && st.update(dt, t); },
+    };
+    group.visible = false;
+    this.sets[name] = s;
+    return s;
+  }
+  /** Pip the mole-dog. */
+  pet(where, pos, rotY = 0, anim = 'idle') {
+    let p;
+    try { p = buildPet(); } catch (e) { return null; }
+    p.group.position.copy(pos);
+    p.group.rotation.y = rotY;
+    p.play(anim);
+    this.setOf(where).add(p.group);
+    p.update && p.update(0.016);
+    this.actors.push({ obj: p, frozen: false });
+    return p;
+  }
+  medusa(where, pos, rotY = 0) {
+    const m = buildMedusa();
+    m.group.position.copy(pos);
+    m.group.rotation.y = rotY;
+    this.setOf(where).add(m.group);
+    m.update && m.update(0.016);
+    this.actors.push({ obj: m, frozen: false, mon: true });
+    return m;
+  }
+  /** A monster by id (or the first of `alts` that exists), else a stand-in serpent. */
+  beast(id, where, pos, rotY = 0, alts = [], look = {}) {
+    for (const k of [id, ...alts]) {
+      if (!MONSTERS[k]) continue;
+      try { return this.monster(k, where, pos, rotY); } catch (e) { /* try the next */ }
+    }
+    const m = standInSerpent(look.col, look.belly, look.eye, look.len, look.r);
+    m.group.position.copy(pos);
+    m.group.rotation.y = rotY;
+    this.setOf(where).add(m.group);
+    this.actors.push({ obj: m, frozen: false });
+    return m;
+  }
+  /** Play the first anim of a list the actor knows. */
+  act(o, names, opts = {}) { return playFirst(o, names, opts); }
+  /** Turn an actor to stone over `dur` (its own setStone, else the stone-creep shader); frozen once done. */
+  petrify(o, dur = 1.6, o2 = {}) {
+    const go = () => {
+      if (!o) return;
+      if (o.setStone) this.tween(dur, (k) => o.setStone(k), 'inOutSine', () => { o.setStone(1); if (o2.freeze !== false) this.freeze(o); });
+      else {
+        const g = o.group || o;
+        g.updateMatrixWorld(true);
+        const b = new THREE.Box3().setFromObject(g);
+        const u = stoneify(g, o2.seam || '#7affc0');
+        const y0 = (isFinite(b.min.y) ? b.min.y : 0) - 0.05, y1 = (isFinite(b.max.y) ? b.max.y : 2) + 0.1;
+        u.uStone.value = y0;
+        o._stone = u;
+        this.tween(dur, (k) => (u.uStone.value = lerp(y0, y1, k)), 'inOutSine', () => { if (o2.freeze !== false && o.update) this.freeze(o); });
+      }
+      if (o2.sound !== false) this.sfx('petrify', { vol: o2.vol ?? 0.6, pitch: o2.pitch ?? 1 });
+    };
+    if (o2.delay) this.later(o2.delay, go); else go();
+  }
+  /** Bring an actor back from stone (rescues). */
+  unpetrify(o, dur = 0.8) {
+    if (!o) return;
+    this.freeze(o, false);
+    if (o.setStone) { this.tween(dur, (k) => o.setStone(1 - k), 'inQuad', () => o.setStone(0)); return; }
+    const u = o._stone;
+    if (u) this.tween(dur, (k, a) => (u.uStone.value = lerp(a, -5, k)), 'inQuad', null, () => u.uStone.value);
+  }
+  /** A tiny speech bubble over an actor (forgers rarely talk: ≤ 8 words). */
+  say(o, text, dur = 2.6, delay = 0) { this.bubbles = this.bubbles.filter((b) => b.o !== o); this.bubbles.push({ o, text, t: -delay, dur }); }
+  /** First-person rig: the camera carries the hero's arms (parented to the camera). */
+  fpRig(who, where = null) {
+    if (this.camera.parent !== this.scene) this.scene.add(this.camera);
+    let arms = null;
+    try { arms = buildFPArms(who); this.camera.add(arms.group); this.actors.push({ obj: arms, frozen: false, arms: true }); } catch (e) { arms = null; }
+    // a warm hand-held glow so the dark tunnels read
+    const torch = new THREE.PointLight(0xffc890, 2.4, 7, 1.4);
+    torch.position.set(0.25, 0.1, -0.2);
+    this.camera.add(torch);
+    torch.userData.k = 2.4; torch.userData.fl = 0.12; torch.userData.sp = 7; torch.userData.seed = 3;
+    this.lights.push(torch);
+    this.arms = arms; this.torch = torch;
+    void where;
+    return arms;
+  }
+  /** The hero's current weapon as a mesh (the forged one if there is a run, else their trade tool). */
+  heroWeapon(who) {
+    const run = this.game.run;
+    const w = run && run.weapon;
+    const bp = { bran: 'hammer', elio: 'staff', durgan: 'axe', clover: 'dagger' }[who] || 'sword';
+    try { return buildWeaponMesh(w && w.bp ? w : { bp, ids: ['iron', 'iron', 'copper'], grade: 2 }); } catch (e) { return null; }
+  }
 
   // -------------------------------------------------------------- tweens on the cutscene clock
   /** fn(k, from) each frame; init() captures `from` at the start. */
@@ -349,7 +446,9 @@ export class Cine {
       tw.fn(tw.e(k), tw.a);
       if (k >= 1) { this.tweens.splice(i, 1); tw.done && tw.done(); }
     }
-    for (const a of this.actors) if (!a.frozen && a.obj.group.parent && this.visibleIn(a.obj.group)) a.obj.update(sdt);
+    for (const a of this.actors) if (!a.frozen && a.obj.group && a.obj.group.parent && this.visibleIn(a.obj.group)) a.obj.update(sdt, a.arms ? { speed: this.runSpeed || 0 } : undefined);
+    for (const b of this.bubbles) b.t += dt;
+    this.bubbles = this.bubbles.filter((b) => b.t < b.dur);
     if (this.set) this.set.update(sdt, this.t);
     for (let i = this.ticks.length - 1; i >= 0; i--) if (this.ticks[i].fn(sdt, this.t) === false) this.ticks.splice(i, 1);
     for (const l of this.lights) {
@@ -420,6 +519,12 @@ export class Cine {
       ui.rect(W / 2 - lw, y + 42, lw * 2, 1, c.line, 0.8 * k);
       ctx.globalAlpha = 1;
     }
+    for (const b of this.bubbles) {
+      if (b.t <= 0 || !b.o) continue;
+      const head = b.o.headPos ? b.o.headPos(V()) : (b.o.group || b.o).localToWorld(V(0, b.o.height || 1, 0));
+      const p = this.project(head.add(V(0, 0.2, 0)));
+      if (!p.behind) bubble(ui, p.x, p.y - 4, b.text, clamp(b.t / 0.18) * clamp((b.dur - b.t) / 0.3));
+    }
     if (this.fade > 0.002) ui.rect(0, 0, W, H, '#030206', ease.inOutSine(clamp(this.fade)));
     const bh = Math.round(BAR * clamp(this.bars));
     if (bh > 0) { ui.rect(0, 0, W, bh, '#030206'); ui.rect(0, H - bh, W, bh, '#030206'); }
@@ -459,17 +564,13 @@ export class Cine {
 }
 
 /**
- * Warm the voxel stage cache for a cutscene ahead of time (stages take seconds to bake the first
- * time; cached ones come back fast). Call it while a menu is idle, e.g. before the prologue.
+ * Warm the voxel stage cache for a cutscene ahead of time (stages take a moment to bake the first
+ * time; cached ones come back fast). Call it while a menu is idle.
  */
 export function prepareCutscene(id) {
-  const [kind, arg] = parseId(id);
-  const need = {
-    prologue: [['tomb', 5]], dive: [['campfire', 0]], victory: [['tomb', 5], ['campfire', 0]],
-    descend: [[arg >= REGIONS.length - 1 ? 'tomb' : 'arena', arg | 0]],
-    boss: [[arg === 'cursed_lord' ? 'tomb' : 'arena', MONSTERS[arg] ? MONSTERS[arg].region : 0]],
-  }[kind] || [];
-  for (const [k, r] of need) { try { buildStage(k, r); } catch (e) { /* built on demand instead */ } }
+  const [kind] = parseId(id);
+  const need = { intro: [['campmenu', 0], ['campfire', 0]], ending: [['campmenu', 0]] }[kind] || [];
+  for (const [k, r] of need) { try { buildStage(k, r); return; } catch (e) { /* the next one, or built on demand */ } }
 }
 
 // ================================================================== the scene wrapper
@@ -477,7 +578,7 @@ export class CutsceneScene extends Scene {
   get freezesBelow() { return true; }
   enter(p = {}) {
     this.p = p;
-    this.cine = new Cine(this.game, p.id || 'prologue', p);
+    this.cine = new Cine(this.game, p.id || 'intro', p);
     this.world = this.cine.world;
     this.keepWorld = true; // the cine disposes its own world
     this.closed = false;
@@ -500,454 +601,745 @@ export class CutsceneScene extends Scene {
 
 // ================================================================== scripts
 const SCRIPTS = {};
-const SWORD = { bp: 'sword', ids: ['iron', 'coal', 'gold'], grade: 3 };
 
-/** The six layers stacked: every boundary is a seam of that layer's light. */
-function layerBands(from = 0, to = 5, h = 5) {
-  const out = [];
-  for (let i = from; i <= to; i++) { const R = REGIONS[i]; out.push({ pal: R.pal, glow: R.pal.glow, lamp: R.pal.glow2 || R.pal.glow, h: i === from ? h + 1 : h }); }
-  return out;
+/** The three Snake Heralds and Medusa: look + a fallback while the real monsters are being built. */
+const HERALDS = {
+  thornscale: { act: 0, col: '#4a7a36', belly: '#c8e070', eye: '#ffe04a', glow: '#9aff6a', name: 'Thornscale', title: 'Herald of Roots', alts: ['vine_viper', 'adder'], from: 'ceiling', len: 4.2, r: 0.24 },
+  glasscoil: { act: 1, col: '#5aa8d8', belly: '#e0f4ff', eye: '#ff8af0', glow: '#9ae8ff', name: 'Glasscoil', title: 'Herald of the Deep Water', alts: ['glass_adder', 'cistern_naga'], from: 'water', len: 4.4, r: 0.24 },
+  cinderfang: { act: 2, col: '#b8381a', belly: '#ffc04a', eye: '#fff04a', glow: '#ff8a3a', name: 'Cinderfang', title: 'Herald of Embers', alts: ['ember_asp', 'lava_wyrmling'], from: 'floor', len: 4.6, r: 0.26 },
+  medusa: { act: 3, col: '#5a8a6a', belly: '#e0e8c8', eye: '#7affc0', glow: '#7affc0', name: 'Medusa', title: 'The Gorgon Queen', from: 'floor' },
+};
+const HERALD_ORDER = ['thornscale', 'glasscoil', 'cinderfang'];
+const RESCUE_LINE = { bran: 'Took you long enough!', elio: 'Kindle! You found me!', durgan: "Who's minding the stew?", clover: "Knew you'd come~" };
+const actOf = (c, fallback = 0) => { const r = c.game.run; return clamp(r ? (r.act ?? r.region ?? fallback) : fallback, 0, 3); };
+const nameOf = (id) => (MONSTERS[id] && MONSTERS[id].name) || (HERALDS[id] && HERALDS[id].name) || id;
+const titleOf = (id) => (MONSTERS[id] && MONSTERS[id].title) || (HERALDS[id] && HERALDS[id].title) || '';
+const headOf = (o) => (o.headPos ? o.headPos(V()) : (o.group || o).localToWorld(V(0, o.height || 1, 0)));
+const handOf = (o) => { const m = o.rig && (o.rig.mountR || o.rig.handR); if (m) return m.getWorldPosition(V()); return headOf(o).add(V(0, -0.35, 0)); };
+const flat = (v) => V(v.x, 0, v.z);
+/** The friends still in stone, in rescue order (the crew minus the hero). */
+function statuesOf(c) {
+  const run = c.game.run;
+  if (run && Array.isArray(run.statues)) return run.statues.slice();
+  return CHARACTER_ORDER.filter((id) => id !== c.who);
 }
 
-// ------------------------------------------------------------------ prologue
-SCRIPTS.prologue = (c) => {
-  const who = c.p.char && CHARACTERS[c.p.char] ? c.p.char : 'bran';
-  const T = c.stageSet('tomb', 'tomb', 5);
-  c.envTo(0.5, 0.46, 0.68, 0.75, 0);
-  T.lightK = 0.48;
-  const seal = buildSealWall();
-  seal.group.position.set(0, 0, -0.8);
-  T.group.add(seal.group);
-  // two braziers keep a little warmth by the door
-  for (const x of [-3.3, 3.3]) { try { const b = buildProp('brazier', { intensity: 2.6, distance: 5 }); b.position.set(x, 0, -0.35); seal.group.add(b); } catch (e) { /* optional */ } }
-  const runeMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(2.2, 2.2, 2.2), fog: false });
-  seal.group.traverse((o) => { if (o.isMesh && o.name === 'glow') o.material = runeMat; });
-  const lord = c.monster('cursed_lord', 'tomb', V(0, 0, -3.6), Math.PI / 2);
-  lord.group.scale.setScalar(0.9);
-  c.freeze(lord);
-  const doorL = c.light('tomb', 'point', '#b050ff', 0, V(0, 2.0, -1.4), { dist: 14, decay: 1.1, fl: 0.15, sp: 5 });
-  const throneL = c.light('tomb', 'point', '#c86bff', 0, V(0.4, 4.6, -2.0), { dist: 14, decay: 1.1 });
-  const eyes = c.add(glowSprite('#ff6af0', 0.5, 0), 'tomb');
-  eyes.position.set(0, 3.95, -2.75);
-  const spots = { bran: V(-0.3, 0, 1.25), durgan: V(-1.75, 0, 2.65), elio: V(0.95, 0, 2.3), clover: V(1.95, 0, 2.95) };
-  const F = {};
-  CHARACTER_ORDER.forEach((id) => { F[id] = c.char(id, 'tomb', spots[id].clone().add(V(0, 0, 1.8)), Math.PI, 'walk'); });
-  const lan = buildProp('lantern', { light: false });
-  F.durgan.hold(lan, 'left');
-  const lanL = c.light(lan, 'point', '#ffc070', 4.2, V(0, 0.15, 0), { dist: 8, decay: 1.2, fl: 0.18 });
-  const sword = buildWeaponMesh(SWORD);
-  F.bran.hold(sword, 'right');
-  F.bran.showBackItem && F.bran.showBackItem(false);
-  let swordAt = null;
-  const swordShot = (which, k) => {
-    if (!swordAt) swordAt = F.bran.group.position.clone();
-    const p = swordAt;
-    return which ? V(p.x + 0.15, 1.2 + 0.04 * k, p.z + 0.1) : V(p.x - 1.55 + k * 0.25, 1.15, p.z - 1.45 + k * 0.2);
-  };
-  const stones = {};
-  // beams of curse-light pouring out of the opening door
-  const beams = [-0.7, 0, 0.7].map((x, i) => { const b = c.add(beam(9, 0.4, 2.6 + i * 0.3, '#b060ff', 0, 1.1), 'tomb'); aimBeam(b, V(x * 0.8, 1.9, -1.2), V(x * 2.6, -0.2, 6)); return b; });
-  let wave = null, wallW = null;
+// ------------------------------------------------------------------ intro (3rd person, the camp)
+SCRIPTS.intro = (c) => {
+  const who = c.who;
+  const cook = who === 'durgan' ? 'bran' : 'durgan';
+  const S = c.campSet('camp');
+  const C = S.C;
+  const F = flat(C.fire);
+  // the audience side: where the menu camera looks from
+  const M = C.cams && C.cams.menu ? v3(C.cams.menu.pos) : C.camera && C.camera.pos ? v3(C.camera.pos) : F.clone().add(V(0, 2.5, 6));
+  const aud = V(M.x - F.x, 0, M.z - F.z).normalize();
+  const sideV = V(aud.z, 0, -aud.x);
+  // the crew in their seats, doing their evening things
+  const crew = {};
+  const ROUT = { durgan: ['stir', 'sit'], bran: ['polish', 'sit'], elio: ['read', 'sit'], clover: ['count', 'sit'] };
+  for (const id of CHARACTER_ORDER) {
+    const st = C.seats[id];
+    const ch = c.char(id, 'camp', st.pos.clone(), st.facing, 'idle');
+    ch.setSeated && ch.setSeated(true, st.height);
+    c.act(ch, id === who ? ['sit'] : ROUT[id], { loop: true });
+    c.settle(ch, 20);
+    crew[id] = ch;
+  }
+  const hero = crew[who], K = crew[cook];
+  const friendIds = CHARACTER_ORDER.filter((id) => id !== who);
+  const friends = friendIds.map((id) => crew[id]);
+  const hs = C.seats[who].pos.clone();
+  const outH = hs.clone().sub(F).setY(0);
+  if (outH.lengthSq() < 1e-4) outH.set(0, 0, 1);
+  outH.normalize();
+  const sideH = V(outH.z, 0, -outH.x);
+  // toward the hero from the audience side (for close-ups)
+  const hcam = F.clone().sub(hs).setY(0).normalize().multiplyScalar(0.55).add(aud.clone().multiplyScalar(0.45)).normalize();
+  // Pip naps right behind the hero's seat: that's how the trip happens
+  const pipPos = hs.clone().addScaledVector(outH, 0.6).addScaledVector(sideH, 0.12);
+  const pip = c.pet('camp', pipPos, faceTo(pipPos, F) + 1.4, 'sleep');
+  // this week's haul beside the hero, and the hero's own tool leaning on the log
+  const haul = new THREE.Group();
+  haul.position.copy(hs.clone().addScaledVector(sideH, 0.8).addScaledVector(outH, 0.1));
+  try { const sk = buildProp('sack'); sk.scale.setScalar(0.8); haul.add(sk); } catch (e) { /* optional */ }
+  [['diamond', 0.24, 0.12], ['gold', -0.22, 0.22], ['iron', 0.04, 0.34], ['ruby', 0.34, -0.1], ['diamond', -0.1, 0.42]].forEach(([id, x, z], i) => {
+    try { const o = buildOreModel(id, { res: 16, roll: i }); o.scale.setScalar(0.3); o.position.set(x, 0.07, z); haul.add(o); } catch (e) { /* optional */ }
+  });
+  c.add(haul, 'camp');
+  const tool = c.heroWeapon(who);
+  if (tool) {
+    tool.position.copy(hs.clone().addScaledVector(sideH, -0.55).addScaledVector(outH, 0.15)).setY(0.04);
+    tool.rotation.set(0, faceTo(hs, F) + 1.2, 0.3);
+    c.add(tool, 'camp');
+  }
+  // stew, the totem, the scary old chest
+  const bowl = buildBowl(); bowl.visible = false; c.add(bowl, 'camp');
+  let totem = null;
+  try { totem = buildMedusaTotem(); totem.visible = false; c.add(totem, 'camp'); } catch (e) { totem = null; }
+  const chest = flat(C.chest);
+  const chestGlow = c.add(glowSprite('#7affc0', 1.0, 0), 'camp');
+  chestGlow.position.copy(chest).setY(0.45);
+  const chestLight = c.light('camp', 'point', '#5affb0', 0, chest.clone().setY(0.6), { dist: 3.5, decay: 1.5, fl: 0.3, sp: 5 });
+  // the floor that splits, and Medusa beneath it
+  const rise = flat(C.medusaRise);
+  const stageCrack = S.stage.crackOpen ? (k) => S.stage.crackOpen(k) : null;
+  const myCrack = stageCrack ? null : buildCrack(rise.clone().addScaledVector(sideV, -1.7), rise.clone().addScaledVector(sideV, 1.7), '#7affc0', 5);
+  if (myCrack) c.add(myCrack.group, 'camp');
+  const crackOpen = (k) => (stageCrack ? stageCrack(k) : myCrack.open(k));
+  const crackPts = myCrack ? myCrack.pts : [rise.clone().addScaledVector(sideV, -1.2), rise, rise.clone().addScaledVector(sideV, 1.2)];
+  const crackLight = c.light('camp', 'point', '#5affb0', 0, rise.clone().setY(0.3), { dist: 8, decay: 1.15, fl: 0.18, sp: 6 });
+  const beams = [-1, -0.3, 0.45, 1].map((k, i) => { const b = c.add(beam(4.2, 0.03, 0.35 + (i % 2) * 0.12, '#7affc0', 0, 1.6), 'camp'); aimBeam(b, rise.clone().addScaledVector(sideV, k * 1.2).setY(-0.1), rise.clone().addScaledVector(sideV, k * 1.7).setY(4.0)); return b; });
+  const med = c.medusa('camp', rise.clone().setY(-2.8), faceTo(rise, hs));
+  med.group.visible = false;
+  // three heralds, one for each friend, and the one that turns on you
+  const heralds = friends.map((f, i) => {
+    const id = HERALD_ORDER[i], H = HERALDS[id];
+    const fp = flat(f.group.position);
+    const out = fp.clone().sub(F).setY(0).normalize();
+    const pos = fp.clone().addScaledVector(out, 0.95).setY(-3.2);
+    const m = c.beast(id, 'camp', pos, faceTo(pos, fp), H.alts, H);
+    m.group.scale.multiplyScalar(MONSTERS[id] ? 0.5 : 0.8);
+    m.group.visible = false;
+    c.freeze(m);
+    return m;
+  });
+  const snakeAt = rise.clone().addScaledVector(sideV, 0.6);
+  const snake = c.beast('gorgon_snake', 'camp', snakeAt.clone().setY(-2.5), faceTo(snakeAt, hs), ['vine_viper', 'adder'], { col: '#3a6a44', belly: '#d8e8a0', eye: '#ff4a3a', len: 2.6, r: 0.15 });
+  snake.group.visible = false;
+  c.freeze(snake);
+  const at = (p, dir, dist, h, side = 0) => p.clone().addScaledVector(dir, dist).addScaledVector(sideV, side).setY((p.y || 0) + h);
+  const steam = () => { const p = C.pot; c.P.alpha.emit({ pos: [p.x + rnd(-0.1, 0.1), p.y + 0.3, p.z + rnd(-0.1, 0.1)], vel: [0, rnd(0.25, 0.45), 0], spread: 0.04, life: [1.6, 2.6], size: [1, 2], sizeEnd: 4, color: ['#e8dcd0', '#d0c4c8'], alpha: 0.35, fadeIn: 0.4, swirl: 0.4 }); };
+  let flight = null;
   return {
-    music: 'tomb',
+    music: 'camp',
     shots: [
-      { set: 'tomb', dur: 6.4, dip: 1.6,
-        cam: { pos: [[0.8, 5.0, 9.4], [0.3, 3.5, 8.1], [-0.2, 1.9, 6.7]], look: [[0, 1.0, 2.0], [0, 1.5, 0.6], [0, 1.75, -0.8]], fov: [48, 40] },
-        enter: (c) => { CHARACTER_ORDER.forEach((id, i) => c.walk(F[id], spots[id], 3.8 + i * 0.35)); c.dustFall(-4, 4, -0.6, 3, 7.2, 10); },
-        at: [[0.2, (c) => c.sfx('rumble', { vol: 0.35, pitch: 0.55 })]],
-        cap: 'Long ago, four friends went looking for treasure in the Forbidden Tomb.', capAt: 1.4 },
-      { dur: 4.6,
-        cam: { pos: [[-1.75, 2.15, 3.7], [-1.3, 2.2, 3.0]], look: [[0.1, 1.85, -0.8], [0.1, 1.9, -0.8]], fov: [36, 31] },
-        enter: (c) => { F.elio.play('read', { loop: true }); c.walk(F.bran, V(-0.2, 0, 0.95), 0.9, { then: 'point' }); },
+      // 1. the camp at night
+      { set: 'camp', dur: 5.0, dip: 1.2,
+        cam: { pos: [at(F, aud, 5.8, 3.0, 0.9), at(F, aud, 4.4, 2.1, 0.3)], look: [F.clone().setY(0.4), F.clone().setY(0.6)], fov: [42, 36] },
+        enter: (c) => { c.loop('campfire', 0.7); c.every(5, steam, true); } },
+      // 2. Durgan ladles out the stew
+      { dur: 3.2,
+        cam: { pos: [at(flat(C.pot), aud, 2.1, 0.8, 0.6), at(flat(C.pot), aud, 1.85, 0.7, 0.45)], look: [C.pot.clone().setY(C.pot.y + 0.1), C.pot.clone().setY(C.pot.y + 0.15)], fov: [34, 32] },
+        enter: (c) => { c.act(K, ['stir', 'hammer', 'sit'], { loop: true }); c.sfx('stew_bubble', { vol: 0.6 }); },
         at: [
-          [0.6, (c) => { c.sfx('curse_hum', { vol: 0.6 }); c.tween(1.6, (k) => runeMat.color.setScalar(2.2 + Math.sin(k * Math.PI * 3) * 1.4), 'linear'); }],
-          [3.0, (c) => {
-            c.sfx('crack'); c.shake(0.3); runeMat.color.setScalar(5); c.tween(0.8, (k) => runeMat.color.setScalar(5 - k * 2.2), 'outQuad');
-            c.tween(0.7, (k) => { seal.bar.position.y = 1.85 - k * 1.8; seal.bar.rotation.z = k * 0.35; }, 'inQuad', () => { c.sfx('rock_break', { vol: 0.7 }); c.shake(0.35); c.debris.spawn({ pos: [0, 0.1, 0], count: 24, colors: seal.colors, speed: 2.2, up: 2, spread: 1.2, floor: 0.03, life: 2 }); seal.bar.visible = false; });
-            for (const id of CHARACTER_ORDER) F[id].setExpression('surprised');
-          }],
-        ],
-        cap: 'They found a door that was never meant to open.', capAt: 0.4 },
-      { dur: 5.2,
-        cam: { pos: [[0.4, 0.32, 5.6], [0.1, 0.5, 4.6]], look: [[0, 2.0, -0.8], [0, 2.4, -0.8]], fov: [40, 45], roll: [0.04, -0.02] },
-        enter: (c) => {
-          F.bran.play('idle', { loop: true }); F.elio.play('idle', { loop: true });
-          c.sfx('door_creak', { pitch: 0.55, vol: 1 }); c.sfx('rumble', { vol: 0.7 });
-          c.tween(4.2, (k) => { for (const L of seal.leaves) L.rotation.y = L.userData.side * 1.25 * k; }, 'inOutSine');
-          c.lightTo(doorL, 9, 3);
-          c.tween(3.2, (k) => beams.forEach((b) => (b.material.uniforms.uOp.value = k * 0.5)), 'inQuad');
-          c.envTo(0.62, 0.42, 0.82, 1.2, 3.4);
-          c.postTo({ bloom: 1.25, vignette: 0.5 }, 3);
-          c.dustFall(-1.2, 1.2, -1.0, -0.6, 3.9, 40, '#a898b8');
-          c.tick((dt) => { c.trauma = Math.max(c.trauma, 0.22); });
-          c.later(1.2, () => { F.elio.play('block', { loop: true }); F.clover.play('dodge'); });
-        } },
-      { dur: 5.4,
-        cam: { pos: [[0.85, 0.7, -0.4], [0.3, 0.55, -1.2]], look: [[0, 3.0, -3.6], [0, 3.5, -3.6]], fov: [42, 36] },
-        enter: (c) => { c.later(0.15, () => { c.freeze(lord, false); lord.play('intro'); c.sfx('boss_intro'); }); c.lightTo(throneL, 7, 2.2); c.tween(2.2, (k) => eyes.material.color.setRGB(1.6 * k, 0.6 * k, 1.6 * k)); c.curseSmoke(V(0, 0.05, -3.2), 1.2, 26); },
-        at: [[2.75, (c) => {
-          lord.play('roar'); c.sfx('boss_roar'); c.punch = 7; c.haptic(60);
-          c.burst(V(0, 3.0, -3.0), '#c86bff', { size: 1.4, r: 8, flash: 0.75, shake: 1.1, n: 160 });
-          // the wall bursts outward
-          seal.group.visible = false;
-          for (let i = 0; i < 9; i++) c.debris.spawn({ pos: [rnd(-4.5, 4.5), rnd(0.5, 6.5), -1.0], count: 26, colors: seal.colors, speed: 2.5, up: 2.2, spread: 0.6, dir: [0, 0, rnd(3, 7)], floor: 0.03, life: 2.6, scale: [0.7, 1.6] });
-          for (let i = 0; i < 60; i++) c.P.alpha.emit({ pos: [rnd(-4.5, 4.5), rnd(0.2, 4), -0.8], vel: [rnd(-0.6, 0.6), rnd(0, 0.6), rnd(1, 3)], spread: 0.3, life: [1.5, 3], size: [2, 4], sizeEnd: 6, color: ['#4a3a5a', '#6a5a78'], alpha: 0.55, drag: 1.2 });
-          c.envTo(0.9, 0.56, 1.15, 1.5, 0.25, 'outQuad'); c.later(0.3, () => c.envTo(0.52, 0.38, 0.68, 1.15, 1.6));
-          beams.forEach((b) => (b.visible = false));
-          c.postTo({ bloom: 1.5 }, 0.2); c.later(0.6, () => c.postTo({ bloom: 1.15 }, 1.5));
-        }]],
-        cap: 'And something old woke up.', capAt: 0.9 },
-      { dur: 2.1,
-        cam: { pos: [[-3.3, 2.7, 4.6], [-2.9, 2.45, 4.1]], look: [[0.2, 0.5, -0.6], [0.1, 0.65, 0.2]], fov: [44, 41] },
-        enter: (c) => {
-          wave = c.add(waveRing('#c86bff', 0.14), 'tomb'); wave.position.set(0, 0.03, -3.2);
-          wallW = c.add(waveWall('#c86bff'), 'tomb'); wallW.position.copy(wave.position);
-          c.tween(4.2, (k) => { const r = 0.8 + k * 7.2; wave.scale.set(r, 1, r); wallW.scale.set(r, 1.3 + k * 1.1, r); wave.material.uniforms.uOp.value = wallW.material.uniforms.uOp.value = k < 0.8 ? 1 : (1 - k) / 0.2; }, 'linear');
-          c.tick((dt, t) => {
-            wave.material.uniforms.uTime.value = wallW.material.uniforms.uTime.value = t;
-            const r = wave.scale.x;
-            const op = wave.material.uniforms.uOp.value;
-            for (let i = 0; i < 6 * op; i++) { const a = rnd(Math.PI * 0.1, Math.PI * 0.9); c.P.add.emit({ pos: [Math.cos(a) * r, 0.1, -3.2 + Math.sin(a) * r], vel: [Math.cos(a) * 1.4, rnd(0.6, 1.8), Math.sin(a) * 1.4], spread: 0.2, life: [0.3, 0.8], size: [1, 2], color: ['#c86bff', '#ff5af0', '#ffffff'], glow: 3 }); }
-            return op > 0.01;
-          }, true);
-          for (const id of CHARACTER_ORDER) F[id].setExpression('surprised');
-          F.bran.play('block', { loop: true }); F.bran.setExpression('determined');
-          c.sfx('wind_whoosh', { pitch: 0.6 });
-          c.tween(2.0, (k) => crackWeapon(sword, k * 0.5), 'linear');
-        } },
-      { dur: 2.3,
-        cam: { pos: (c, k) => swordShot(0, k), look: (c, k) => swordShot(1, k), fov: [36, 31], roll: [0.05, -0.03] },
-        enter: (c) => { c.sfx('crack', { pitch: 0.7 }); c.tween(0.5, (k) => crackWeapon(sword, 0.5 + k * 0.5), 'linear'); },
-        at: [
-          [0.5, (c) => {
-            c.slowmo(0.14, 1.3, 0.04, 0.7);
-            const wp = sword.getWorldPosition(V()).add(V(0, 0.35, 0));
-            c.shards.push(...shatterPieces(sword, T.group, { force: 1.6 }));
-            c.sfx('shatter'); c.flash(0.55, [0.85, 0.55, 1]); c.shake(0.6); c.haptic(50);
-            c.P.add.emit({ pos: [wp.x, wp.y, wp.z], radial: [1, 3.6], count: 90, life: [0.6, 1.6], size: [1, 3], color: ['#ffffff', '#e0c8ff', '#c86bff'], glow: 3.4, drag: 1.2 });
-            const ring = c.add(waveRing('#e0b0ff', 0.08), 'tomb'); ring.position.copy(wp); ring.rotation.x = Math.PI / 2;
-            c.tween(0.5, (k) => { ring.scale.setScalar(0.1 + k * 1.6); ring.material.uniforms.uOp.value = 1 - k; }, 'outCubic', () => (ring.visible = false));
-            F.durgan.play('point', { loop: true }); F.elio.play('cast', { loop: true }); F.clover.play('block', { loop: true }); F.bran.play('hurt'); F.bran.setExpression('hurt');
-            for (const id of CHARACTER_ORDER) stones[id] = c.stone(F[id], '#d080ff', -0.2);
+          [0.9, (c) => { c.sfx('ladle'); bowl.visible = true; bowl.position.copy(C.pot).setY(C.pot.y + 0.35); }],
+          [2.0, (c) => {
+            const p0 = bowl.position.clone();
+            flight = c.tween(1.6, (k) => { const p1 = handOf(hero); bowl.position.lerpVectors(p0, p1, k); bowl.position.y += Math.sin(k * Math.PI) * 0.4; bowl.rotation.y = k * 3; }, 'inOutSine', () => { hero.hold(bowl, 'right'); });
           }],
         ] },
-      { dur: 6.8,
-        cam: { pos: [[-2.4, 1.15, -1.5], [0.2, 1.05, -1.3], [2.4, 1.15, -1.1]], look: [[-1.2, 1.0, 2.2], [0.2, 0.95, 2.1], [1.3, 1.0, 2.5]], fov: 40, ease: 'linear' },
+      // 3. the hero drinks: really good
+      { dur: 4.2,
+        cam: { pos: (c, k) => headOf(hero).addScaledVector(hcam, 1.3 - k * 0.15).add(V(0, 0.08, 0)), look: (c) => headOf(hero).add(V(0, -0.12, 0)), fov: 30 },
+        enter: (c) => { c.act(K, ['cheer', 'laugh'], {}); },
+        at: [
+          [0.6, (c) => { if (bowl.parent !== (hero.rig && hero.rig.mountR)) hero.hold(bowl, 'right'); c.act(hero, ['drink', 'sitEat', 'cheer'], { loop: true }); c.sfx('slurp'); }],
+          [1.7, (c) => { c.sfx('swallow'); }],
+          [2.0, (c) => {
+            c.sfx('yum'); hero.setExpression && hero.setExpression('happy');
+            const h = headOf(hero);
+            c.P.add.emit({ pos: [h.x, h.y + 0.2, h.z], radial: [0.3, 0.8], radialUp: 1, count: 22, life: [0.6, 1.2], size: [1, 2], color: ['#ffd27a', '#ff9ab0', '#fff0c0'], glow: 2.6, gravity: -0.3 });
+            c.say(hero, 'Mmm! Best stew yet!', 2.0);
+          }],
+        ] },
+      // 4. "found this in a creepy old chest…"
+      { dur: 2.8,
+        cam: { pos: [at(hs, hcam, 2.0, 1.1, 0.5), at(hs, hcam, 1.8, 1.05, 0.35)], look: [headOf(hero).add(V(0, -0.25, 0)), headOf(hero).add(V(0, -0.2, 0))], fov: 34 },
         enter: (c) => {
-          c.loop('wind', 0.3);
-          CHARACTER_ORDER.forEach((id, i) => {
-            c.later(0.2 + i * 0.4, () => {
-              c.stoneTo(F[id], 2.1, 3.6, 'inOutQuad');
-              c.later(0.6, () => c.freeze(F[id]));
-              c.sfx('rock_crack', { pitch: rnd(0.7, 1.1), vol: 0.6 });
-            });
-          });
-          c.every(26, () => c.chips(F[CHARACTER_ORDER[(Math.random() * 4) | 0]]));
-          c.later(1.9, () => { c.lightTo(lanL, 0.4, 0.4); c.later(0.5, () => c.lightTo(lanL, 0, 0.4)); c.sfx('quench', { vol: 0.5 }); });
-          c.postTo({ saturation: 0.42, exposure: 0.88, lift: [0.02, 0.025, 0.06], gain: [0.95, 0.97, 1.05] }, 4.5);
-          c.lightTo(throneL, 3.5, 4);
-        },
-        cap: 'The curse turned them all to stone…', capAt: 1.2 },
-      { dur: 7.4,
-        cam: { pos: [[0.15, 0.85, 5.8], [0.05, 1.0, 4.6]], look: [[0, 1.5, -1.0], [0, 1.6, -2.4]], fov: [33, 38] },
-        enter: (c) => {
-          c.envTo(0.22, 0.2, 0.32, 0.8, 2.5);
-          c.lightTo(doorL, 1.2, 2.5); c.lightTo(throneL, 2.2, 2.5);
-          c.later(1.3, () => {
-            c.sfx('rumble', { vol: 0.5, pitch: 1.6 }); c.flash(0.1, [1, 0.85, 0.55]);
-            const u = stones[who]; u.uSeamCol.value.set('#ffd27a'); u.uSeam.value = 1.6;
-            c.stoneTo(F[who], -0.25, 2.0, 'inQuad');
-            c.every(30, () => c.chips(F[who], undefined, true));
-            c.sfx('rock_break', { vol: 0.8 });
-          });
-          c.later(3.4, () => { c.freeze(F[who], false); F[who].setExpression('determined'); c.walk(F[who], V(F[who].group.position.x * 0.4, 0, -1.6), 3.6, { face: true }); });
-          c.later(5.6, () => { if (c.game.audio) c.game.audio.stopMusic(2.5); });
-        },
-        at: [[6.2, (c) => { c.fadeTo = 1; c.fadeRate = 1 / 1.2; }]],
-        cap: '…all but one.', capAt: 2.0 },
-    ],
-  };
-};
-
-// ------------------------------------------------------------------ dive (run start)
-SCRIPTS.dive = (c) => {
-  const who = c.who;
-  const camp = c.stageSet('camp', 'campfire', 0);
-  const A = camp.A;
-  const seats = A.seats || [];
-  CHARACTER_ORDER.forEach((id, i) => {
-    if (id === who || !seats[i]) return;
-    const s = seats[i];
-    const ch = c.char(id, 'camp', V(s.pos.x, 0, s.pos.z), s.rotY, 'sit');
-    ch.setSeated(true, s.height);
-    c.settle(ch);
-    const u = c.stone(ch, '#c86bff', 5); u.uSeam.value = 0;
-    c.freeze(ch);
-  });
-  const si = Math.max(0, CHARACTER_ORDER.indexOf(who)), seat = seats[si] || { pos: V(-1.3, 0.3, -1.05) };
-  const start = V(seat.pos.x * 1.32, 0, seat.pos.z * 1.32 + 0.3);
-  const fire = A.fire || V();
-  const hero = c.char(who, 'camp', start, faceTo(start, fire), 'idle');
-  const mouth = (A.mineEntrance || V(-2.6, 1, -3.4)).clone().setY(0);
-  // the shaft through every layer
-  const S = c.shaftSet('shaft', layerBands(0, 5, 5), { lamp: '#ffc070', fog: '#0c0812', radius: 3.8 });
-  const rider = c.char(who, S.lift, V(0.05, 0.12, 0.05), 0.5, 'idle');
-  const R0 = REGIONS[0];
-  return {
-    music: 'map',
-    shots: [
-      { set: 'camp', dur: 4.2, dip: 1.0,
-        cam: { pos: [[3.2, 0.95, 3.6], [2.1, 1.15, 4.2]], look: [[0, 0.75, 0], [-0.5, 0.95, -0.6]], fov: [38, 35] },
-        enter: (c) => { c.postTo({ saturation: 0.95 }, 0); c.later(2.3, () => c.walk(hero, mouth.clone().add(V(0.15, 0, 1.0)), 3.4)); },
-        cap: 'Three friends turned to stone. One left to break the curse.', capAt: 0.5 },
-      { dur: 3.0,
-        cam: { pos: [[-2.55, 1.05, -5.2], [-2.6, 1.0, -4.85]], look: [[-2.1, 0.95, -0.8], [-2.4, 1.05, -1.8]], fov: [44, 40] },
-        enter: (c) => { hero.group.position.copy(mouth.clone().add(V(0.4, 0, 2.2))); c.walk(hero, mouth.clone().add(V(0.05, 0, -0.25)), 3.0); c.sfx('footstep', { vol: 0.4 }); } },
-      { set: 'shaft', dur: 4.2,
-        cam: { pos: [[2.5, 2.5, 1.25], [1.45, 2.75, 2.4], [-0.45, 2.45, 2.85]], look: [[0, 0.9, 0], [0, 0.95, 0]], fov: [44, 40], rel: () => S.lift.position.clone().setX(0).setZ(0) },
-        enter: (c) => {
-          c.sfx('elevator'); c.loop('cave', 0.5);
-          c.tween(7.6, (k) => (S.lift.position.y = -0.6 - k * k * 9.5 - k * 2), 'linear');
-          c.every(22, () => { const y = S.lift.position.y; c.P.alpha.emit({ pos: [rnd(-1.4, 1.4), y + rnd(3, 5), rnd(-1.4, 1.4)], vel: [0, -rnd(0.3, 1), 0], spread: 0.05, life: [2, 3], size: 1, color: '#c8b8a0', alpha: 0.6 }); });
-          c.every(6, () => { const y = S.lift.position.y; c.P.add.emit({ pos: [rnd(-0.6, 0.6), y + 1.95, 0], vel: [rnd(-0.6, 0.6), rnd(0.2, 0.8), rnd(-0.4, 0.4)], spread: 0.3, life: [0.2, 0.5], size: 1, color: ['#ffd27a', '#ffffff'], glow: 3, gravity: 6 }); });
-          rider.play('idle', { loop: true });
-          c.later(1.6, () => rider.lookAt(V(0, -20, 0)));
+          hero.hold(null, 'right');
+          c.setOf('camp').add(bowl); bowl.position.copy(hs.clone().addScaledVector(hcam, 0.35)).setY(0.02); bowl.visible = true;
+          c.act(hero, ['sitTalk', 'sit'], { loop: true });
+          c.say(hero, 'Found this in a creepy old chest…', 2.6, 0.2);
+          for (const f of friends) f.lookAt && f.lookAt(headOf(hero));
         } },
-      { dur: 3.6,
-        cam: { pos: [[1.5, 3.4, 1.2], [1.2, 2.9, 0.9]], look: [[-0.2, -8, -0.2], [-0.2, -10, -0.2]], fov: [54, 48], roll: [0, 0.4], rel: () => S.lift.position.clone().setX(0).setZ(0) },
-        enter: (c) => { c.titleCard(R0.name, R0.sub, { at: 0.7, dur: 2.8 }); c.later(2.6, () => { c.fadeTo = 1; c.fadeRate = 1; }); } },
-    ],
-  };
-};
-
-// ------------------------------------------------------------------ descend_N
-SCRIPTS.descend = (c, p) => {
-  const N = clamp(p.arg | 0, 1, REGIONS.length - 1), from = REGIONS[N - 1], to = REGIONS[N];
-  const S = c.shaftSet('shaft', [{ pal: from.pal, glow: from.pal.glow, lamp: from.pal.glow2, h: 7 }, { pal: to.pal, glow: to.pal.glow, lamp: to.pal.glow2, h: 9 }], { lamp: from.pal.glow2, fog: from.pal.fog, y0: -2.2, radius: 3.6 });
-  const rider = c.char(c.who, S.lift, V(0.05, 0.12, 0.05), 0.6, 'idle');
-  const L = c.stageSet('land', N === REGIONS.length - 1 ? 'tomb' : 'arena', N);
-  const A = L.A;
-  const hp = (A.player || V(-1.6, 0, 0.4)).clone();
-  const hero = c.char(c.who, 'land', V(-6.2, 0, hp.z + 0.6), Math.PI / 2, 'walk');
-  return {
-    music: to.music,
-    shots: [
-      { set: 'shaft', dur: 4.8, dip: 0.8,
-        cam: { pos: [[-2.3, 2.1, 1.35], [0.2, 2.6, 2.65], [2.25, 2.9, 1.45]], look: [[0, 0.9, 0], [0, 1.0, 0]], fov: [42, 46], rel: () => S.lift.position.clone().setX(0).setZ(0) },
+      // 5. the old chest (insert)
+      { dur: 1.8,
+        cam: { pos: [chest.clone().addScaledVector(aud, 1.5).add(V(0, 0.7, 0)), chest.clone().addScaledVector(aud, 1.1).add(V(0, 0.55, 0))], look: [chest.clone().setY(0.35), chest.clone().setY(0.3)], fov: [34, 30] },
         enter: (c) => {
-          c.sfx('elevator'); c.loop('cave', 0.45);
-          c.tween(4.8, (k) => (S.lift.position.y = -2.2 - k * 7.6), 'inOutSine');
-          c.colorTo(S.key.color, to.pal.glow2 || to.pal.glow, 4.2);
-          c.colorTo(S.hemi.color, to.pal.sky || '#5a5a8a', 4.2);
-          c.colorTo(S.fog.color, to.pal.fog, 4.2);
-          c.every(18, () => { const y = S.lift.position.y; c.P.alpha.emit({ pos: [rnd(-1.4, 1.4), y + rnd(3, 5), rnd(-1.4, 1.4)], vel: [0, -rnd(0.3, 1), 0], spread: 0.05, life: [2, 3], size: 1, color: '#c8b8a0', alpha: 0.6 }); });
-          c.every(9, () => { const y = S.lift.position.y; c.P.add.emit({ pos: [rnd(-3, 3), y + rnd(-1, 3), rnd(-3, 0)], vel: [0, 0.1, 0], spread: 0.05, life: [1, 2], size: [1, 2], color: [to.pal.glow, to.pal.glow2 || '#ffffff'], glow: 2.6, flicker: 0.5 }); });
-          c.later(2.4, () => rider.lookAt(V(0, -20, 0)));
-        },
-        cap: p.note || '', capAt: 1.2 },
-      { set: 'land', dur: 6.2, dip: 0.5,
-        cam: { pos: [[-5.6, 6.0, 9.4], [-2.6, 3.2, 7.2], [-1.4, 1.45, 5.4]], look: [[1.0, 1.4, -1.6], [0.4, 1.3, -1.0], [-0.8, 1.0, 0]], fov: [46, 38] },
-        enter: (c) => {
-          c.envTo(0.24, 0.23, 0.3, 0.4, 0); L.lightK = 0.22; L.flameK = 0.15;
-          c.later(0.5, () => { c.envTo(1, 1, 1, 1, 2.6); c.to(L, { lightK: 1, flameK: 1 }, 2.4); c.sfx('fire_whoosh', { vol: 0.6 }); c.flash(0.12, rgb(to.pal.glow)); });
-          c.walk(hero, hp, 4.6, { then: 'idle' });
-          c.titleCard(to.name, to.sub, { at: 1.6, dur: 3.6, bottom: to.pal.glow, line: to.pal.glow });
-          c.later(5.3, () => { c.fadeTo = 1; c.fadeRate = 1.1; });
+          c.sfx('chest_creak', { vol: 0.8 }); c.sfx('medusa_whisper', { vol: 0.35 });
+          c.lightTo(chestLight, 3.5, 0.8);
+          c.tween(1.8, (k) => (chestGlow.material.opacity = 0.2 + Math.sin(k * Math.PI) * 0.8), 'linear');
+          chestGlow.material.color.set('#7affc0').multiplyScalar(1.6);
         } },
-    ],
-  };
-};
-
-// ------------------------------------------------------------------ boss_<id>
-SCRIPTS.boss = (c, p) => {
-  const id = MONSTERS[p.arg] ? p.arg : 'rustjaw';
-  const def = MONSTERS[id], ri = clamp(def.region ?? 0, 0, REGIONS.length - 1), R = REGIONS[ri];
-  const lordFight = id === 'cursed_lord';
-  const glow = lordFight ? '#c86bff' : R.pal.glow;
-  const set = c.stageSet('arena', lordFight ? 'tomb' : 'arena', ri);
-  const A = set.A;
-  const hp = (A.player || V(-1.6, 0, 0.4)).clone();
-  const mon = c.monster(id, 'arena', V(), 0.3);
-  const front = mon.bounds ? mon.bounds.min.x : -1;
-  const mp = (A.monster || V(1.8, 0, 0.2)).clone();
-  mp.x = Math.max(mp.x, hp.x + 2.3 - front);
-  mon.group.position.copy(mp);
-  c.freeze(mon);
-  const hero = c.char(c.who, 'arena', hp, Math.PI / 2 - 0.4, 'idleCombat');
-  const mh = (mon.height || 3) + (mon.fly || 0);
-  mon.group.updateMatrixWorld(true);
-  const mouth = mon.group.localToWorld((mon.mouthPoint || V(-0.3, mh * 0.7, 0)).clone());
-  const rim = c.light('arena', 'point', glow, 9, V(mp.x + 1.4, mh * 0.9, mp.z - 2.2), { dist: 9, decay: 1.2, fl: 0.08 });
-  const lamp = c.light('arena', 'point', '#ffc070', 2.2, V(hp.x - 0.2, 1.4, hp.z + 0.6), { dist: 4.5, decay: 1.5, fl: 0.2 });
-  const mid = (hp.x + mp.x) / 2;
-  return {
-    music: lordFight ? 'finalboss' : 'boss',
-    shots: [
-      { set: 'arena', dur: 3.4, dip: 0.7,
-        cam: { pos: [[hp.x - 1.35, 1.55, hp.z + 1.9], [hp.x - 0.9, 1.5, hp.z + 1.5]], look: [[mp.x, mh * 0.55, mp.z], [mp.x, mh * 0.6, mp.z]], fov: [38, 34] },
-        enter: (c) => {
-          c.envTo(0.06, 0.06, 0.08, 0.3, 0); set.lightK = 0.06; set.flameK = 0;
-          c.postTo({ exposure: 0.9, saturation: 1.0 }, 0);
-          c.sfx('rumble', { vol: 0.8 }); c.shake(0.35);
-          c.dustFall(hp.x - 1, mp.x + 2, -1.5, 1.5, 4.6, 30);
-          hero.setExpression('surprised');
-        },
-        at: [[1.6, (c) => { c.sfx('monster_growl', { pitch: 0.6, vol: 0.7 }); c.shake(0.2); }]] },
-      { dur: 3.2,
-        cam: { pos: [[mid - 0.6, 1.5, Math.max(6.2, mh * 1.8 + 0.8)], [mid - 0.8, 1.9, Math.max(7.4, mh * 2.2 + 1.0)]], look: [[mid + 0.5, mh * 0.55, 0], [mid + 0.4, mh * 0.58, 0]], fov: [40, 42] },
-        enter: (c) => {
-          [[0.25, 0.4], [0.95, 0.72], [1.6, 1]].forEach(([t, k]) => c.later(t, () => {
-            c.envTo(k, k, k, k, 0.12, 'outQuad'); c.to(set, { lightK: k, flameK: k }, 0.12, 'outQuad');
-            c.sfx('fire_whoosh', { vol: 0.55, pitch: 0.8 + k * 0.4 }); c.flash(0.12, rgb(glow)); c.shake(0.15);
-          }));
-          c.later(0.4, () => { c.freeze(mon, false); mon.play('intro'); c.sfx('boss_intro'); });
-          c.lightTo(rim, 4, 2);
-          hero.setExpression('determined');
-        } },
+      // 6. the hero pulls out the totem
       { dur: 2.6,
-        cam: { pos: [[mouth.x - 3.0, Math.max(0.5, mouth.y - 1.3), mouth.z + 2.7], [mouth.x - 2.5, Math.max(0.5, mouth.y - 1.1), mouth.z + 2.3]], look: [[mouth.x + 0.2, mouth.y + 0.2, mouth.z], [mouth.x + 0.2, mouth.y + 0.3, mouth.z]], fov: [42, 36], roll: [0.06, -0.04] },
-        at: [[0.25, (c) => {
-          mon.play('roar'); c.sfx('boss_roar'); c.punch = 6; c.haptic(70);
-          c.burst(mouth, glow, { size: 0.9, r: 6, flash: 0.32, shake: 1.0, n: 70 });
-          for (let i = 0; i < 70; i++) c.P.alpha.emit({ pos: [mouth.x, 0.2, mouth.z], vel: [rnd(-4, -1), rnd(0, 0.6), rnd(-2.5, 2.5)], spread: 0.2, life: [0.8, 1.8], size: [2, 3], sizeEnd: 5, color: ['#6a5a50', '#8a7a68'], alpha: 0.5, drag: 1.5 });
-          c.postTo({ bloom: 1.4 }, 0.15); c.later(0.5, () => c.postTo({ bloom: 0.95 }, 1));
-        }]] },
+        cam: { pos: (c, k) => headOf(hero).addScaledVector(hcam, 1.45 - k * 0.25).add(V(0, 0.02, 0)), look: (c) => headOf(hero).add(V(0, -0.2, 0)), fov: 31 },
+        enter: (c) => {
+          c.lightTo(chestLight, 0, 0.6);
+          c.act(hero, ['present', 'point'], { loop: true });
+          if (totem) { hero.hold(totem, 'right'); totem.visible = true; }
+          c.sfx('sparkle', { vol: 0.5 }); c.sfx('medusa_whisper', { vol: 0.5 });
+          for (const f of friends) f.setExpression && f.setExpression('surprised');
+        } },
+      // 7. close on the totem: a girl covering her eyes, wrapped in snakes
       { dur: 3.4,
-        cam: { pos: [[mid - 0.3, 1.3, Math.max(7.0, mh * 2.3 + 1.0)], [mid + 0.3, 1.45, Math.max(6.6, mh * 2.2 + 0.8)]], look: [[mid + 0.2, Math.max(1.2, mh * 0.56), 0], [mid + 0.2, Math.max(1.2, mh * 0.56), 0]], fov: 40 },
-        enter: (c) => { mon.play('idle'); hero.play('idleCombat', { loop: true }); c.titleCard(def.name, def.title, { at: 0.15, dur: 3.0, bottom: glow, line: glow }); },
-        at: [[2.7, (c) => { c.fadeTo = 1; c.fadeRate = 1.4; }]] },
+        cam: {
+          pos: (c, k) => { const t = totem ? totem.getWorldPosition(V()) : handOf(hero); const a = faceTo(t, t.clone().add(hcam)) - 0.5 + k * 1.0; return V(t.x + Math.sin(a) * 0.5, t.y + 0.1, t.z + Math.cos(a) * 0.5); },
+          look: (c) => (totem ? totem.getWorldPosition(V()) : handOf(hero)).add(V(0, 0.06, 0)), fov: [26, 23], smooth: 0,
+        },
+        enter: (c) => {
+          c.postTo({ saturation: 0.95, vignette: 0.6 }, 1.5);
+          c.every(18, () => { const t = totem ? totem.getWorldPosition(V()) : handOf(hero); c.P.add.emit({ pos: [t.x + rnd(-0.12, 0.12), t.y + rnd(-0.05, 0.2), t.z + rnd(-0.12, 0.12)], vel: [0, 0.15, 0], spread: 0.05, life: [0.8, 1.6], size: 1, color: ['#7affc0', '#c0ffe0'], glow: 2.4, flicker: 0.5 }); });
+          c.sfx('curse_hum', { vol: 0.5 });
+        } },
+      // 8. up, proud… and over Pip
+      { dur: 4.4,
+        cam: { pos: [at(hs, aud, 2.8, 1.25, 0.9), at(hs, aud, 2.6, 1.1, 0.6)], look: (c) => { const mid = hs.clone().lerp(pipPos, 0.5).setY(0.55); return totem && totem.visible && flight ? mid.lerp(totem.getWorldPosition(V()), 0.5) : mid; }, fov: 38, smooth: 4 },
+        enter: (c) => {
+          c.postTo({ saturation: 1.12, vignette: 0.42 }, 0.5);
+          hero.setSeated && hero.setSeated(false);
+          hero.group.rotation.y = faceTo(hs, F);
+          c.act(hero, ['present', 'cheer'], { loop: true });
+          flight = null;
+        },
+        at: [
+          [0.8, (c) => { const back = hs.clone().addScaledVector(outH, 0.42); c.walk(hero, back, 0.6, { face: false, anim: 'walk', then: false }); }],
+          [1.4, (c) => {
+            c.act(hero, ['trip', 'fall', 'hurt'], {}); c.sfx('trip'); c.sfx('pip_yip');
+            if (pip) c.act(pip, ['yelp', 'happy'], {});
+            c.slowmo(0.35, 0.9, 0.08, 0.4); c.shake(0.15);
+            if (totem) {
+              const p0 = totem.getWorldPosition(V());
+              c.setOf('camp').add(totem); totem.position.copy(p0); totem.rotation.set(0, 0, 0);
+              const land = hs.clone().lerp(F, 0.45).setY(0.03);
+              flight = c.tween(1.0, (k) => { totem.position.lerpVectors(p0, land, k); totem.position.y += Math.sin(k * Math.PI) * 0.55; totem.rotation.x = k * 7; totem.rotation.z = k * 3; }, 'linear', () => {
+                c.sfx('statue_break'); c.shake(0.3); c.haptic(40);
+                let pcs = null;
+                try { pcs = totem.shatter && totem.shatter(); } catch (e) { pcs = null; }
+                if (pcs && pcs.length) c.shards.push(...pcs); else totem.visible = false;
+                c.debris.spawn({ pos: [land.x, 0.1, land.z], count: 18, colors: ['#a8b0a0', '#7a8a78', '#c8d0c0', '#5a8a6a'], speed: 1.6, up: 1.4, spread: 0.2, gravity: 9, floor: 0.02, life: 2, scale: [0.4, 1] });
+                c.P.add.emit({ pos: [land.x, 0.12, land.z], radial: [0.4, 1.6], radialUp: 1.4, count: 40, life: [0.4, 1.2], size: [1, 2], color: ['#7affc0', '#e0fff0'], glow: 3, gravity: 1 });
+              });
+            }
+          }],
+          [2.8, (c) => { c.act(hero, ['cower', 'hurt', 'idle'], { loop: true }); }],
+        ] },
+      // 9. silence… then the floor splits
+      { dur: 5.0,
+        cam: { pos: [at(F, aud, 3.6, 1.8, -0.4), at(F, aud, 3.3, 1.6, -0.2)], look: [rise.clone().setY(0.3), rise.clone().setY(0.4)], fov: [40, 42] },
+        enter: (c) => {
+          c.later(0.5, () => { c.sfx('rumble', { vol: 0.7 }); c.shake(0.25); });
+          c.dustFall(F.x - 3, F.x + 3, F.z - 3, F.z + 2, 4.4, 26);
+          c.later(1.1, () => {
+            c.sfx('ground_split'); c.shake(0.7); c.haptic(60);
+            c.tween(2.8, (k) => crackOpen(k), 'outCubic');
+            c.lightTo(crackLight, 7, 2.2);
+            beams.forEach((b, i) => c.later(0.4 + i * 0.25, () => c.tween(1.6, (k) => (b.material.uniforms.uOp.value = k * 0.22), 'inQuad')));
+            c.every(30, () => { const p = crackPts[(Math.random() * crackPts.length) | 0]; c.P.add.emit({ pos: [p.x, 0.05, p.z], vel: [0, rnd(0.6, 1.6), 0], spread: 0.1, life: [0.8, 1.8], size: [1, 2], color: ['#7affc0', '#c0ffe0', '#3affa0'], glow: 2.8 }); }, true);
+            for (const id of CHARACTER_ORDER) { const ch = crew[id]; ch.setSeated && ch.setSeated(false); c.act(ch, ['cower', 'block', 'hurt'], { loop: true }); ch.setExpression && ch.setExpression('surprised'); }
+            if (pip) { c.act(pip, ['run', 'walk'], { loop: true }); c.walk(pip, hs.clone().addScaledVector(sideH, 0.35).addScaledVector(outH, 0.1), 0.6, { anim: 'run', then: 'idle' }); c.sfx('pip_whine'); }
+          });
+          c.postTo({ saturation: 1.0, bloom: 1.15 }, 2);
+        } },
+      // 10. a figure crawls out — Medusa
+      { dur: 6.0,
+        cam: { pos: [at(rise, aud, 2.6, 0.3, 0.7), at(rise, aud, 2.4, 0.35, 0.5)], look: [rise.clone().setY(0.4), rise.clone().setY(1.9)], fov: [38, 44], roll: [0.05, -0.03] },
+        enter: (c) => {
+          med.group.visible = true;
+          c.act(med, ['crawlOut', 'intro', 'idle'], {});
+          med.setEyes && med.setEyes(0);
+          c.tween(3.6, (k) => (med.group.position.y = -2.8 + 2.8 * k), 'outCubic');
+          c.sfx('medusa_whisper', { vol: 0.8 }); c.later(1.2, () => c.sfx('hiss', { vol: 0.6 }));
+          c.later(3.7, () => { c.act(med, ['rise', 'roar', 'idle'], {}); c.sfx('rumble', { vol: 0.6 }); c.shake(0.3); c.postTo({ bloom: 1.35 }, 0.4); });
+          c.every(26, () => c.P.alpha.emit({ pos: [rise.x + rnd(-1, 1), 0.05, rise.z + rnd(-0.4, 0.4)], vel: [0, rnd(0.2, 0.5), 0], spread: 0.1, life: [1.6, 2.8], size: [2, 3], sizeEnd: 5, color: ['#1a3a2a', '#2a4a3a'], alpha: 0.4, fadeIn: 0.3, swirl: 0.6 }));
+        } },
+      // 11. she thanks you, and spares you
+      { dur: 5.2,
+        cam: { pos: (c, k) => headOf(hero).addScaledVector(flat(hs).sub(rise).normalize(), 1.0).addScaledVector(sideV, 0.5 - k * 0.1).add(V(0, 0.32, 0)), look: (c) => med.group.position.clone().add(V(0, (med.height || 2.2) * 0.8, 0)), fov: 40 },
+        enter: (c) => { c.act(med, ['talk', 'idle'], { loop: true }); c.sfx('medusa_whisper', { vol: 0.6 }); },
+        at: [[2.4, (c) => c.caption('Thank you, little forger. You, I will spare.', 0, 2.8)]],
+        cap: 'Free… at last.', capAt: 0.3, capDur: 2.0 },
+      // 12. her eyes open
+      { dur: 2.2,
+        cam: { pos: (c, k) => med.group.position.clone().add(V(0, (med.height || 2.2) * 0.85, 0)).addScaledVector(flat(hs).sub(rise).normalize(), 1.4 - k * 0.3), look: (c) => med.group.position.clone().add(V(0, (med.height || 2.2) * 0.85, 0)), fov: [30, 26] },
+        enter: (c) => {
+          c.act(med, ['gaze', 'special', 'roar'], {});
+          c.later(0.5, () => { c.tween(0.7, (k) => med.setEyes && med.setEyes(k), 'inQuad'); c.sfx('gaze'); });
+          c.later(1.4, () => { c.flash(0.6, '#7affc0'); c.punch = 5; c.haptic(50); });
+        } },
+      // 13. the gaze rolls over the camp: friends, ore and your weapon turn to stone
+      { dur: 4.8,
+        cam: { pos: [at(F, aud, 5.0, 3.6, 0.4), at(F, aud, 4.6, 3.3, 0.2)], look: [F.clone().setY(0.3), F.clone().setY(0.4)], fov: 44 },
+        enter: (c) => {
+          const ring = c.add(waveRing('#7affc0', 0.1), 'camp');
+          ring.position.copy(rise).setY(0.04);
+          c.tween(1.8, (k) => { ring.scale.set(0.2 + k * 7.5, 1, 0.2 + k * 7.5); ring.material.uniforms.uOp.value = 1 - k * 0.8; ring.material.uniforms.uTime.value = k * 3; }, 'outCubic', () => { ring.visible = false; });
+          c.postTo({ saturation: 0.75, exposure: 0.95 }, 2.5);
+          friends.forEach((f) => { const d = flat(f.group.position).distanceTo(rise); c.petrify(f, 1.4, { delay: 0.15 + d / 4.2, vol: 0.5 }); c.later(0.15 + d / 4.2, () => c.every(10, () => c.chips(f), false)); });
+          c.petrify(haul, 1.2, { delay: 0.2 + flat(haul.position).distanceTo(rise) / 4.2, sound: false, freeze: false });
+          if (tool) c.petrify(tool, 1.0, { delay: 0.2 + flat(tool.position).distanceTo(rise) / 4.2, sound: false, freeze: false });
+          // the hero is spared: they curl around Pip
+          c.act(hero, ['cower', 'block'], { loop: true });
+          c.sfx('stone_crack', { vol: 0.5 });
+        } },
+      // 14. the weapon crumbles
+      { dur: 2.2,
+        cam: tool ? { pos: [tool.position.clone().addScaledVector(aud, 0.9).add(V(0, 0.55, 0)), tool.position.clone().addScaledVector(aud, 0.75).add(V(0, 0.45, 0))], look: [tool.position.clone().setY(0.35), tool.position.clone().setY(0.3)], fov: 30 }
+          : { pos: [at(hs, hcam, 1.4, 0.8)], look: [headOf(hero)], fov: 34 },
+        at: [[1.0, (c) => {
+          c.sfx('stone_shatter'); c.shake(0.2);
+          if (tool) {
+            const p = tool.position.clone(); tool.visible = false;
+            c.debris.spawn({ pos: [p.x, 0.25, p.z], count: 22, colors: ['#8a8696', '#6a6676', '#a8a4b4'], speed: 1.2, up: 1.2, spread: 0.25, gravity: 9, floor: 0.02, life: 2.2, scale: [0.4, 1] });
+          }
+        }]] },
+      // 15. the heralds rise and take the statues down into the dark
+      { dur: 5.4,
+        cam: { pos: [at(F, aud, 5.4, 1.4, -0.6), at(F, aud, 5.0, 1.6, -0.3)], look: [F.clone().setY(0.9), F.clone().setY(1.0)], fov: [46, 44] },
+        enter: (c) => {
+          c.act(med, ['summon', 'roar'], {});
+          heralds.forEach((m, i) => c.later(0.3 + i * 0.45, () => {
+            m.group.visible = true; c.freeze(m, false);
+            c.act(m, ['intro', 'roar'], {});
+            c.tween(0.9, (k) => (m.group.position.y = -3.2 + 3.2 * k), 'outBack');
+            c.sfx('herald_roar', { vol: 0.7, pitch: 0.9 + i * 0.1 }); c.shake(0.3);
+            const p = m.group.position;
+            c.debris.spawn({ pos: [p.x, 0.1, p.z], count: 14, colors: ['#4a4054', '#6a6070', '#2e2838'], speed: 2, up: 2, spread: 0.3, gravity: 9, floor: 0.02, life: 1.8, scale: [0.4, 1] });
+          }));
+          heralds.forEach((m, i) => c.later(2.6 + i * 0.25, () => {
+            const f = friends[i];
+            c.act(m, ['attack', 'special'], {});
+            c.sfx('hiss', { vol: 0.6 });
+            const f0 = f.group.position.clone(), m0 = m.group.position.clone();
+            const dest = crackPts[Math.min(crackPts.length - 1, Math.round(((i + 1) / 4) * (crackPts.length - 1)))].clone();
+            c.tween(1.6, (k) => {
+              f.group.position.lerpVectors(f0, V(dest.x, -2.6, dest.z), k * k);
+              m.group.position.lerpVectors(m0, V(dest.x, -3.4, dest.z), k * k);
+            }, 'linear', () => { f.group.visible = false; m.group.visible = false; });
+            c.later(1.0, () => c.sfx('rock_break', { vol: 0.5 }));
+          }));
+        } },
+      // 16. she laughs and sinks away; one snake stays for you
+      { dur: 4.0,
+        cam: { pos: (c, k) => snakeAt.clone().addScaledVector(flat(snakeAt).sub(hs).normalize(), 1.6).add(V(0, 0.9, 0)).addScaledVector(sideV, 0.4), look: (c) => headOf(hero).add(V(0, -0.2, 0)), fov: 38 },
+        enter: (c) => {
+          c.act(med, ['laugh', 'idle'], {}); c.sfx('medusa_laugh');
+          c.later(1.2, () => c.tween(1.8, (k) => (med.group.position.y = -3.2 * k), 'inQuad', () => { med.group.visible = false; }));
+          c.later(1.4, () => {
+            snake.group.visible = true; c.freeze(snake, false);
+            c.tween(0.8, (k) => (snake.group.position.y = -2.5 + 2.5 * k), 'outCubic');
+            c.act(snake, ['intro', 'roar', 'idle'], {}); c.sfx('hiss'); c.sfx('snake_rattle', { vol: 0.7 });
+          });
+          c.later(2.6, () => {
+            c.act(hero, ['carry', 'idle'], { loop: true });
+            if (pip) { c.act(pip, ['carried', 'idle'], { loop: true }); hero.hold(pip.group, 'left'); }
+            c.sfx('pip_whine', { vol: 0.6 });
+          });
+          c.postTo({ saturation: 0.9 }, 1);
+        } },
+      // 17. run
+      { dur: 3.6,
+        cam: { pos: (c, k) => hero.group.position.clone().addScaledVector(flat(hero.group.position).sub(flat(C.exitTunnel)).normalize(), 2.4 - k * 0.6).add(V(0, 1.1, 0)).addScaledVector(sideV, 0.6), look: (c) => hero.group.position.clone().add(V(0, 0.55, 0)), fov: 42, smooth: 5 },
+        enter: (c) => {
+          c.act(hero, ['run'], { loop: true });
+          c.walk(hero, C.exitTunnel, 1.5, { anim: 'run', then: false });
+          c.later(1.5, () => c.walk(hero, C.exitDeep, 1.2, { anim: 'run', then: false }));
+          c.later(0.4, () => { c.act(snake, ['attack', 'special'], {}); c.sfx('dodge'); c.sfx('hiss', { vol: 0.7 }); c.shake(0.2); });
+          c.every(6, () => c.sfx('footstep_stone', { vol: 0.5 }));
+          c.later(2.5, () => { c.fadeTo = 1; c.fadeRate = 1.2; });
+        } },
+    ],
+  };
+};
+SCRIPTS.dive = SCRIPTS.intro; // the old flow's run start (until flow.js moves to intro → chase)
+// No story at boot any more: an old caller asking for 'prologue' gets an instant hand-back.
+SCRIPTS.prologue = (c) => { c.fade = 1; c.later(0, () => c.finish(true)); return { shots: [{ dur: 0.2, cam: { pos: [[0, 1, 3]], look: [[0, 1, 0]] } }] }; };
+
+// ------------------------------------------------------------------ chase (1st person)
+SCRIPTS.chase = (c) => {
+  const who = c.who;
+  let S;
+  try { S = c.fpSet('run', 'chase', 0, { seed: 7 }); } catch (e) { S = c.fpSet('run', 'tunnel', 0, { seed: 7, length: 40 }); }
+  const A = S.A;
+  const path = A.path && A.path.getPointAt ? A.path : new THREE.CatmullRomCurve3([V(0, 0.95, 0), V(0.4, 0.95, -14), V(-0.3, 0.95, -28), V(0, 0.95, -40)]);
+  const arms = c.fpRig(who);
+  // Pip rides in your arm while you run (the arms carry their own Pip); a second Pip waits for the quiet end
+  if (arms) { arms.hold('pet'); arms.play('run'); }
+  const pip = c.pet('run', V(0, -50, 0), 0, 'idle');
+  if (pip) pip.group.visible = false;
+  c.runSpeed = 1;
+  const tan = (u) => path.getTangentAt(clamp(u, 0, 1));
+  const side = (u) => { const t = tan(u); return V(-t.z, 0, t.x).normalize(); };
+  const bob = (k = 1) => V(Math.sin(c.t * 7) * 0.025 * k, Math.abs(Math.sin(c.t * 14)) * 0.05 * k, 0);
+  const P = (u, k = 1) => path.getPointAt(clamp(u, 0, 1)).add(bob(k));
+  const ahead = (u, d = 0.05) => path.getPointAt(clamp(u + d, 0, 1)).add(V(0, -0.05, 0));
+  // the snake behind you
+  const chaser = c.beast('gorgon_snake', 'run', P(0), 0, ['vine_viper', 'adder'], { col: '#3a6a44', belly: '#d8e8a0', eye: '#ff4a3a', len: 3.4, r: 0.2 });
+  let uCam = 0, gap = 0.12;
+  const place = () => { const u = clamp(uCam - gap, 0, 1); const p = path.getPointAt(u); chaser.group.position.set(p.x, p.y - 0.95, p.z); const t = tan(u); chaser.group.rotation.y = Math.atan2(t.x, t.z); };
+  const seg = (u0, u1) => (c, k) => { uCam = lerp(u0, u1, k); place(); return P(uCam); };
+  const beats = Array.isArray(A.beats) ? A.beats : [];
+  const beat = (k, d) => { const b = beats.find((x) => x.kind === k); return b ? b.t : d; };
+  const uGap = beat('gap', 0.22), uRoot = beat('roots', 0.38), uLedgeEnd = beat('ledgeEnd', 0.72), uSlide = beat('slide', 0.8);
+  const u1 = Math.max(0.06, uGap - 0.1), u2 = Math.max(u1 + 0.02, uGap - 0.04), u3 = Math.min(uRoot + 0.03, uLedgeEnd - 0.1);
+  const end = path.getPointAt(1);
+  const endT = tan(1);
+  const floorY = A.end && A.end.pos ? A.end.pos.y : end.y - 0.95;
+  return {
+    music: 'chase',
+    shots: [
+      // run!
+      { set: 'run', dur: 4.2, dip: 0.8,
+        cam: { pos: seg(0, u1), look: (c, k) => ahead(lerp(0, u1, k)), fov: 64, ease: 'linear', sway: 0.006 },
+        enter: (c) => {
+          c.loop('cave', 0.6);
+          c.every(5.5, () => c.sfx('footstep_stone', { vol: 0.6, pitch: rnd(0.9, 1.1) }), true);
+          c.every(1.8, () => c.sfx('run_breath', { vol: 0.5 }), true);
+          c.later(1.0, () => c.sfx('hiss', { vol: 0.8 }));
+          c.later(2.6, () => c.sfx('pip_whine', { vol: 0.5 }));
+          c.postTo({ vignette: 0.55, saturation: 1.05 }, 0.5);
+        } },
+      // a glance back: it's right there
+      { dur: 2.2,
+        cam: {
+          pos: seg(u1, u2),
+          look: (c, k) => { const p = P(uCam); const back = path.getPointAt(clamp(uCam - 0.08, 0, 1)); const fw = ahead(uCam); const w = Math.sin(clamp(k * 1.25) * Math.PI); return fw.lerp(back.add(V(0, -0.2, 0)), w); },
+          fov: [64, 58], ease: 'linear', sway: 0.01,
+        },
+        enter: (c) => {
+          gap = 0.07;
+          c.act(chaser, ['attack', 'roar', 'special'], {});
+          c.later(0.4, () => { c.sfx('hiss'); c.sfx('snake_rattle'); c.slowmo(0.5, 0.7, 0.1, 0.3); c.shake(0.2); });
+        } },
+      // a gap in the floor: jump
+      { dur: 3.6,
+        cam: {
+          pos: (c, k) => { const p = seg(u2, u3)(c, k); const j = clamp((uCam - (uGap - 0.03)) / 0.06); p.y += Math.sin(j * Math.PI) * 0.4; return p; },
+          look: (c, k) => ahead(lerp(u2, u3, k), 0.06).add(V(0, Math.abs(uCam - uGap) < 0.02 ? -0.5 : 0, 0)), fov: 64, ease: 'linear', sway: 0.006,
+        },
+        enter: (c) => {
+          gap = 0.1;
+          c.later(1.2, () => { c.slowmo(0.45, 0.8, 0.08, 0.3); c.sfx('wind_whoosh', { vol: 0.6 }); });
+          c.later(2.4, () => { c.sfx('drop'); c.sfx('footstep_stone'); c.shake(0.45); c.haptic(30); c.punch = 3; });
+          // a curtain of roots to push through
+          c.later(0.3, () => { const p = ahead(uCam, 0.02); for (let i = 0; i < 40; i++) c.P.alpha.emit({ pos: [p.x + rnd(-0.6, 0.6), p.y + rnd(-0.2, 0.7), p.z + rnd(-0.3, 0.3)], vel: [rnd(-0.6, 0.6), rnd(-0.2, 0.6), rnd(-0.3, 0.3)], spread: 0.1, life: [0.6, 1.4], size: [1, 2], color: ['#5a8a3a', '#8ac04a', '#3a5a2a'], alpha: 0.9, gravity: 2 }); c.sfx('page_turn', { vol: 0.5, pitch: 0.6 }); });
+        } },
+      // one strikes from the wall
+      { dur: 3.0,
+        cam: {
+          pos: (c, k) => { const p = seg(u3, uSlide)(c, k); const w = clamp((k - 0.3) / 0.25); return p.addScaledVector(side(uCam), -0.35 * Math.sin(w * Math.PI * 0.5) * (1 - clamp((k - 0.7) / 0.3))); },
+          look: (c, k) => ahead(lerp(u3, uSlide, k)), fov: 64, roll: [0, -0.08, 0.02], ease: 'linear', sway: 0.008,
+        },
+        enter: (c) => {
+          const u = lerp(u3, uSlide, 0.45), p = path.getPointAt(u), s = side(u);
+          const striker = c.beast('vine_viper', 'run', V(p.x, p.y - 0.95, p.z).addScaledVector(s, 1.4), 0, ['adder', 'gorgon_snake'], { col: '#4a7a3a', belly: '#c8e070', eye: '#ffe04a', len: 2.4, r: 0.14 });
+          striker.group.rotation.y = Math.atan2(-s.x, -s.z);
+          c.later(0.9, () => { c.act(striker, ['attack', 'special'], {}); c.sfx('hiss', { vol: 0.9 }); c.sfx('dodge'); c.slowmo(0.4, 0.5, 0.06, 0.3); c.shake(0.3); c.haptic(25); });
+        } },
+      // the floor tilts: slide down into the dark
+      { dur: 3.0,
+        cam: {
+          pos: (c, k) => { const p = seg(uSlide, 1.0)(c, k); p.y -= k * 0.45; return p; },
+          look: (c, k) => ahead(lerp(uSlide, 1.0, k), 0.05).add(V(0, -0.35 * k, 0)), fov: [64, 74], roll: [0, 0.12], ease: 'inQuad', sway: 0.012,
+        },
+        enter: (c) => {
+          c.sfx('wind_whoosh', { vol: 0.8 }); c.sfx('rumble', { vol: 0.4 });
+          c.every(40, () => { const p = c.camera.position; c.P.alpha.emit({ pos: [p.x + rnd(-0.5, 0.5), p.y - 0.5, p.z + rnd(-0.5, 0.5)], vel: [rnd(-0.3, 0.3), rnd(0.2, 0.8), rnd(-0.3, 0.3)], spread: 0.1, life: [0.4, 1], size: [1, 2], color: ['#6a5a50', '#8a7a68'], alpha: 0.6 }); });
+          c.later(2.4, () => { c.fadeTo = 1; c.fadeRate = 5; });
+          c.later(2.85, () => { c.sfx('splash'); c.haptic(40); });
+          gap = 0.2;
+        } },
+      // quiet. moss, fireflies, Pip — and the old map
+      { dur: 7.0, dip: 1.4,
+        cam: {
+          pos: (c, k) => { const sit = clamp((k - 0.42) / 0.2); return end.clone().setY(floorY + 0.3 + sit * 0.42).add(V(Math.sin(c.t * 0.6) * 0.01, Math.sin(c.t * 1.1) * 0.01, 0)); },
+          look: (c, k) => { const sit = clamp((k - 0.42) / 0.2); const up = end.clone().setY(floorY + 3).addScaledVector(endT, 0.6); const fw = end.clone().addScaledVector(endT, 2).setY(floorY + 0.3); const map = end.clone().addScaledVector(endT, 1).setY(floorY - 0.1); const m = clamp((k - 0.62) / 0.15); return up.lerp(fw, ease.inOutSine(sit)).lerp(map, ease.inOutSine(m) * 0.6); },
+          fov: 60, ease: 'linear', sway: 0.004,
+        },
+        enter: (c) => {
+          chaser.group.visible = false;
+          c.runSpeed = 0;
+          c.game.audio && c.game.audio.music('delve0');
+          c.postTo({ vignette: 0.45, saturation: 1.12, exposure: 1 }, 1);
+          c.every(4, () => { const p = end.clone().setY(floorY).add(V(rnd(-2, 2), rnd(0.4, 2.4), rnd(-2, 2))); c.P.add.emit({ pos: [p.x, p.y, p.z], vel: [rnd(-0.05, 0.05), 0.04, rnd(-0.05, 0.05)], spread: 0.05, life: [2, 4], size: 1, color: ['#d8ff8a', '#ffe08a'], glow: 2.6, flicker: 0.6, fadeIn: 0.6 }); }, true);
+          c.every(1.2, () => c.sfx('run_breath', { vol: 0.25, pitch: 0.85 }));
+          if (arms) { arms.hold('none'); arms.play('idle'); }
+          // Pip hops down and licks your face
+          if (pip) {
+            c.later(1.2, () => {
+              pip.group.visible = true;
+              const cp = c.camera.position.clone();
+              pip.group.position.copy(V(cp.x, floorY + 0.05, cp.z).addScaledVector(endT, 0.42));
+              pip.group.rotation.y = Math.atan2(-endT.x, -endT.z);
+              c.act(pip, ['lick', 'happy', 'idle'], {});
+              c.sfx('pip_lick'); c.later(0.5, () => c.sfx('pip_lick'));
+              c.punch = -2;
+            });
+            c.later(2.6, () => { c.act(pip, ['happy', 'idle'], { loop: true }); c.sfx('pip_yip'); });
+          }
+          // the old map, still in your pack
+          c.later(4.3, () => {
+            const map = buildOldMap();
+            if (arms) { arms.hold('map'); arms.play('raiseMap'); }
+            else { c.camera.add(map); map.position.set(0, -0.18, -0.45); map.rotation.x = -0.5; }
+            c.sfx('map_unfold');
+          });
+          c.later(4.8, () => c.caption("We'll get them back, Pip.", 0, 2.0));
+          c.later(6.0, () => { c.fadeTo = 1; c.fadeRate = 1; });
+        } },
     ],
   };
 };
 
-// ------------------------------------------------------------------ victory
-SCRIPTS.victory = (c) => {
-  const who = c.who;
-  const T = c.stageSet('tomb', 'tomb', 5);
-  const A = T.A;
-  const lord = c.monster('cursed_lord', 'tomb', (A.monster || V(2, 0, 0)).clone().setX(2.6), 0.3);
-  const hero = c.char(who, 'tomb', (A.player || V(-1.8, 0, 0.6)).clone(), Math.PI / 2 - 0.4, 'idleCombat');
-  lord.group.updateWorldMatrix(true, false);
-  const chest = lord.group.localToWorld((lord.hitPoint || V(0, 3, 0)).clone());
-  const S = c.shaftSet('shaft', layerBands(0, 5, 5), { lamp: '#ffd890', fog: '#0c0812', y0: -6 });
-  S.lift.visible = false;
-  const rush = c.add(glowSprite('#ffe08a', 5, 2.4, 1.3), S.group);
-  const rushL = c.light(S.group, 'point', '#ffd27a', 9, V(0, -32, 0), { dist: 11, decay: 1.2 });
-  const rushBeam = c.add(beam(14, 0.3, 1.6, '#ffd27a', 0.7, 0.8), S.group);
-  const camp = c.stageSet('camp', 'campfire', 0);
-  const CA = camp.A, seats = CA.seats || [];
-  const friends = [];
-  CHARACTER_ORDER.forEach((id, i) => {
-    if (id === who || !seats[i]) return;
-    const s = seats[i];
-    const ch = c.char(id, 'camp', V(s.pos.x, 0, s.pos.z), s.rotY, 'sit');
-    ch.setSeated(true, s.height);
-    c.settle(ch);
-    const u = c.stone(ch, '#ffd27a', 5); u.uSeam.value = 0;
-    c.freeze(ch);
-    friends.push(ch);
-  });
-  const fire = CA.fire || V();
-  const ws = seats[Math.max(0, CHARACTER_ORDER.indexOf(who))] || { pos: V(1.55, 0.3, 0.95) };
-  const stand = V(ws.pos.x * 1.3, 0, ws.pos.z * 1.3 + 0.45);
-  const back = c.char(who, 'camp', stand, faceTo(stand, fire), 'idle');
-  const dawn = c.light('camp', 'dir', '#ffcf9a', 0, V(-4, 6, 3), { target: V(0, 0, 0) });
-  const shaftB = c.add(beam(9, 0.5, 2.4, '#ffe0b0', 0, 1.2), 'camp');
-  aimBeam(shaftB, V(-2.4, 6.2, -2.6), V(-0.4, 0, 0.4));
-  const cheers = ['cheer', 'laugh', 'wave'];
+// ------------------------------------------------------------------ boss_<id> (1st person)
+SCRIPTS.boss = (c, p) => {
+  const id = p.arg && (HERALDS[p.arg] || MONSTERS[p.arg]) ? p.arg : 'thornscale';
+  const H = HERALDS[id] || { act: actOf(c), col: '#6a8a5a', belly: '#c8d890', eye: '#ffe04a', glow: '#9aff6a', alts: [], from: 'floor' };
+  const def = MONSTERS[id] || {};
+  const act = clamp(H.act ?? def.region ?? actOf(c), 0, 3);
+  const S = c.fpSet('lair', 'chamber', act, { kind: 'boss', seed: 31 + act });
+  const A = S.A;
+  const stand = v3(A.stand) || V(0, 0.95, 0);
+  const enter = v3(A.enter) || stand.clone().add(V(0, 0, 2.2));
+  const look0 = v3(A.look) || stand.clone().add(V(0, 0, -5));
+  const fwd = flat(look0).sub(flat(stand)).normalize();
+  const sideB = V(fwd.z, 0, -fwd.x);
+  const sp = (A.spawns || []).find((s) => s.from === H.from) || (A.spawns || [])[0];
+  const from = sp ? sp.from : 'floor';
+  const spawn = A.boss ? flat(v3(A.boss)) : sp ? flat(v3(sp.pos)) : flat(stand).addScaledVector(fwd, 4.4);
+  const arms = c.fpRig(c.who);
+  const wpn = c.heroWeapon(c.who);
+  if (arms) { arms.hold('weapon', wpn || undefined); arms.play('idle'); }
+  // your friend, in stone, kept here
+  const isMedusa = id === 'medusa';
+  const fid = isMedusa ? null : statuesOf(c)[0];
+  const fpos = A.friend ? v3(A.friend) : flat(spawn).addScaledVector(fwd, 1.8).addScaledVector(sideB, 1.4);
+  let friend = null;
+  if (fid && CHARACTERS[fid]) {
+    friend = c.char(fid, 'lair', fpos, faceTo(fpos, flat(stand)), 'cower');
+    c.act(friend, ['cower', 'block'], { loop: true }); c.settle(friend, 20);
+    if (friend.setStone) friend.setStone(1); else c.petrify(friend, 0.01, { sound: false });
+    c.freeze(friend);
+  }
+  const statueLight = c.light('lair', 'spot', '#9ad8ff', 0, fpos.clone().add(V(0.4, 3.2, 0.6)), { target: fpos.clone().setY(0.6), dist: 7, angle: 0.4, pen: 0.7 });
+  // the boss, hidden until its entrance
+  const start = isMedusa ? spawn.clone().addScaledVector(fwd, 3.0)
+    : from === 'ceiling' ? (sp ? v3(sp.pos) : spawn.clone().setY(6))
+    : from === 'water' ? (sp ? v3(sp.pos).setY(-3) : spawn.clone().setY(-3)) : spawn.clone().setY(-3.0);
+  if (from === 'water' && sp) spawn.copy(flat(v3(sp.pos)));
+  const mon = isMedusa ? c.medusa('lair', start, faceTo(spawn, flat(stand))) : c.beast(id, 'lair', start, faceTo(spawn, flat(stand)), H.alts, H);
+  mon.group.visible = false;
+  c.freeze(mon);
+  const mh = (mon.height || 2.2) + (mon.fly || 0);
+  const glow = H.glow || '#9aff6a';
+  const rim = c.light('lair', 'point', glow, 0, spawn.clone().add(V(0, mh * 0.9, 0)).addScaledVector(fwd, 1.6), { dist: 9, decay: 1.2, fl: 0.1 });
+  return {
+    music: isMedusa ? 'medusa' : 'boss',
+    shots: [
+      // walk in: something is wrong here
+      { set: 'lair', dur: 3.4, dip: 0.9,
+        cam: { pos: [enter, stand], look: [look0.clone().setY(stand.y - 0.1), fpos.clone().setY(0.9).lerp(look0, 0.4)], fov: 62, ease: 'inOutSine', sway: 0.006 },
+        enter: (c) => {
+          c.envTo(0.6, 0.6, 0.66, 0.6, 0);
+          c.every(5, () => c.sfx('footstep_stone', { vol: 0.4 }));
+          c.later(1.2, () => { c.lightTo(statueLight, 5, 1.2); c.sfx('pip_whine', { vol: 0.4 }); });
+          c.later(2.2, () => { c.sfx('rumble', { vol: 0.6 }); c.shake(0.2); });
+        } },
+      // it arrives
+      { dur: 3.4,
+        cam: { pos: [stand, stand.clone().addScaledVector(fwd, -0.15)], look: [spawn.clone().setY(mh * 0.35), spawn.clone().setY(mh * 0.6)], fov: [60, 56], sway: 0.008 },
+        enter: (c) => {
+          mon.group.visible = true; c.freeze(mon, false);
+          c.act(mon, isMedusa ? ['rise', 'intro', 'idle'] : ['intro', 'idle'], {});
+          if (isMedusa) { mon.setEyes && mon.setEyes(0); c.walk(mon, spawn, 2.4, { anim: 'idle', then: false, face: false }); }
+          else c.tween(from === 'ceiling' ? 1.0 : 1.6, (k) => mon.group.position.lerpVectors(start, spawn, k), from === 'ceiling' ? 'inQuad' : 'outCubic', () => { if (from === 'ceiling') { c.shake(0.6); c.sfx('drop'); c.debris.spawn({ pos: [spawn.x, 0.1, spawn.z], count: 20, colors: ['#4a4054', '#6a6070'], speed: 2, up: 2, spread: 0.4, gravity: 9, floor: 0.02, life: 1.6 }); } });
+          c.sfx(isMedusa ? 'medusa_whisper' : 'boss_intro', { vol: 0.8 });
+          if (from === 'water') c.sfx('splash');
+          c.lightTo(rim, 5, 1.6);
+          if (isMedusa) c.caption('You came back, little forger.', 1.0, 2.4);
+        } },
+      // the roar
+      { dur: 2.4,
+        cam: { pos: [stand.clone().addScaledVector(fwd, 0.1), stand.clone().addScaledVector(fwd, 0.5)], look: [spawn.clone().setY(mh * 0.7), spawn.clone().setY(mh * 0.75)], fov: [52, 46], roll: [0.04, -0.03] },
+        at: [[0.25, (c) => {
+          c.act(mon, isMedusa ? ['laugh', 'roar'] : ['roar', 'special'], {});
+          c.sfx(isMedusa ? 'medusa_laugh' : 'herald_roar'); c.punch = 6; c.haptic(60);
+          c.burst(spawn.clone().setY(mh * 0.7), glow, { size: 0.8, r: 5, flash: 0.3, shake: 0.9, n: 60 });
+          if (arms) arms.play('guard');
+        }]] },
+      // name card, and the fight begins
+      { dur: 3.2,
+        cam: { pos: [stand], look: [spawn.clone().setY(mh * 0.55)], fov: 60 },
+        enter: (c) => { c.act(mon, ['idle'], { loop: true }); if (arms) arms.play('idle'); c.titleCard(nameOf(id), titleOf(id), { at: 0.1, dur: 2.8, bottom: glow, line: glow }); },
+        at: [[2.6, (c) => { c.fadeTo = 1; c.fadeRate = 1.6; }]] },
+    ],
+  };
+};
+
+// ------------------------------------------------------------------ rescue_<friend> (3rd person)
+SCRIPTS.rescue = (c, p) => {
+  const fid = CHARACTERS[p.arg] ? p.arg : statuesOf(c)[0] || CHARACTER_ORDER.find((x) => x !== c.who);
+  const act = clamp(p.act ?? actOf(c), 0, 3);
+  const S = c.fpSet('lair', 'chamber', act, { kind: 'boss', seed: 31 + act });
+  const A = S.A;
+  const stand = flat(v3(A.stand) || V(0, 0, 0));
+  const look0 = v3(A.look) || stand.clone().add(V(0, 0, -5));
+  const fwd = flat(look0).sub(stand).normalize();
+  const sideR = V(fwd.z, 0, -fwd.x);
+  const fpos = A.friend ? v3(A.friend) : stand.clone().addScaledVector(fwd, 3.4).addScaledVector(sideR, 0.8);
+  const hpos = flat(fpos).addScaledVector(flat(fpos).sub(stand).normalize(), -1.7);
+  const hero = c.char(c.who, 'lair', hpos, faceTo(hpos, fpos), 'idle');
+  const friend = c.char(fid, 'lair', fpos, faceTo(fpos, hpos), 'cower');
+  c.act(friend, ['cower', 'block'], { loop: true }); c.settle(friend, 20);
+  if (friend.setStone) friend.setStone(1); else c.petrify(friend, 0.01, { sound: false });
+  c.freeze(friend);
+  const pip = c.pet('lair', hpos.clone().addScaledVector(sideR, 0.45), faceTo(hpos, fpos), 'sit');
+  if (pip) c.act(pip, ['sniff', 'idle'], { loop: true });
+  const toF = flat(fpos).sub(hpos).normalize();
+  const camSide = sideR.clone();
+  const glowL = c.light('lair', 'point', '#fff0c0', 0, fpos.clone().setY(0.7).addScaledVector(toF, -0.4), { dist: 5, decay: 1.3, fl: 0.2 });
+  const fh = () => headOf(friend);
   return {
     music: 'ending',
     shots: [
-      { set: 'tomb', dur: 5.4, dip: 1.0,
-        cam: { pos: [[-3.5, 0.72, 2.7], [-3.0, 0.82, 2.25]], look: [[2.4, 2.6, 0], [2.4, 3.0, 0]], fov: [38, 43] },
-        enter: (c) => { lord.play('stun'); hero.play('victory', { loop: true }); c.envTo(0.7, 0.6, 0.85, 1, 0); c.curseSmoke(V(2.6, 0.1, 0), 1.0, 16); },
-        at: [
-          [0.9, (c) => {
-            c.sfx('crack'); lord.flash('#ffe08a', 0.25); c.shake(0.2);
-            c.stone(lord, '#ffd27a', -0.2); c.stoneTo(lord, 5.4, 1.8, 'inQuad');
-            c.every(40, () => { const lp = lord.group.position, y = lord._stone.uStone.value; c.P.add.emit({ pos: [lp.x + rnd(-1.1, 1.1), y, lp.z + rnd(-1.1, 1.1)], vel: [0, 0.6, 0], spread: 0.4, life: [0.3, 0.9], size: [1, 2], color: ['#ffe08a', '#fff4c8'], glow: 3, flicker: 0.5 }); });
-          }],
-          [1.9, (c) => { c.sfx('crack', { pitch: 1.2 }); c.shake(0.25); c.freeze(lord); }],
-          [2.75, (c) => {
-            const lp = lord.group.position;
-            lord.group.visible = false;
-            for (let i = 0; i < 12; i++) c.debris.spawn({ pos: [lp.x + rnd(-1, 1), rnd(0.4, 4.6), lp.z + rnd(-0.8, 0.8)], count: 22, colors: ['#8a8696', '#6a6676', '#a8a4b4', '#4a4656'], speed: 3, up: 3, spread: 0.4, gravity: 9, floor: 0.03, life: 2.8, scale: [0.8, 2.0] });
-            for (let i = 0; i < 70; i++) c.P.alpha.emit({ pos: [lp.x + rnd(-1.5, 1.5), rnd(0.1, 1.5), lp.z + rnd(-1, 1)], vel: [rnd(-1.5, 1.5), rnd(0, 0.8), rnd(-1.5, 1.5)], spread: 0.3, life: [1.5, 3], size: [2, 4], sizeEnd: 6, color: ['#8a8090', '#a8a0b0'], alpha: 0.5, drag: 1.4 });
-            c.sfx('shatter'); c.sfx('rock_break'); c.sfx('victory_sting');
-            c.burst(chest, '#ffe08a', { size: 1.5, r: 9, flash: 0.85, shake: 0.9, n: 180, col2: '#fff4c8' });
-            for (let i = 0; i < 90; i++) c.P.alpha.emit({ pos: [chest.x + rnd(-1, 1), chest.y + rnd(-1.5, 1), chest.z + rnd(-1, 1)], vel: [rnd(-0.5, 0.5), rnd(1.5, 4), rnd(-0.5, 0.5)], spread: 0.3, life: [1.5, 3], size: [2, 4], sizeEnd: 6, color: ['#3a1a4a', '#5a2a6a'], alpha: 0.55, swirl: 1.2 });
-            c.envTo(1.25, 1.1, 0.9, 1.4, 0.3, 'outQuad'); c.later(0.5, () => c.envTo(1, 0.95, 0.9, 1.1, 2));
-            c.postTo({ saturation: 1.25, gain: [1.12, 1.02, 0.88] }, 2);
-          }],
-        ],
-        cap: 'The crown cracked, and the curse let go.', capAt: 0.6 },
-      { set: 'shaft', dur: 3.8,
-        cam: { pos: [[0.5, -29.5, 0.7], [0.3, -27.5, 0.5]], look: [[0, 0, 0], [0, 0, 0]], fov: [56, 50], roll: [0, -0.5] },
+      // the statue starts to crack
+      { set: 'lair', dur: 3.6, dip: 0.8,
+        cam: { pos: [fpos.clone().addScaledVector(toF, -2.4).addScaledVector(camSide, 1.0).setY(1.1), fpos.clone().addScaledVector(toF, -2.0).addScaledVector(camSide, 0.8).setY(1.0)], look: [fpos.clone().setY(0.6), fpos.clone().setY(0.65)], fov: 38 },
         enter: (c) => {
-          c.tween(3.0, (k) => { const y = -32 + k * 34; rush.position.set(0, y, 0); rushL.position.set(0, y, 0); aimBeam(rushBeam, V(0, y + 0.5, 0), V(0, y - 14, 0)); }, 'inQuad');
-          c.every(60, () => { const y = rush.position.y; c.P.add.emit({ pos: [rnd(-0.8, 0.8), y - rnd(0, 2), rnd(-0.8, 0.8)], vel: [rnd(-0.4, 0.4), rnd(4, 9), rnd(-0.4, 0.4)], spread: 0.2, life: [0.4, 1.0], size: [1, 2], color: ['#ffe08a', '#fff4c8', '#ffffff'], glow: 3 }); });
-          c.sfx('wind_whoosh', { pitch: 1.3 });
-        },
-        cap: 'Far above, the light found its way home.', capAt: 0.4 },
-      { set: 'camp', dur: 7.6, dip: 0.6,
-        cam: { pos: [[-1.0, 1.5, 4.6], [-0.6, 1.25, 3.5]], look: [[0.1, 0.72, -0.2], [0.1, 0.78, -0.3]], fov: [36, 34] },
-        enter: (c) => {
-          c.postTo({ saturation: 0.55, exposure: 0.88, gain: [1.0, 0.98, 0.96] }, 0);
-          c.postTo({ saturation: 1.22, exposure: 1.12, gain: [1.12, 1.02, 0.86], bloom: 1.15 }, 6.5);
-          c.lightTo(dawn, 1.6, 6); c.tween(6, (k) => (shaftB.material.uniforms.uOp.value = k * 0.45));
-          c.colorTo(camp.fog.color, '#5a3a3a', 6);
-          friends.forEach((f, i) => {
-            c.later(0.6 + i * 0.2, () => { c.tween(0.8, (k) => (f._stone.uSeam.value = k * 1.6)); c.sfx('crack', { pitch: 1 + i * 0.15, vol: 0.6 }); });
-            c.later(1.8 + i * 0.6, () => {
-              f._stone.uStone.value = 1.9;
-              c.stoneTo(f, -0.25, 1.5, 'inQuad');
-              c.sfx('rock_break', { vol: 0.7, pitch: 1 + i * 0.1 });
-              const h = c.every(40, () => c.chips(f, undefined, true));
-              c.later(1.5, () => { h.fn = () => false; });
-              c.later(0.9, () => { c.freeze(f, false); f.setSeated(false); f.play(cheers[i % 3], { loop: true }); f.setExpression('happy'); });
-            });
-          });
-          c.later(4.6, () => { back.play('cheer', { loop: true }); back.setExpression('happy'); c.sfx('sparkle'); });
-          c.every(5, () => c.P.add.emit({ pos: [rnd(-4, 4), rnd(0.4, 2.4), rnd(-3, 2)], vel: [rnd(-0.1, 0.1), 0.05, 0], spread: 0.05, life: [2, 4], size: 1, color: ['#d8ff8a', '#ffe08a'], glow: 2.5, flicker: 0.6, fadeIn: 0.6 }));
+          c.envTo(0.75, 0.75, 0.8, 0.8, 0);
+          [0.5, 1.4, 2.3, 3.0].forEach((t, i) => c.later(t, () => {
+            c.sfx('stone_crack', { vol: 0.6 + i * 0.1 });
+            const h = fh(), q = V(h.x + rnd(-0.18, 0.18), rnd(0.2, h.y), h.z + rnd(-0.18, 0.18));
+            c.P.add.emit({ pos: [q.x, q.y, q.z], radial: [0.2, 0.8], count: 12, life: [0.3, 0.8], size: [1, 2], color: ['#fff0c0', '#ffd27a'], glow: 3 });
+            c.debris.spawn({ pos: [q.x, q.y, q.z], count: 3, colors: ['#8a8696', '#a8a4b4'], speed: 0.8, up: 0.8, spread: 0.1, gravity: 9, floor: 0.02, life: 1.4, scale: [0.3, 0.7] });
+            c.lightTo(glowL, 1 + i * 1.2, 0.3);
+          }));
+          c.act(hero, ['idle'], { loop: true });
         } },
-      { dur: 6.4,
-        cam: { pos: [[0.1, 1.5, 3.9], [0.55, 2.5, 5.5], [0.9, 3.2, 6.9]], look: [[0, 0.85, 0], [0, 0.95, -0.5]], fov: [37, 40] },
+      // the stone bursts: your friend steps out
+      { dur: 3.0,
+        cam: { pos: [fpos.clone().addScaledVector(toF, -1.6).addScaledVector(camSide, 0.6).setY(0.9), fpos.clone().addScaledVector(toF, -1.4).addScaledVector(camSide, 0.5).setY(0.85)], look: [fpos.clone().setY(0.55)], fov: 34 },
         enter: (c) => {
-          c.every(14, () => c.P.add.emit({ pos: [rnd(-3, 3), rnd(2.6, 4), rnd(-2, 2)], vel: [rnd(-0.2, 0.2), -0.4, 0], spread: 0.3, life: [1.5, 3], size: [1, 2], color: ['#ffe08a', '#ff8ab0', '#7fe3ff', '#fff4c8'], glow: 2.4, flicker: 0.4 }), true);
+          c.flash(0.5, '#fff0c0'); c.shake(0.35); c.sfx('stone_shatter'); c.sfx('rescue'); c.haptic(50);
+          c.unpetrify(friend, 0.6);
+          c.debris.spawn({ pos: [fpos.x, 0.5, fpos.z], count: 40, colors: ['#8a8696', '#6a6676', '#a8a4b4'], speed: 2, up: 1.6, spread: 0.3, gravity: 9, floor: 0.02, life: 2.2, scale: [0.4, 1] });
+          c.P.add.emit({ pos: [fpos.x, 0.6, fpos.z], radial: [0.8, 2.4], radialUp: 1, count: 70, life: [0.5, 1.4], size: [1, 3], color: ['#fff0c0', '#ffd27a', '#ffffff'], glow: 3.2, drag: 1.4 });
+          c.act(friend, ['stepOut', 'victory', 'cheer'], {});
+          c.lightTo(glowL, 0.8, 1.5);
+          c.postTo({ saturation: 1.18, bloom: 1.2 }, 0.6);
+        } },
+      // they run to you: hug; Pip loses his mind
+      { dur: 3.8,
+        cam: { pos: [hpos.clone().lerp(fpos, 0.5).addScaledVector(camSide, 2.2).setY(1.0), hpos.clone().lerp(fpos, 0.5).addScaledVector(camSide, 1.9).setY(0.95)], look: [hpos.clone().lerp(fpos, 0.5).setY(0.55)], fov: 38 },
+        enter: (c) => {
+          const meet = hpos.clone().lerp(flat(fpos), 0.62);
+          c.walk(friend, meet, 0.8, { anim: 'run', then: false });
+          c.later(0.8, () => { c.act(friend, ['hug', 'cheer'], { loop: true }); c.act(hero, ['hug', 'cheer'], { loop: true }); c.sfx('hug'); hero.setExpression && hero.setExpression('happy'); friend.setExpression && friend.setExpression('happy'); });
+          if (pip) {
+            c.later(0.6, () => { c.act(pip, ['happy', 'bark', 'run'], { loop: true }); c.sfx('pip_bark'); });
+            c.later(1.6, () => c.sfx('pip_yip'));
+          }
+          c.later(1.2, () => { const m = hpos.clone().lerp(fpos, 0.55); c.P.add.emit({ pos: [m.x, 1.0, m.z], radial: [0.4, 1.2], radialUp: 1.2, count: 30, life: [0.8, 1.6], size: [1, 2], color: ['#ff9ab0', '#ffd27a', '#ffffff'], glow: 2.6, gravity: -0.2 }); });
+        } },
+      // a word, and they're with you
+      { dur: 3.6,
+        cam: { pos: (c) => fh().addScaledVector(toF, -1.4).addScaledVector(camSide, 0.6).add(V(0, 0.1, 0)), look: (c) => fh().add(V(0, -0.15, 0)), fov: 32 },
+        enter: (c) => {
+          c.act(friend, ['cheer', 'idle'], {});
+          c.say(friend, RESCUE_LINE[fid] || 'Thank you!', 2.4, 0.2);
+          c.titleCard(CHARACTERS[fid].name, 'joins you', { at: 1.4, dur: 2.0, bottom: CHARACTERS[fid].color || '#e8a060', line: CHARACTERS[fid].color || '#e8a060' });
         },
-        cap: 'Every weapon you forged is gone. The friends you forged them for are not.', capAt: 0.8, capDur: 6.5 },
+        at: [[3.0, (c) => { c.fadeTo = 1; c.fadeRate = 1.6; }]] },
     ],
   };
 };
 
-// ------------------------------------------------------------------ fallen (game over)
-SCRIPTS.fallen = (c, p) => {
-  const ri = clamp(p.region ?? (c.game.run ? c.game.run.region : 0), 0, REGIONS.length - 1);
-  const L = c.stageSet('fall', ri === REGIONS.length - 1 ? 'tomb' : 'arena', ri);
-  const a = (L.A.player || V(-1.6, 0, 0.4)).clone();
-  const hero = c.char(c.who, 'fall', a, 0.5, 'defeat');
-  hero.setExpression('hurt');
-  const under = c.light('fall', 'point', '#b050ff', 0, V(a.x, 0.3, a.z + 0.3), { dist: 5, decay: 1.3, fl: 0.2, sp: 4 });
+// ------------------------------------------------------------------ ending (the gorgon falls; home for stew)
+SCRIPTS.ending = (c) => {
+  const G = c.fpSet('garden', 'chamber', 3, { kind: 'boss', seed: 34 });
+  const A = G.A;
+  const stand = flat(v3(A.stand) || V());
+  const look0 = v3(A.look) || stand.clone().add(V(0, 0, -5));
+  const fwd = flat(look0).sub(stand).normalize();
+  const sideE = V(fwd.z, 0, -fwd.x);
+  const sp = (A.spawns || [])[0];
+  const mpos = sp ? flat(v3(sp.pos)) : stand.clone().addScaledVector(fwd, 4.4);
+  const med = c.medusa('garden', mpos, faceTo(mpos, stand));
+  c.act(med, ['hurt', 'idle'], {}); c.settle(med, 10);
+  if (med.setStone) med.setStone(1); else c.petrify(med, 0.01, { sound: false });
+  c.freeze(med);
+  // the crew together again in the garden
+  const crewG = CHARACTER_ORDER.map((id, i) => { const pos = stand.clone().addScaledVector(fwd, 1.2).addScaledVector(sideE, (i - 1.5) * 0.7); return c.char(id, 'garden', pos, faceTo(pos, mpos), 'idle'); });
+  const pipG = c.pet('garden', stand.clone().addScaledVector(fwd, 1.6), faceTo(stand, mpos), 'idle');
+  // home: the camp, stew for everyone
+  const S = c.campSet('camp');
+  const C = S.C;
+  const F = flat(C.fire);
+  const M = C.cams && C.cams.menu ? v3(C.cams.menu.pos) : C.camera && C.camera.pos ? v3(C.camera.pos) : F.clone().add(V(0, 2.5, 6));
+  const aud = V(M.x - F.x, 0, M.z - F.z).normalize();
+  const crewC = CHARACTER_ORDER.map((id) => { const st = C.seats[id]; const ch = c.char(id, 'camp', st.pos.clone(), st.facing, 'idle'); ch.setSeated && ch.setSeated(true, st.height); c.act(ch, id === 'durgan' ? ['stir', 'sit'] : ['drink', 'sitEat', 'sit'], { loop: true }); return ch; });
+  const pipC = c.pet('camp', C.petBed.clone(), faceTo(C.petBed, F), 'happy');
+  if (pipC) c.act(pipC, ['happy', 'idle'], { loop: true });
+  const bowls = crewC.map((ch) => { const b = buildBowl(); ch.hold(b, 'right'); return b; });
+  void bowls;
   return {
-    music: 'defeat',
+    music: 'ending', hold: true,
     shots: [
-      { set: 'fall', dur: 4.2, dip: 0.6,
-        cam: { pos: [[a.x + 1.1, 0.55, a.z + 1.9], [a.x + 1.5, 0.85, a.z + 2.5]], look: [[a.x, 0.55, a.z], [a.x, 0.5, a.z]], fov: [34, 37] },
+      { set: 'garden', dur: 4.4, dip: 0.8,
+        cam: { pos: [mpos.clone().addScaledVector(fwd, -3.4).addScaledVector(sideE, 1.2).setY(1.4), mpos.clone().addScaledVector(fwd, -3.0).addScaledVector(sideE, 0.9).setY(1.3)], look: [mpos.clone().setY(1.2)], fov: 40 },
         enter: (c) => {
-          c.envTo(0.55, 0.48, 0.66, 0.7, 1.5); L.lightK = 0.6;
-          c.sfx('defeat_sting');
-          c.lightTo(under, 4, 1.5);
-          c.curseSmoke(V(a.x, 0.05, a.z), 0.5, 26);
-          c.stone(hero, '#c86bff', -0.2);
-          c.later(0.9, () => { c.stoneTo(hero, 1.7, 3.2, 'inOutQuad'); c.sfx('rock_crack', { vol: 0.6 }); });
-          c.later(1.6, () => c.freeze(hero));
-          c.every(18, () => c.chips(hero));
-          c.postTo({ saturation: 0.5, exposure: 0.85, vignette: 0.6 }, 3.5);
-        },
-        cap: 'The curse takes hold…', capAt: 0.7 },
-      { dur: 6.5,
-        cam: { pos: [[a.x + 1.5, 0.85, a.z + 2.5], [a.x + 2.6, 2.6, a.z + 5.2], [a.x + 3.0, 3.8, a.z + 6.8]], look: [[a.x, 0.5, a.z], [a.x, 0.35, a.z]], fov: [37, 44] },
-        enter: (c) => { c.postTo({ saturation: 0.32, exposure: 0.72, vignette: 0.75 }, 5); c.envTo(0.32, 0.28, 0.42, 0.5, 5); c.curseSmoke(V(a.x, 0.05, a.z), 0.7, 14); } },
+          c.envTo(0.7, 0.75, 0.72, 1, 0);
+          c.later(1.2, () => {
+            c.sfx('stone_shatter'); c.sfx('rumble', { vol: 0.6 }); c.shake(0.5);
+            med.group.visible = false;
+            c.debris.spawn({ pos: [mpos.x, 1.0, mpos.z], count: 60, colors: ['#8a8696', '#6a6676', '#a8a4b4', '#5a8a6a'], speed: 2.4, up: 2, spread: 0.6, gravity: 9, floor: 0.02, life: 2.6, scale: [0.5, 1.2] });
+            c.P.add.emit({ pos: [mpos.x, 1.2, mpos.z], radial: [0.8, 3], radialUp: 1.5, count: 90, life: [0.8, 2], size: [1, 3], color: ['#7affc0', '#e0fff0', '#ffffff'], glow: 3, drag: 1.2 });
+            c.envTo(1, 0.96, 0.9, 1, 2.4); c.flash(0.4, '#e0fff0');
+          });
+        } },
+      { dur: 4.0,
+        cam: { pos: [stand.clone().addScaledVector(fwd, 3.6).add(V(0, 1.0, 0)), stand.clone().addScaledVector(fwd, 3.2).add(V(0, 0.9, 0))], look: [stand.clone().addScaledVector(fwd, 1.2).setY(0.6)], fov: 40 },
+        enter: (c) => {
+          crewG.forEach((ch, i) => c.later(i * 0.15, () => { c.act(ch, ['cheer', 'victory'], { loop: true }); ch.setExpression && ch.setExpression('happy'); }));
+          if (pipG) { c.act(pipG, ['happy', 'bark'], { loop: true }); c.sfx('pip_bark'); }
+          c.sfx('victory_sting'); c.sfx('rescue', { vol: 0.6 });
+          c.every(30, () => { const p = stand.clone().addScaledVector(fwd, 1.2).add(V(rnd(-1.5, 1.5), 2.2, rnd(-0.5, 0.5))); c.P.add.emit({ pos: [p.x, p.y, p.z], vel: [rnd(-0.3, 0.3), rnd(-0.6, -0.2), 0], spread: 0.1, life: [1.2, 2.4], size: 2, color: ['#ffd25e', '#ff8ab0', '#7fe3ff', '#fff0a8'], glow: 2.2, gravity: 0.6 }); });
+        } },
+      { set: 'camp', dur: 6.5, dip: 1.0,
+        cam: { pos: [F.clone().addScaledVector(aud, 3.0).add(V(0, 1.4, 0)), F.clone().addScaledVector(aud, 2.6).add(V(0, 1.2, 0))], look: [F.clone().setY(0.6)], fov: [36, 34] },
+        enter: (c) => { c.loop('campfire', 0.7); c.later(1.0, () => c.sfx('slurp', { vol: 0.5 })); c.later(2.4, () => c.sfx('yum', { vol: 0.6 })); c.later(3.2, () => c.sfx('stew_bubble', { vol: 0.5 })); } },
+      { dur: 8.0,
+        cam: { pos: [F.clone().addScaledVector(aud, 2.6).add(V(0, 1.2, 0)), F.clone().addScaledVector(aud, 6.5).add(V(0, 4.2, 0))], look: [F.clone().setY(0.6), F.clone().setY(0.3)], fov: [34, 44] },
+        enter: (c) => { c.every(4, () => { const p = F.clone().add(V(rnd(-4, 4), rnd(0.6, 3), rnd(-3, 2))); c.P.add.emit({ pos: [p.x, p.y, p.z], vel: [0, 0.05, 0], spread: 0.05, life: [2, 4], size: 1, color: ['#d8ff8a', '#ffe08a'], glow: 2.6, flicker: 0.6, fadeIn: 0.6 }); }, true); } },
+    ],
+  };
+};
+SCRIPTS.victory = SCRIPTS.ending;
+
+// ------------------------------------------------------------------ fallen (1st person: you turn to stone)
+SCRIPTS.fallen = (c, p) => {
+  const act = clamp(p.act ?? p.region ?? actOf(c), 0, 3);
+  const S = c.fpSet('fall', 'chamber', act, { kind: 'monster', seed: 51 + act });
+  const A = S.A;
+  const stand = v3(A.stand) || V(0, 0.95, 0);
+  const look0 = v3(A.look) || stand.clone().add(V(0, 0, -5));
+  const fwd = flat(look0).sub(flat(stand)).normalize();
+  const arms = c.fpRig(c.who);
+  if (arms) { arms.hold('none'); arms.play('hurt'); }
+  const pip = c.pet('fall', flat(stand).addScaledVector(fwd, 0.75), faceTo(flat(stand).addScaledVector(fwd, 0.75), flat(stand)), 'idle');
+  const down = (k) => stand.clone().setY(stand.y - 0.42 * k);
+  return {
+    music: 'defeat', hold: true,
+    shots: [
+      { set: 'fall', dur: 3.2, dip: 0.5,
+        cam: { pos: (c, k) => down(ease.outCubic(k)), look: (c, k) => look0.clone().setY(stand.y - 0.2 - k * 0.5), fov: 60, roll: [0, 0.1], sway: 0.012 },
+        enter: (c) => {
+          c.sfx('defeat_sting'); c.sfx('heartbeat'); c.later(1.4, () => c.sfx('heartbeat', { vol: 0.8 }));
+          c.postTo({ saturation: 0.6, vignette: 0.7, exposure: 0.9 }, 2.5);
+          if (pip) { c.act(pip, ['whine', 'sniff', 'idle'], { loop: true }); c.later(0.8, () => c.sfx('pip_whine')); }
+        } },
+      { dur: 4.6,
+        cam: { pos: [down(1)], look: [flat(stand).addScaledVector(fwd, 1.2).setY(0.05)], fov: [60, 54], roll: 0.1, sway: 0.006 },
+        enter: (c) => {
+          if (arms) { arms.play('idle'); c.petrify(arms, 3.2, { vol: 0.8 }); }
+          c.every(14, () => { const p = c.camera.position; c.P.alpha.emit({ pos: [p.x + rnd(-0.3, 0.3), p.y - 0.25, p.z + rnd(-0.3, 0.3)], vel: [0, -0.2, 0], spread: 0.05, life: [0.6, 1.2], size: 1, color: ['#8a8696', '#a8a4b4'], alpha: 0.8, gravity: 2 }); });
+          c.later(2.2, () => c.sfx('medusa_laugh', { vol: 0.45 }));
+          c.postTo({ saturation: 0.15, vignette: 0.85, exposure: 0.75 }, 4);
+        } },
+      { dur: 4.0,
+        cam: { pos: [down(1)], look: [flat(stand).addScaledVector(fwd, 1.0).setY(-0.1)], fov: 54, roll: 0.1, sway: 0.002 },
+        enter: (c) => { c.sfx('stone_crack', { vol: 0.5 }); c.envTo(0.5, 0.5, 0.55, 0.5, 3); } },
     ],
   };
 };

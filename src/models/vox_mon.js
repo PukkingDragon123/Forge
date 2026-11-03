@@ -250,6 +250,7 @@ export function voxelizeMonster(m, cellRoot = 0.04) {
   const buckets = new Map(); // bone → {solid, glow, layers: Map(layerMat→bucket)}
   const bucket = () => ({ p: [], n: [], c: [], idx: [] });
   const samples = [];
+  let nSeen = 0;
   const bbox = new THREE.Box3();
   const _v = new THREE.Vector3();
   const occ = (i, j, k) => (solid(i, j, k) ? 1 : 0);
@@ -270,7 +271,13 @@ export function voxelizeMonster(m, cellRoot = 0.04) {
         if (!bk) { bk = { solid: bucket(), glow: bucket(), layers: new Map() }; buckets.set(bone, bk); }
         col.bk = bk;
         bbox.expandByPoint(_v.set(cx(i), cy(j), cz(k)));
-        if (samples.length < 600 && H(i, j, k, 91) < 0.18) samples.push({ p: [cx(i), cy(j), cz(k)], c: col.rgb.map(toLin), bone, glow: col.glow });
+        if (H(i, j, k, 91) < 0.18) {
+          // reservoir sample: an even spread over the whole surface, at most 900 points
+          const sm = { p: [cx(i), cy(j), cz(k)], c: col.rgb.map(toLin), bone, glow: col.glow };
+          nSeen++;
+          if (samples.length < 900) samples.push(sm);
+          else { const r = Math.floor(H(i, j, k, 92) * nSeen); if (r < 900) samples[r] = sm; }
+        }
       }
       const exposed = !nIn || BONE[nIdx] < 0;
       const targets = [col.glow ? col.bk.glow : col.bk.solid];

@@ -1,11 +1,12 @@
-// Cutscene set pieces, built for the real-time 3D cinematics in scenes/cutscene.js:
-// the old lift shaft through the glowing layers, the tomb's sealed wall and door, volumetric light
-// beams, glow sprites, the curse shockwave, and the stone-creep shader that turns actors to statues.
+// Cutscene set pieces for the real-time 3D cinematics in scenes/cutscene.js (and the camp menu):
+// volumetric light beams, glow sprites, the gaze shockwave, the stone-creep shader that turns actors
+// to statues, a bowl of stew, the old map, the floor crack Medusa crawls out of, a stand-in serpent,
+// and the camp's normalised anchors.
 import * as THREE from 'three';
-import { VoxelGrid, meshVoxels, GLOW } from '../gfx/voxel.js';
+import { voxelModel, GLOW } from '../gfx/voxel.js';
 import { LAYER_FX } from '../gfx/renderer.js';
-import { buildProp } from '../models/props.js';
-import { fbm3, hash3, clamp, mixHex, shadeHex } from '../core/math.js';
+import { hash3, clamp } from '../core/math.js';
+import { CHARACTER_ORDER } from '../data/characters.js';
 
 /** Effects live on the FX layer: no outlines, no normals pass, drawn after the solids. */
 export function fxify(o, order = 6) {
@@ -149,174 +150,183 @@ export function stoneify(root, seamCol = '#c86bff') {
   return u;
 }
 
-// ------------------------------------------------------------------ the lift shaft
-/**
- * A round shaft dropping through the layers, top at y=0. bands: [{pal, glow, lamp, h}] top → bottom;
- * each boundary is a seam of glowing ore. Returns {group, depth, seams:[{y,col}], lamps:[{pos,col}]}.
- */
-export function buildShaft(bands, o = {}) {
-  const VS = o.voxel || 0.13, R = o.radius || 3.3, T = 3;
-  const RC = Math.round(R / VS);
-  const H = bands.reduce((a, b) => a + b.h, 0);
-  const NY = Math.round(H / VS) + 2;
-  const N = (RC + T + 4) * 2;
-  const g = new VoxelGrid(N, NY, N);
-  const seed = o.seed || 3;
-  const edges = []; let acc = 0;
-  for (const b of bands) { edges.push(acc); acc += b.h; }
-  const bandAt = (depth) => { let i = 0; while (i + 1 < bands.length && depth >= edges[i + 1]) i++; return i; };
-  const cx = N / 2, cz = N / 2;
-  for (let y = 0; y < NY; y++) {
-    const depth = (NY - 1 - y) * VS; // 0 at the top
-    const bi = bandAt(depth), B = bands[bi], pal = B.pal;
-    const toNext = bi + 1 < bands.length ? edges[bi + 1] - depth : 99;
-    const seam = (toNext >= 0 && toNext < VS * 2.2) || (bi > 0 && depth - edges[bi] < VS * 1.2);
-    const seamCol = toNext < VS * 2.2 ? bands[bi + 1].glow : B.glow;
-    const timber = depth % 4.6 < VS * 2.2 && depth > 0.6;
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
-      const dx = x + 0.5 - cx, dz = z + 0.5 - cz, d = Math.hypot(dx, dz);
-      if (d < RC - 4 || d > RC + T + 3) continue;
-      const wall = RC + (fbm3(x * 0.13, y * 0.09, z * 0.13, 3, seed) - 0.5) * 5.5;
-      if (d < wall || d > wall + T) {
-        // cribbing: rings of old timber hugging the rock every few metres
-        if (timber && d >= wall - 1.2 && d < wall && hash3(Math.floor(Math.atan2(dz, dx) * 6), y, 1, seed) > 0.25) g.set(x, y, z, mixHex(o.wood || '#7a5030', '#2a1a10', hash3(x, y, z, 2) * 0.4));
-        continue;
-      }
-      if (seam && hash3(x >> 1, y, z >> 1, seed + 9) > 0.18) { g.set(x, y, z, mixHex(seamCol, '#ffffff', hash3(x, y, z, 4) * 0.35), GLOW); continue; }
-      // strata: wavy horizontal beds, ore specks, moss
-      const bed = Math.floor((depth + fbm3(x * 0.05, 0, z * 0.05, 2, seed + 3) * 1.4) / 0.62);
-      const rock = pal.rock;
-      let v = hash3(bed, 0, 0, seed + 5) * 0.55 + fbm3(x * 0.3, y * 0.3, z * 0.3, 2, seed + 7) * 0.45;
-      if (d > wall + 0.7) v *= 0.7;
-      let col = rock[clamp(Math.floor(v * rock.length), 0, rock.length - 1)];
-      if (hash3(x, y, z, seed + 11) > 0.988) { g.set(x, y, z, B.glow, GLOW); continue; }
-      if (pal.moss && fbm3(x * 0.2, y * 0.5, z * 0.2, 2, seed + 13) > 0.68) col = mixHex(col, pal.moss, 0.5);
-      g.set(x, y, z, col);
-    }
+// ------------------------------------------------------------------ the camp: anchors + anim helper
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const v3 = (a) => (!a ? null : a.isVector3 ? a.clone() : Array.isArray(a) ? V(a[0], a[1], a[2]) : V(a.x || 0, a.y || 0, a.z || 0));
+const faceTo = (from, to) => Math.atan2(to.x - from.x, to.z - from.z);
+const SEAT_OF = { elio: 0, clover: 1, durgan: 2, bran: 3 }; // the old campfire stage's seat order
+
+/** Normalised camp anchors: works with the 'campmenu' stage and the older 'campfire' one. */
+export function campAnchors(st) {
+  const A = st.anchors || {};
+  const fire = v3(A.fire) || V();
+  const seats = {};
+  for (const id of CHARACTER_ORDER) {
+    let s = A.seats && !Array.isArray(A.seats) ? A.seats[id] : null;
+    if (!s && Array.isArray(A.seats)) s = A.seats[SEAT_OF[id]];
+    const ang = (SEAT_OF[id] / 4) * Math.PI * 2 + 0.6;
+    const pos = s ? v3(s.pos || s) : V(Math.cos(ang) * 1.6, 0.3, Math.sin(ang) * 1.6);
+    let facing = s ? (s.facing ?? s.rotY) : undefined;
+    if (facing && typeof facing === 'object') { const f = v3(facing); facing = f.length() <= 1.01 ? Math.atan2(f.x, f.z) : faceTo(pos, f); }
+    if (typeof facing !== 'number') facing = faceTo(pos, fire);
+    seats[id] = { pos: V(pos.x, 0, pos.z), facing, height: s ? (s.height ?? s.h ?? pos.y ?? 0.3) : 0.3 };
   }
-  const mesh = meshVoxels(g, { size: VS, origin: [N / 2, NY - 1, N / 2], castShadow: false, receiveShadow: false, glowIntensity: 2.6, jitter: 0.08 });
-  const group = new THREE.Group();
-  group.add(mesh);
-  // lanterns on the cribbing and crystal clusters on the seams
-  const lamps = [], seams = [];
-  for (let k = 1; k < bands.length; k++) seams.push({ y: -edges[k], col: bands[k].glow });
-  for (let dpt = 2.2, i = 0; dpt < H - 1; dpt += 4.6, i++) {
-    const a = i * 2.39 + 0.6, r = R - 0.55;
-    const pos = new THREE.Vector3(Math.cos(a) * r, -dpt, Math.sin(a) * r);
-    const band = bands[bandAt(dpt)];
-    const col = band.lamp || '#ffc070';
-    try {
-      const lan = buildProp('lantern', { glow: col, light: false });
-      lan.position.copy(pos); lan.rotation.y = -a - Math.PI / 2;
-      group.add(lan);
-    } catch (e) { /* optional dressing */ }
-    const gl = glowSprite(col, 1.2, 1.2);
-    gl.position.copy(pos).add(new THREE.Vector3(0, 0.3, 0));
-    group.add(gl);
-    lamps.push({ pos: pos.clone().add(new THREE.Vector3(0, 0.3, 0)), col });
-  }
-  for (const s of seams) for (let i = 0; i < 5; i++) {
-    const a = i * 1.26 + s.y, r = R - 0.3;
-    try {
-      const cc = buildProp('crystalcluster', { color: s.col, color2: shadeHex(s.col, 1.3), size: 0.7 + (i % 3) * 0.25, light: 0 });
-      cc.position.set(Math.cos(a) * r, s.y - 0.15, Math.sin(a) * r);
-      cc.rotation.set(0, -a, (Math.PI / 2) * 0.8 * (i % 2 ? 1 : -1));
-      group.add(cc);
-    } catch (e) { /* optional dressing */ }
-  }
-  // the deep end glows
-  const deep = glowSprite(o.deep || bands[bands.length - 1].glow, R * 3.4, 1.1, 1.6);
-  deep.position.set(0, -H - 1.4, 0);
-  group.add(deep);
-  return { group, depth: H, seams, lamps, radius: R };
+  const near = (id, dx, dz) => { const s = seats[id].pos; return V(s.x + dx, 0, s.z + dz); };
+  const exit = v3(A.exitTunnel) || v3(A.mineEntrance) || V(-2.6, 0, -3.4);
+  return {
+    fire, seats,
+    pot: v3(A.pot) || fire.clone().setY(0.45),
+    chest: v3(A.chest) || V(-2.4, 0, -1.6),
+    petBed: v3(A.petBed) || fire.clone().add(V(0.9, 0, 1.35)),
+    medusaRise: v3(A.medusaRise) || fire.clone().add(V(0, 0, -2.0)),
+    exitTunnel: V(exit.x, 0, exit.z),
+    exitDeep: v3(A.mineDeep) ? V(A.mineDeep.x, 0, A.mineDeep.z) : V(exit.x, 0, exit.z - 2.4),
+    sacks: (A.sacks && (Array.isArray(A.sacks) ? A.sacks : [A.sacks]).map(v3)) || [V(-1.7, 0, -2.4)],
+    crate: v3(A.crate) || V(3.6, 0, -1.6),
+    lantern: v3(A.lantern) || near('bran', 1.4, -0.6).setY(1.4),
+    books: v3(A.books) || near('elio', 0.5, -0.4),
+    crack: A.crack || null,
+    cams: A.cams || st.cams || null,
+    camera: st.camera || null,
+  };
 }
 
-// ------------------------------------------------------------------ the tomb's sealed wall
-const TOMB = { stone: ['#1e1a32', '#2c2648', '#3e3660', '#564c80', '#6e64a0'], mortar: '#0e0a18', rune: '#c86bff', iron: '#3a3650' };
-const SKULL = [
-  '..#.#.#.#..',
-  '.#########.',
-  '###########',
-  '##..###..##',
-  '##..###..##',
-  '###########',
-  '.####.####.',
-  '..#######..',
-  '..#.#.#.#..',
-];
+/** Play the first anim from a list that the model knows (unknown names are no-ops on the rigs). */
+export function playFirst(c, names, opts = {}) {
+  if (!c) return null;
+  for (const n of [].concat(names)) { c.play(n, opts); if (c.anim === n || c.state === n) return n; }
+  return null;
+}
+
+// ------------------------------------------------------------------ small props
+/** A wooden bowl of Durgan's stew (about 16 cm across), with a steaming surface. */
+export function buildBowl() {
+  const g = voxelModel(9, 5, 9, (v) => {
+    for (let y = 0; y < 5; y++) for (let z = 0; z < 9; z++) for (let x = 0; x < 9; x++) {
+      const d = Math.hypot(x - 4, z - 4), r = 2.4 + y * 0.45;
+      if (d > r) continue;
+      const rim = d > r - 1.1;
+      if (y === 0 && d < 3) v.set(x, y, z, '#6a3e22');
+      else if (rim) v.set(x, y, z, y === 4 ? '#c8935a' : hash3(x, y, z, 2) > 0.7 ? '#8a5430' : '#a8683a');
+      else if (y === 3) v.set(x, y, z, hash3(x, z, 4, 1) > 0.82 ? '#e8c04a' : hash3(x, z, 3, 7) > 0.75 ? '#7aa04a' : '#c86a32');
+    }
+  }, { size: 0.018, origin: [4.5, 0, 4.5] });
+  g.name = 'bowl';
+  return g;
+}
+
+/** The crew's old map: a creased parchment with inked paths, room marks and a red X. */
+export function buildOldMap() {
+  const W = 26, H = 18;
+  const g = voxelModel(W, H, 1, (v) => {
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const edge = x === 0 || y === 0 || x === W - 1 || y === H - 1;
+      if (edge && hash3(x, y, 1, 3) > 0.7) continue; // torn edges
+      const crease = x === 13 || y === 9;
+      const stain = hash3(x >> 2, y >> 2, 5, 9) > 0.8;
+      v.set(x, y, 0, crease ? '#cdb48a' : stain ? '#d8c08e' : edge ? '#d8c39a' : '#eadbb4');
+    }
+    // inked paths between room marks, bottom to top
+    const nodes = [[13, 2], [6, 6], [18, 6], [9, 10], [17, 11], [13, 15]];
+    const links = [[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 5], [1, 4]];
+    for (const [a, b] of links) {
+      const [x0, y0] = nodes[a], [x1, y1] = nodes[b], n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+      for (let i = 0; i <= n; i += 2) v.set(Math.round(x0 + ((x1 - x0) * i) / n), Math.round(y0 + ((y1 - y0) * i) / n), 0, '#5a3a24');
+    }
+    for (const [x, y] of nodes) { v.set(x, y, 0, '#3a2214'); v.set(x + 1, y, 0, '#3a2214'); }
+    for (const [dx, dy] of [[-1, -1], [0, 0], [1, 1], [1, -1], [-1, 1]]) v.set(13 + dx, 15 + dy, 0, '#c0302a', 0);
+  }, { size: 0.016, origin: [W / 2, H / 2, 0.5] });
+  g.name = 'oldmap';
+  return g;
+}
+
 /**
- * A carved wall closing the throne room, with a rune-sealed double door. Front face at z=0, centred
- * on x, base on y=0. Returns {group, wall, leaves:[left,right], bar, door:{w,h}, colors}.
+ * The floor splitting open: a jagged glowing crack from a to b (world points on the floor).
+ * Returns { group, open(k) } — k 0..1 grows the crack outward from its middle and widens it.
  */
-export function buildSealWall(o = {}) {
-  const VS = 0.1, W = o.w || 11.6, Hm = o.h || 7.8;
-  const NX = Math.round(W / VS), NY = Math.round(Hm / VS), NZ = 6;
-  const DW = 24, DH = 38; // the door opening, in cells
-  const x0 = NX / 2 - DW / 2, x1 = NX / 2 + DW / 2;
-  const S = TOMB.stone;
-  const g = new VoxelGrid(NX, NY, NZ + 3);
-  const put = (x, y, k, col, flag = 0) => g.set(x, y, NZ + 2 - k, col, flag); // k = 0 is the front face
-  for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++) {
-    if (x >= x0 && x < x1 && y < DH) continue;
-    const row = Math.floor(y / 4), off = row % 2 ? 4 : 0;
-    const mortar = y % 4 === 0 || (x + off) % 9 === 0;
-    const tone = hash3(Math.floor((x + off) / 9), row, 3, 7);
-    // a carved frame around the door, an arch above it, a frieze band near the top
-    const fx = Math.min(Math.abs(x - (x0 - 1)), Math.abs(x - x1));
-    const frame = x >= x0 - 5 && x < x1 + 5 && y < DH + 5;
-    const archR = Math.hypot(x + 0.5 - NX / 2, y - DH), arch = y >= DH && archR < DW / 2 + 5 && archR > DW / 2 - 1;
-    const frieze = y > NY - 12 && y < NY - 7;
-    for (let k = 2; k < NZ + 2; k++) {
-      let col = mortar ? TOMB.mortar : S[1 + Math.floor(tone * 2.99)];
-      if (k > 2) col = shadeHex(col, 0.8);
-      if (frame || arch) col = S[2 + ((x + y) % 7 === 0 ? 1 : 0)];
-      if (frieze) col = x % 6 < 3 ? S[3] : S[2];
-      put(x, y, k, col);
-    }
-    if (frame || arch) { put(x, y, 1, S[3]); if (fx < 1 || (arch && archR > DW / 2 + 3.5)) put(x, y, 0, S[4]); }
-    if (frieze && x % 6 === 1) put(x, y, 1, TOMB.rune, GLOW);
-    if (frame && fx === 3 && y % 5 !== 0) put(x, y, 0, TOMB.rune, GLOW); // rune channels up the frame
-  }
-  // the crowned skull over the door, eyes lit
-  const sx = Math.floor(NX / 2 - 5.5), sy = DH + 6;
-  SKULL.forEach((r, j) => [...r].forEach((ch, i) => { if (ch === '#') { put(sx + i, sy + (SKULL.length - 1 - j), 0, S[4]); put(sx + i, sy + (SKULL.length - 1 - j), 1, S[3]); } }));
-  for (const [ex, ey] of [[2, 4], [7, 4]]) { put(sx + ex, sy + ey, 0, TOMB.rune, GLOW); put(sx + ex + 1, sy + ey, 0, TOMB.rune, GLOW); }
-  const wall = meshVoxels(g, { size: VS, origin: [NX / 2, 0, NZ + 2], glowIntensity: 2.4 });
+export function buildCrack(a, b, col = '#7affc0', seed = 3) {
   const group = new THREE.Group();
-  group.add(wall);
-  // the two leaves, hinged on their outer edges, each carrying half the seal
-  const leaves = [];
-  for (const side of [-1, 1]) {
-    const L = new VoxelGrid(DW / 2, DH, 4);
-    const putL = (x, y, k, col, flag = 0) => L.set(x, y, 3 - k, col, flag);
-    for (let y = 0; y < DH; y++) for (let x = 0; x < DW / 2; x++) {
-      const gx = side < 0 ? x : DW / 2 - 1 - x; // 0 at the hinge
-      const panel = gx > 1 && gx < DW / 2 - 2 && ((y > 3 && y < 16) || (y > 22 && y < DH - 3));
-      for (let k = 0; k < 4; k++) {
-        if (k === 0 && panel) continue;
-        let col = S[2 - (hash3(x, y, k, 5) > 0.7 ? 1 : 0)];
-        if (k === 0 && (gx === 0 || gx === DW / 2 - 1)) col = TOMB.iron;
-        putL(x, y, k, col);
-      }
-      if ((y === 6 || y === 32) && gx > 0 && gx < DW / 2 - 1) putL(x, y, 0, TOMB.iron);
-      // the sigil: a ring of runes centred on the seam, half on each leaf
-      const ddx = DW / 2 - gx - 0.5, ddy = y - 19, dr = Math.hypot(ddx, ddy);
-      if (Math.abs(dr - 8) < 0.7 || (dr < 5.5 && (Math.abs(ddy) < 0.6 || Math.abs(ddx - 2.5) < 0.6))) putL(x, y, 0, TOMB.rune, GLOW);
-    }
-    const leaf = meshVoxels(L, { size: VS, origin: side < 0 ? [0, 0, 3] : [DW / 2, 0, 3], glowIntensity: 2.4 });
-    const pivot = new THREE.Group();
-    pivot.position.set(side * (DW / 2) * VS, 0, -0.2);
-    pivot.add(leaf);
-    pivot.userData.side = side;
-    group.add(pivot);
-    leaves.push(pivot);
+  const A = a.clone(), B = b.clone();
+  const len = A.distanceTo(B), n = Math.max(6, Math.round(len / 0.12));
+  const dir = B.clone().sub(A).normalize(), side = new THREE.Vector3(-dir.z, 0, dir.x);
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, j = i === 0 || i === n ? 0 : (hash3(i, seed, 1, 5) - 0.5) * 0.32;
+    pts.push(A.clone().lerp(B, t).addScaledVector(side, j).setY(0.012));
   }
-  // a stone seal bar across both leaves
-  const bar = new VoxelGrid(DW + 6, 3, 2);
-  bar.box(0, 0, 0, DW + 6, 3, 2, S[3]);
-  for (let x = 2; x < DW + 4; x += 3) bar.set(x, 1, 1, TOMB.rune, GLOW);
-  const barMesh = meshVoxels(bar, { size: VS, origin: [(DW + 6) / 2, 0, 1], glowIntensity: 2.6 });
-  barMesh.position.set(0, 1.85, 0.08);
-  group.add(barMesh);
-  return { group, wall, leaves, bar: barMesh, door: { w: DW * VS, h: DH * VS }, colors: [...S, TOMB.mortar] };
+  const glowMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(2.2), fog: false });
+  const darkMat = new THREE.MeshBasicMaterial({ color: '#050208' });
+  const segs = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], q = pts[i + 1], L = p.distanceTo(q);
+    const seg = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, L + 0.02), glowMat);
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.015, L + 0.03), darkMat);
+    lip.position.y = -0.004;
+    seg.add(lip, core);
+    seg.position.copy(p).lerp(q, 0.5);
+    seg.lookAt(q.x, seg.position.y, q.z);
+    seg.userData.t = Math.abs(i / (n - 1) - 0.5) * 2; // 0 at the middle, 1 at the ends
+    seg.scale.set(0.001, 1, 1);
+    group.add(seg);
+    segs.push(seg);
+  }
+  fxify(group, 5);
+  const open = (k) => {
+    for (const s of segs) {
+      const kk = clamp((k * 1.25 - s.userData.t * 0.6) / 0.4);
+      s.visible = kk > 0.01;
+      s.scale.set(Math.max(0.001, kk * (1 + k * 3.5)), 1, kk);
+    }
+  };
+  open(0);
+  return { group, open, pts };
+}
+
+/**
+ * A stand-in serpent (used only until the real snakes and heralds exist): a voxel-ish coiled body
+ * with a horned head and glowing eyes. Monster-like API: group, play, update, flash, height, bounds.
+ */
+export function standInSerpent(col = '#4a8a5a', belly = '#c8d890', eye = '#ffe04a', len = 3.2, r = 0.16) {
+  const group = new THREE.Group();
+  const body = new THREE.Group();
+  group.add(body);
+  const N = 18, segs = [];
+  const skin = new THREE.MeshLambertMaterial({ color: col }), under = new THREE.MeshLambertMaterial({ color: belly });
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1), rr = r * (1 - t * 0.7);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(rr * 2, rr * 2, (len / N) * 1.3), i % 3 === 0 ? under : skin);
+    body.add(m); segs.push(m);
+  }
+  const head = new THREE.Group();
+  const skull = new THREE.Mesh(new THREE.BoxGeometry(r * 2.6, r * 1.6, r * 3.2), skin);
+  head.add(skull);
+  for (const s of [-1, 1]) {
+    const e = new THREE.Mesh(new THREE.BoxGeometry(r * 0.5, r * 0.4, r * 0.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(eye).multiplyScalar(2) }));
+    e.position.set(s * r * 0.9, r * 0.35, r * 1.2); head.add(e);
+    const horn = new THREE.Mesh(new THREE.BoxGeometry(r * 0.3, r * 1.4, r * 0.3), under);
+    horn.position.set(s * r * 0.8, r * 1.1, -r * 0.6); horn.rotation.x = -0.6; head.add(horn);
+  }
+  body.add(head);
+  const o = {
+    group, height: 1.4, fly: 0, state: 'idle', t: 0, hitPoint: new THREE.Vector3(0, 1.1, 0.4), cutPoints: [],
+    bounds: new THREE.Box3(new THREE.Vector3(-0.6, 0, -1.6), new THREE.Vector3(0.6, 1.6, 0.8)),
+    play(s) { this.state = s; this.st = 0; }, flash() {}, setPhase() {}, dispose() {},
+    update(dt) {
+      this.t += dt; this.st = (this.st || 0) + dt;
+      const lunge = this.state === 'attack' ? Math.sin(Math.min(1, this.st / 0.5) * Math.PI) : 0;
+      const rear = this.state === 'roar' || this.state === 'intro' ? 0.4 : 0.15;
+      for (let i = 0; i < N; i++) {
+        const t = i / (N - 1);
+        const z = -t * len * 0.75 + lunge * 0.8 * (1 - t);
+        const x = Math.sin(this.t * 3 + t * 7) * 0.25 * t;
+        const y = r + (1 - t) ** 3 * (1.0 + rear) ;
+        segs[i].position.set(x, y, z);
+      }
+      head.position.copy(segs[0].position).add(new THREE.Vector3(0, r * 0.6, r * 1.2 + lunge * 0.5));
+      head.rotation.x = -0.2 - lunge * 0.3 + (this.state === 'roar' ? -0.5 : 0);
+    },
+  };
+  o.update(0);
+  return o;
 }

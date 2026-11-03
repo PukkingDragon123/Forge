@@ -71,7 +71,7 @@ export const RECIPES = {
   },
   mimicmaw: {
     name: "Mimic's Maw", bp: 'axe', ings: ['mimic_teeth', 'mimic_tongue', 'gold'],
-    bonus: { greed: 4, xmult: 2 }, text: 'It eats gold. {gold}+4{@coin} per hit{/}.',
+    bonus: { xmult: 2, lifesteal: 10 }, text: 'It eats gold. {xmult}×2{/}.',
     hint: 'Teeth, tongue, and gold to feed them.',
   },
   frostfang: {
@@ -98,5 +98,26 @@ export const RECIPES = {
     name: 'Cursebreaker', bp: 'sword', ings: ['silver', 'silver', 'soulstone', 'stariron'],
     bonus: { holy: 6, xmult: 3 }, text: 'The only blade the Lord fears. {holy}+6 Holy{/} {xmult}×3{/}.',
     hint: 'Twin silver, a soul and a falling star.',
+  },
+  // v4 — serpent weapons: stone slides off them (less stone per kill)
+  gorgonedge: {
+    name: 'Gorgon Edge', bp: 'sword', ings: ['gorgonite', 'serpent_fang', 'iron'],
+    bonus: { xmult: 1.8, stun: 15, fx: 'stoneward' }, text: 'Stone slides off it. {xmult}×1.8{/}.',
+    hint: 'Gaze-stone, a fang and plain iron.',
+  },
+  viperkris: {
+    name: 'Viper Kris', bp: 'dagger', ings: ['serpent_fang', 'venom_gland', 'silver'],
+    bonus: { poison: 4, multi: 1, xmult: 1.5 }, text: 'Bites twice. {poison}+4 Poison{/}.',
+    hint: 'Fang, venom and silver.',
+  },
+  scalemaul: {
+    name: 'Scale Maul', bp: 'hammer', ings: ['snake_scale', 'snake_scale', 'petrite', 'iron'],
+    bonus: { block: 40, xmult: 2, fx: 'stoneward' }, text: 'Armoured in scales. {xmult}×2{/}.',
+    hint: 'Two scales, a stone and iron.',
+  },
+  heraldbane: {
+    name: 'Herald Bane', bp: 'spear', ings: ['herald_scale', 'gorgonite', 'mithril'],
+    bonus: { xmult: 3, holy: 3, fx: 'stoneward' }, text: 'Made for snakes. {xmult}×3{/}.',
+    hint: 'A Herald\'s scale, gaze-stone, mithril.',
   },
 };

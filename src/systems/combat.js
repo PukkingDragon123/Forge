@@ -1,20 +1,30 @@
-// Auto-battle simulation with timing windows. The combat scene feeds inputs (strike/guard/special)
-// and renders the events this produces. Also usable headless for balance sims.
+// Auto-battle simulation (docs/REDESIGN.md §5.4). Strikes are automatic (crits roll by chance); the
+// only inputs are Guard (perfect = parry) and Special. The combat scene renders the events this
+// produces. Also usable headless for balance sims. Pass run.weapon itself as `weapon`: stone attacks
+// (attack.effect 'stone', amount attack.stone ?? 0.06) add to weapon.stone and slow your swings 3 s.
+//   new CombatSim(player { hp, maxHp, char }, weapon, monsterId, act, { rng, buffs, companions })
+//   buffs: run.buffTotals() → { dmg %, guard %, regen } · companions: rescued crew ids
 import { MONSTERS } from '../data/monsters.js';
 
-export const HP_SCALE = [1, 2.2, 4.5, 10, 17, 30];
-export const DMG_SCALE = [1, 1.2, 1.4, 1.6, 1.72, 1.85];
+/** Monster HP / damage multipliers per act (0 Undercroft … 3 Medusa's Garden). */
+export const HP_SCALE = [1, 2.5, 6, 13];
+export const DMG_SCALE = [1, 1.3, 1.6, 1.9];
 const HP_BASE = 10;
+const actIdx = (r) => Math.max(0, Math.min(HP_SCALE.length - 1, r | 0));
 
-export function monsterStats(id, region) {
+export function monsterStats(id, act) {
   const d = MONSTERS[id];
-  const r = Math.max(0, d.region >= 0 ? d.region : region);
+  const r = actIdx(d.region >= 0 ? d.region : act);
   const hp = Math.round(d.hp * HP_BASE * HP_SCALE[r]);
   return { def: d, hp, maxHp: hp, dmg: d.dmg * DMG_SCALE[r], armor: d.armor * HP_SCALE[r] * 2, region: r };
 }
 
-/** Bare-hands weapon for when nothing could be forged. */
-export const FISTS = { name: 'Bare Fists', bp: 'fists', dmg: 3, interval: 0.8, critMult: 1.5, critChance: 0, el: {}, stats: {}, flags: {}, multi: 0, harvest: 1, stun: 0, pierce: false, pierceFlat: 0, parryBonus: 1, ids: [], grade: 0, synergies: [] };
+/** Bare-hands weapon (legacy). */
+export const FISTS = { name: 'Bare Fists', bp: 'fists', dmg: 3, interval: 0.8, critMult: 1.5, critChance: 0, el: {}, stats: {}, flags: {}, multi: 0, harvest: 1, stun: 0, pierce: false, pierceFlat: 0, parryBonus: 1, ids: [], grade: 0, synergies: [], noStone: true };
+/** Your old pickaxe: what you fight with when you have no weapon. Stone never builds up on it. */
+export const PICK_WEAPON = { name: 'Old Pickaxe', bp: 'pickaxe', dmg: 22, interval: 1.05, critMult: 1.8, critChance: 0.1, el: {}, stats: {}, flags: {}, multi: 0, harvest: 1, stun: 0.06, pierce: false, pierceFlat: 1, parryBonus: 1, ids: [], grade: 1, synergies: [], noStone: true, stone: 0 };
+/** The weapon a run fights with right now. */
+export const weaponOf = (run) => (run && run.weapon) || PICK_WEAPON;
 
 export class CombatSim {
   /**
@@ -22,7 +32,8 @@ export class CombatSim {
    */
   constructor(player, weapon, monsterId, region, opts = {}) {
     this.p = player;
-    this.w = weapon;
+    this.w = weapon || PICK_WEAPON;
+    weapon = this.w;
     const ms = monsterStats(monsterId, region);
     this.m = { ...ms, id: monsterId, atkTimer: 1.6 + (weapon.flags && weapon.flags.fear ? 1.5 : 0), attack: null, st: { burn: 0, chill: 0, frozen: 0, poison: 0, bleed: 0, stun: 0, cracked: 0 }, phase: 0, speed: 1, dead: false };
     this.rng = opts.rng || Math.random;
@@ -36,32 +47,32 @@ export class CombatSim {
     this.hits = 0;
     this.dotTimer = 1;
     this.kindleTimer = 3;
-    this.pst = { web: 0, daze: 0, poison: 0, burn: 0, cracked: 0 };
+    this.pst = { web: 0, daze: 0, poison: 0, burn: 0, cracked: 0, stoned: 0 };
     this.guardAt = -9;
     this.over = false; this.won = false;
     this.coinsGained = 0; this.coinsLost = 0;
     this.stats = { crits: 0, parries: 0, blocks: 0, taken: 0, dealt: 0 };
     this.paused = false;
     const ch = player.char;
-    this.critEvery = ch === 'clover' || weapon.bp === 'hammer' ? 1 : 2;
-    this.windowScale = (ch === 'durgan' ? 1.6 : 1) * (weapon.parryBonus || 1);
+    const b = opts.buffs || {};
+    this.buffs = { dmg: b.dmg || 0, guard: b.guard || 0, regen: b.regen || 0 };
+    this.companions = opts.companions || [];
+    this.critBonus = (ch === 'clover' ? 0.15 : 0) + 0.05;
+    this.windowScale = (ch === 'durgan' ? 1.6 : 1) * (weapon.parryBonus || 1) * (1 + this.buffs.guard / 100);
+    this.dmgMul = (1 + this.buffs.dmg / 100) * (this.companions.includes('bran') ? 1.1 : 1);
     this.firstFree = !!weapon.firstStrike;
+    this.regenTimer = 3;
+    this.knifeTimer = 2.5;
+    this.shoutReady = this.companions.includes('durgan');
+    this.kindle = ch === 'elio' || this.companions.includes('elio');
+    if (this.companions.includes('bran')) this.emit('companion', { id: 'bran', kind: 'sharpen' });
   }
   emit(type, data = {}) { this.events.push({ type, t: this.t, ...data }); }
   drain() { const e = this.events; this.events = []; return e; }
 
   // ----------------------------------------------------------------- inputs
-  /** Player pressed strike at current time. */
-  pressStrike() {
-    const s = this.swing;
-    if (!s || s.pressed) return;
-    s.pressed = true;
-    if (!s.critRing) return;
-    const d = Math.abs(this.t - s.impact);
-    const win = s.critWin;
-    s.result = d <= win ? 'crit' : d <= win * 2.2 ? 'good' : 'whiff';
-    this.emit('critInput', { result: s.result });
-  }
+  /** Legacy: strikes are automatic in v4 (no strike-timing QTE). */
+  pressStrike() {}
   pressGuard() {
     this.guardAt = this.t;
     const a = this.m.attack;
@@ -84,7 +95,7 @@ export class CombatSim {
     if (!this.swing) {
       this.atkTimer -= dt;
       if (this.atkTimer <= 0) this.startSwing();
-    } else if (this.t >= this.swing.impact + (this.swing.critRing ? 0.06 : 0)) {
+    } else if (this.t >= this.swing.impact) {
       this.resolveSwing();
     }
 
@@ -92,14 +103,30 @@ export class CombatSim {
     this.dotTimer -= dt;
     if (this.dotTimer <= 0) { this.dotTimer += 1; this.tickDots(); }
 
-    // --- Kindle (Elio)
-    if (this.p.char === 'elio') {
+    // --- stew regen
+    if (this.buffs.regen) {
+      this.regenTimer -= dt;
+      if (this.regenTimer <= 0) { this.regenTimer += 3; this.healPlayer(this.buffs.regen); }
+    }
+    // --- Clover's throwing knife (companion)
+    if (this.companions.includes('clover') && !this.m.dead) {
+      this.knifeTimer -= dt;
+      if (this.knifeTimer <= 0) {
+        this.knifeTimer = 4;
+        const dmg = Math.max(2, Math.round(this.w.dmg * 0.25));
+        this.emit('companion', { id: 'clover', kind: 'knife', dmg });
+        this.damageMonster(dmg, { source: 'clover' });
+      }
+    }
+    // --- Kindle (Elio, hero or companion)
+    if (this.kindle) {
       this.kindleTimer -= dt;
       if (this.kindleTimer <= 0) {
         this.kindleTimer = 3;
         const el = this.topElement() || 'fire';
         const dmg = Math.max(2, Math.round(this.w.dmg * 0.35 * (this.topElement() ? 1 : 0.6)));
         this.applyStatus(el, 1);
+        if (this.p.char !== 'elio') this.emit('companion', { id: 'elio', kind: 'kindle', element: el, dmg });
         this.damageMonster(dmg, { source: 'kindle', element: el });
       }
     }
@@ -127,13 +154,11 @@ export class CombatSim {
 
   startSwing() {
     this.swingCount++;
-    const iv = this.w.interval * (this.pst.web > 0 && !(this.w.el.fire > 0) ? 1.4 : 1);
+    const iv = this.w.interval * (this.pst.web > 0 && !(this.w.el.fire > 0) ? 1.4 : 1) * (this.pst.stoned > 0 ? 1.3 : 1);
     const windup = Math.min(0.85, Math.max(0.32, iv * 0.55)) * (this.p.char === 'clover' ? 0.85 : 1);
-    const critRing = this.firstFree ? false : this.swingCount % this.critEvery === 0;
-    const critWin = (this.p.char === 'clover' ? 0.11 : 0.085) * (this.pst.daze > 0 ? 0.55 : 1) * (1 + (this.w.critChance || 0) * 0.5);
-    this.swing = { start: this.t, impact: this.t + windup, windup, critRing, critWin, pressed: false, result: null };
+    this.swing = { start: this.t, impact: this.t + windup, windup, critRing: false, pressed: false, result: null };
     this.atkTimer = Math.max(0.12, iv - windup);
-    this.emit('swing', { windup, critRing });
+    this.emit('swing', { windup, critRing: false });
   }
 
   resolveSwing() {
@@ -141,22 +166,20 @@ export class CombatSim {
     this.swing = null;
     if (this.firstFree) { this.firstFree = false; this.emit('firstStrike'); }
     const m = this.m;
-    let crit = s.result === 'crit';
-    if (!crit && s.result !== 'whiff' && this.rng() < (this.w.critChance || 0)) crit = true;
+    const daze = this.pst.daze > 0 ? 0.5 : 1;
+    let crit = this.rng() < ((this.w.critChance || 0) + this.critBonus) * daze;
     if (this.w.stats.firstCrit && this.hits === 0) crit = true;
     if (!crit && m.def.dodge && this.rng() < m.def.dodge) { this.emit('miss'); return; }
-    let dmg = this.w.dmg;
+    let dmg = this.w.dmg * this.dmgMul;
     if (crit) dmg *= this.w.critMult;
-    if (s.result === 'whiff') dmg *= 0.6;
     this.hits++;
     if (this.w.flags.steam && this.hits % 4 === 0) { dmg *= 2; this.emit('reaction', { name: 'STEAM BURST' }); }
-    this.dealHit(dmg, { crit, whiff: s.result === 'whiff' });
-    for (let i = 0; i < (this.w.multi || 0); i++) this.dealHit(this.w.dmg * 0.5, { extra: true });
+    this.dealHit(dmg, { crit });
+    for (let i = 0; i < (this.w.multi || 0); i++) this.dealHit(this.w.dmg * this.dmgMul * 0.5, { extra: true });
     this.special = Math.min(1, this.special + (crit ? 0.15 : 0.08) * (1 + (this.w.stats.charge || 0) / 100));
     if (crit) this.stats.crits++;
     if (this.w.flags.regen && this.hits % 3 === 0) this.healPlayer(this.w.flags.regen);
     if (this.w.stats.drain) this.hurtPlayer(this.w.stats.drain, { self: true });
-    if (this.w.stats.greed) this.gainCoins(this.w.stats.greed);
   }
 
   dealHit(base, info = {}) {
@@ -173,7 +196,7 @@ export class CombatSim {
     if (this.w.flags.superconduct && m.st.frozen > 0) dmg *= 1.5;
     if (this.w.flags.mycel && m.st.poison > 0) dmg *= 2;
     if (this.pst.cracked > 0) dmg *= 0.8;
-    const armor = this.w.pierce ? 0 : Math.max(0, m.armor - (this.w.pierceFlat || 0) * HP_SCALE[m.region] * 2);
+    const armor = this.w.pierce ? 0 : Math.max(0, m.armor - (this.w.pierceFlat || 0) * HP_SCALE[actIdx(m.region)] * 2);
     dmg = Math.max(1, Math.round(dmg - armor));
     this.damageMonster(dmg, info);
     // on-hit statuses
@@ -230,7 +253,7 @@ export class CombatSim {
       const ph = phases[m.phase];
       m.phase++;
       if (ph.speed) m.speed = ph.speed;
-      if (ph.armor !== undefined) m.armor = ph.armor * HP_SCALE[m.region] * 2;
+      if (ph.armor !== undefined) m.armor = ph.armor * HP_SCALE[actIdx(m.region)] * 2;
       this.emit('phase', { phase: m.phase, text: ph.text, event: ph.event });
       if (ph.event === 'shatter') { this.paused = true; }
     }
@@ -257,6 +280,13 @@ export class CombatSim {
     const def = a.def;
     if (m.st.stun > 0 || m.st.frozen > 0) { this.emit('interrupt'); return; }
     if (this.w.stats.miss && this.rng() < this.w.stats.miss / 100) { this.emit('pmiss'); return; }
+    if (this.shoutReady) {
+      // Durgan (companion) bellows and takes the first blow on his shield
+      this.shoutReady = false;
+      this.emit('companion', { id: 'durgan', kind: 'shield', attack: def });
+      this.emit('block', { attack: def, pct: 1 });
+      return;
+    }
     const since = this.t - this.guardAt;
     const parried = a.parried || Math.abs(since) <= this.parryWin();
     const blocked = !parried && since >= 0 && since <= this.blockWin() && def.kind !== 'unblockable';
@@ -282,12 +312,18 @@ export class CombatSim {
     dmg = Math.max(1, Math.round(dmg));
     this.hurtPlayer(dmg, { attack: def, blocked, hits: a.hits });
     if (!blocked) {
-      if (def.effect === 'steal') { const c = Math.min(this.p.coins, 4 + Math.round(this.rng() * 6)); this.p.coins -= c; this.coinsLost += c; this.emit('steal', { coins: c }); }
-      if (def.effect === 'daze') { this.pst.daze = 3; this.emit('status', { st: 'daze' }); }
+      if (def.effect === 'daze' || def.effect === 'steal') { this.pst.daze = 3; this.emit('status', { st: 'daze' }); }
       if (def.effect === 'web') { this.pst.web = 4; this.emit('status', { st: 'web' }); }
       if (def.effect === 'poison') { this.pst.poison = 4; this.emit('status', { st: 'poison' }); }
       if (def.effect === 'burn') { this.pst.burn = 3; this.emit('status', { st: 'burn' }); }
       if (def.effect === 'crack') { this.pst.cracked = 99; this.emit('status', { st: 'cracked' }); }
+      if (def.effect === 'stone') {
+        // a gorgon gaze or bite: stone creeps up your blade (this.w is run.weapon) and stiffens your arm
+        const amt = def.stone ?? 0.06;
+        if (!this.w.noStone) this.w.stone = Math.min(1, (this.w.stone || 0) + amt);
+        this.pst.stoned = 3;
+        this.emit('status', { st: 'stone', amount: this.w.noStone ? 0 : amt, stone: this.w.stone || 0 });
+      }
     }
     if (def.effect === 'heal') { const h = Math.round(m.maxHp * 0.06); m.hp = Math.min(m.maxHp, m.hp + h); this.emit('mheal', { amount: h }); }
   }
@@ -304,17 +340,13 @@ export class CombatSim {
     this.p.hp = Math.min(this.p.maxHp, this.p.hp + n);
     if (this.p.hp > before) this.emit('pheal', { amount: this.p.hp - before });
   }
-  gainCoins(n) {
-    const c = this.p.char === 'clover' ? Math.ceil(n * 1.5) : n;
-    this.p.coins += c; this.coinsGained += c;
-    this.emit('coins', { coins: c });
-  }
+  gainCoins() {} // no coins in v4
 
-  /** Special attack. quality 0..1 from the special QTE. */
-  useSpecial(quality = 0.5) {
+  /** Special attack (one button when charged). quality 0..1 (default: a solid hit). */
+  useSpecial(quality = 0.7) {
     if (this.special < 1 || this.over) return 0;
     this.special = 0;
-    const mul = 3 + quality * 3;
+    const mul = (3 + quality * 3) * this.dmgMul;
     const el = this.w.el || {};
     for (const k of ['fire', 'ice', 'poison', 'bleed']) if (el[k]) this.applyStatus(k, el[k] * 2);
     const dmg = this.dealHit(this.w.dmg * mul, { special: true, crit: quality > 0.8 });
@@ -326,12 +358,11 @@ export class CombatSim {
   rearm(weapon) { this.w = weapon; this.paused = false; this.swing = null; this.atkTimer = 0.5; this.pst.cracked = 0; }
 }
 
-/** Headless bot fight for balance testing. skill 0..1 = chance to nail timings. */
-export function simulateFight(player, weapon, monsterId, region, skill = 0.6, maxT = 180) {
-  const sim = new CombatSim({ ...player }, weapon, monsterId, region);
+/** Headless bot fight for balance testing. skill 0..1 = chance to nail a guard. */
+export function simulateFight(player, weapon, monsterId, region, skill = 0.6, maxT = 180, opts = {}) {
+  const sim = new CombatSim({ ...player }, weapon, monsterId, region, opts);
   const dt = 1 / 30;
   while (!sim.over && sim.t < maxT) {
-    if (sim.swing && sim.swing.critRing && !sim.swing.pressed && sim.t >= sim.swing.impact - 0.03 && Math.random() < skill) sim.pressStrike();
     const a = sim.m.attack;
     if (a && !a.resolved && sim.t >= a.impact - 0.05 && sim.guardAt < a.start) {
       if (Math.random() < skill) sim.pressGuard();

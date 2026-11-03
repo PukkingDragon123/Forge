@@ -9,6 +9,8 @@ import * as THREE from 'three';
 export const VOX = 0.04;
 /** The party is drawn twice as fine, on its own grid (as are the weapons they hold). */
 export const VOX_PARTY = 0.02;
+/** The chibi crew: finer still, so big heads, masks and gloves carry real detail at ~1 m tall. */
+export const VOX_CHIBI = 0.016;
 
 const LIN = new Float32Array(256);
 for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }

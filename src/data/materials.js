@@ -1,4 +1,8 @@
-// Every material in FORGLITE. Each has a weapon effect, a pickaxe effect and a backpack shape.
+// Every material in FORGLITE. Each has a weapon effect, a pickaxe effect, a backpack shape and (for
+// cooking ingredients) a `cook` effect. v4: ores are bulky (3–4 cells), gems small, forage 1 cell.
+// cook keys: heal (HP now) maxHp (+max HP) dmg (% damage) guard (% wider guard window)
+//   stoneResist (% less stone per kill) loot (% more statue/vein loot) regen (HP every 3 s in fights)
+//   salt (seasoning: each one makes the other effects 25% stronger)
 // weapon keys: chips mult xmult | fire ice shock poison bleed curse holy (stacks) | speed crit critDmg
 //   lifesteal block multi stun greed harvest pierce drain slow miss firstCrit charge | fx (special hook id)
 // pick keys: strikes magnetic gemDupe cursed lucky smelt hard freeze chain reveal column area preserve
@@ -244,7 +248,7 @@ def('brimstone', {
   flavor: 'Smells like a dragon\'s breakfast.',
 });
 def('glowcap', {
-  name: 'Glowcap', kind: 'mineral', rarity: 'common', tags: ['organic', 'poison'], color: '#5af0c8', color2: '#2a6a7a', sprite: 'mushroom',
+  name: 'Glowcap', kind: 'forage', rarity: 'common', tags: ['organic', 'poison', 'forage'], color: '#5af0c8', color2: '#2a6a7a', sprite: 'mushroom',
   value: 3, regions: [2], depth: 0.1,
   weapon: { mult: 2, poison: 1 }, pick: { seehaz: 1, reveal: 1 },
   desc: '{mult}+2 Mult{/} {poison}Poison 1{/}.', pdesc: 'Lights the wall: reveals hazards and glints.',
@@ -348,6 +352,69 @@ tool('drill', { name: 'Hand Drill', rarity: 'uncommon', color: '#b0b8c8', color2
 tool('scanner', { name: 'Ore Scanner', rarity: 'uncommon', color: '#3a8a6a', color2: '#7affc8', sprite: 'scanner', shape: 'i2', value: 8, use: 'scan', desc: 'Mining: reveals a 3×3 area. Free action.' });
 tool('radar', { name: 'Radar Chip', rarity: 'rare', color: '#2a6a4a', color2: '#7aff8a', sprite: 'radar', value: 10, use: 'radar', desc: 'Mining: marks the rarest ore in the wall.' });
 tool('flare', { name: 'Flare', rarity: 'common', color: '#ff4a2a', color2: '#ffe08a', sprite: 'flare', value: 3, use: 'flare', desc: 'Mining: lights every clue and hazard.' });
+
+// ------------------------------------------------------------------ v4: STONE ORES (from petrified foes)
+def('petrite', {
+  name: 'Petrite', kind: 'ore', rarity: 'common', tags: ['solid', 'stone'], color: '#8a8a84', color2: '#c8c6b8', sprite: 'chunk',
+  value: 2, acts: [0, 1, 2, 3], depth: 0, shape: 'o4',
+  weapon: { chips: 4, block: 10 }, pick: { strikes: 1 },
+  desc: '{chips}+4 Chips{/} {block}+10% Block{/}.', pdesc: '+1 swing.',
+  flavor: 'Somebody, once. Now: ore.',
+});
+def('gorgonite', {
+  name: 'Gorgonite', kind: 'ore', rarity: 'rare', tags: ['solid', 'stone', 'metal'], color: '#2a3a32', color2: '#7affc8', sprite: 'chunk',
+  value: 14, acts: [0, 1, 2, 3], depth: 0.6, shape: 'o4',
+  weapon: { chips: 10, xmult: 1.5, stun: 10 }, pick: { strikes: 1, lucky: 1 },
+  desc: '{chips}+10 Chips{/} {xmult}×1.5 Mult{/}. 10% Stun.', pdesc: '+1 swing. Lucky.',
+  flavor: 'Green-black stone that remembers a gaze.',
+});
+
+// ------------------------------------------------------------------ v4: FORAGE (cooking ingredients)
+const forage = (id, o) => def(id, { kind: 'forage', tags: ['forage', 'organic', ...(o.tags || [])], weapon: null, pick: null, shape: 'o1', value: 2, acts: [0, 1, 2, 3], ...o });
+forage('cave_moss', { name: 'Cave Moss', rarity: 'common', color: '#5a9a3a', color2: '#b8e070', sprite: 'gel', acts: [0, 1], cook: { heal: 6, regen: 1 }, desc: 'Cook: heals, slow regen.', flavor: 'Soft, damp, faintly minty.' });
+forage('fern_root', { name: 'Fern Root', rarity: 'common', color: '#8a5a3a', color2: '#c8a070', sprite: 'tail', acts: [0, 2], cook: { heal: 5, maxHp: 2 }, desc: 'Cook: heals, +max HP.', flavor: 'Tastes like a potato that went exploring.' });
+forage('ember_pepper', { name: 'Ember Pepper', rarity: 'uncommon', color: '#ff4a1a', color2: '#ffd04a', sprite: 'tongue', acts: [2, 0], cook: { dmg: 12 }, desc: 'Cook: +12% damage.', flavor: 'Glows in the dark. So will you.' });
+forage('frost_lily', { name: 'Frost Lily', rarity: 'uncommon', color: '#bfe8ff', color2: '#ffffff', sprite: 'essence', acts: [1, 3], cook: { guard: 30 }, desc: 'Cook: wider guard window.', flavor: 'Cold enough to keep your nerves.' });
+forage('honeycomb', { name: 'Honeycomb', rarity: 'common', color: '#ffb03a', color2: '#ffe08a', sprite: 'core', acts: [0, 3], cook: { heal: 14 }, desc: 'Cook: heals a lot.', flavor: 'The cave bees are very proud of it.' });
+forage('snake_egg', { name: 'Snake Egg', rarity: 'uncommon', color: '#e8e0c8', color2: '#7ac85a', sprite: 'sac', acts: [0, 1, 2, 3], cook: { maxHp: 4, heal: 4 }, desc: 'Cook: +max HP.', flavor: 'It wiggled once. Cook it quickly.' });
+forage('bitterbark', { name: 'Bitterbark', rarity: 'common', color: '#6a4a2a', color2: '#a8845a', sprite: 'plate', acts: [0, 2, 3], cook: { stoneResist: 25 }, desc: 'Cook: blade takes less stone.', flavor: 'Old trees hate Medusa too.' });
+forage('stone_salt', { name: 'Stone Salt', rarity: 'common', color: '#f0d8e0', color2: '#ffffff', sprite: 'cluster', acts: [1, 2, 3], cook: { salt: 1, stoneResist: 5 }, desc: 'Cook: seasons — other effects +25%.', flavor: 'Pink, crunchy, very fancy.' });
+forage('starfruit', { name: 'Starfruit', rarity: 'rare', color: '#ffe85a', color2: '#ffffff', sprite: 'gem', acts: [1, 3], cook: { loot: 25, heal: 4 }, desc: 'Cook: more loot from stone.', flavor: 'Grows where light leaks in from above.' });
+
+// ------------------------------------------------------------------ v4: SERPENT PARTS
+part('snake_scale', { name: 'Snake Scale', rarity: 'common', color: '#5a9a4a', color2: '#c8e08a', sprite: 'scale', value: 3, weapon: { chips: 3, block: 15 }, pick: {}, cook: { stoneResist: 10 }, desc: '{chips}+3 Chips{/} {block}+15% Block{/}.', tags: ['scale', 'solid', 'serpent'] });
+part('venom_gland', { name: 'Venom Gland', rarity: 'uncommon', color: '#8ad04a', color2: '#6a2a8a', sprite: 'sac', value: 6, weapon: { poison: 3, mult: 1 }, pick: {}, cook: { dmg: 10 }, desc: '{poison}Poison 3{/} {mult}+1 Mult{/}.', tags: ['organic', 'poison', 'serpent'] });
+part('serpent_fang', { name: 'Serpent Fang', rarity: 'uncommon', color: '#fff6e0', color2: '#7ac85a', sprite: 'fang', value: 6, weapon: { chips: 5, poison: 1, crit: 10 }, pick: { strikes: 1 }, desc: '{chips}+5 Chips{/} {poison}Poison 1{/} {crit}+10% Crit{/}.', tags: ['fang', 'solid', 'serpent'] });
+part('herald_scale', { name: 'Herald Scale', rarity: 'legendary', color: '#2a8a5a', color2: '#ffe08a', sprite: 'scale', shape: 'i2', value: 40, weapon: { chips: 14, xmult: 2, block: 30 }, pick: { strikes: 2 }, cook: { stoneResist: 30 }, desc: '{chips}+14 Chips{/} {xmult}×2 Mult{/} {block}+30% Block{/}.', tags: ['scale', 'solid', 'serpent', 'boss'] });
+part('gorgon_tear', { name: 'Gorgon Tear', rarity: 'legendary', color: '#7affc8', color2: '#ffffff', sprite: 'gem', value: 50, weapon: { xmult: 3, holy: 3 }, pick: { lucky: 1 }, cook: { stoneResist: 60 }, desc: '{xmult}×3 Mult{/} {holy}Holy 3{/}.', tags: ['magic', 'boss', 'serpent'] });
+
+// ------------------------------------------------------------------ v4: cooking effects of older ingredients
+const COOK = {
+  glowcap: { heal: 4, regen: 1 }, mushroom_cap: { heal: 6 }, slime_gel: { heal: 3, guard: 10 }, toad_tongue: { regen: 1 },
+  spore_sac: { regen: 1 }, fire_gland: { dmg: 18 }, wisp_essence: { loot: 20 }, amber: { loot: 10 }, rat_tail: { heal: 2 },
+};
+for (const [id, c] of Object.entries(COOK)) if (M[id]) M[id].cook = c;
+
+// ------------------------------------------------------------------ v4: backpack room (ores are bulky)
+// every ore is a fat 2×2 lump (4 cells); crystals, minerals and long parts take 2; gems and forage 1
+const ROOM = {
+  obsidian: 'i2', prism: 'v2', voidcrystal: 'v2', ember: 'v2', rime: 'v2', storm: 'v2', venomite: 'v2',
+  brimstone: 'i2', amber: 'i2', fossil: 'i2', runestone: 'v2', geode: 'i2',
+};
+for (const m of Object.values(M)) if (m.kind === 'ore') m.shape = 'o4';
+for (const [id, sh] of Object.entries(ROOM)) if (M[id]) M[id].shape = sh;
+// parts take 1–2 cells
+for (const m of Object.values(M)) if (m.kind === 'part' && m.shape === 'o4') m.shape = 'i2';
+
+// ------------------------------------------------------------------ v4: acts (0 Undercroft, 1 Cistern, 2 Foundry, 3 Garden)
+// Older materials list the six layers of the first design; map them onto the four acts.
+const OLD2ACT = [0, 1, 0, 3, 2, 3];
+for (const m of Object.values(M)) {
+  if (m.acts) { m.regions = m.acts; continue; }
+  if (!m.regions) { m.acts = [0, 1, 2, 3]; continue; }
+  m.acts = [...new Set(m.regions.map((r) => OLD2ACT[r] ?? 3))].sort();
+  m.regions = m.acts;
+}
 
 export const MATERIALS = M;
 export const mat = (id) => M[id];

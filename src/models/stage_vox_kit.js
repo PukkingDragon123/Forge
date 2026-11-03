@@ -197,6 +197,7 @@ function lightAt(R, lamps, px, py, pz, nx, ny, nz, out) {
  * opts: bounds, room (array of voxel boxes; faces whose outside cell leaves them all are culled), light (makeLightRig), skip: Set of 'a,s' face dirs never seen (default back faces '2,-1'),
  * bottomAbove: only emit downward faces for voxels above this voxel y (ceilings, overhangs).
  * faceTint: per-direction shade multipliers (default: baked stage tints; props pass near-uniform ones).
+ * seen(x, y, z): voxel coords of the air cell a face looks into → false culls the face (spaces seen only from inside).
  * scale: world size of one voxel.
  */
 export function meshWorld(w, opts = {}) {
@@ -206,11 +207,13 @@ export function meshWorld(w, opts = {}) {
   const bottomAbove = opts.bottomAbove ?? -1e9;
   const bnd = opts.bounds || null;
   const room = opts.room || null; // voxel boxes (union): faces looking out of them (outer shells) are never seen
+  const seen = opts.seen || null; // (x, y, z) of the cell a face looks into → can a viewer ever be there? (first-person spaces)
   const out = { solid: new QuadBuf(), glow: new QuadBuf() };
   const L = [0, 0, 0];
   const N2 = CS * CS;
   const kCol = new Float64Array(N2), kAo = new Int16Array(N2), kGlow = new Uint8Array(N2);
   const cR = new Float32Array(N2), cG = new Float32Array(N2), cB = new Float32Array(N2);
+  const occS = new Uint16Array(96);
   const bands = R.bands;
   for (const [k, ch] of w.chunks) {
     const cz = (k % 4096) - 2048, cy = (Math.floor(k / 4096) % 4096) - 2048, cx = Math.floor(k / 16777216) - 2048;
@@ -221,6 +224,11 @@ export function meshWorld(w, opts = {}) {
     // neighbour fetch: inside this chunk directly, else through the world
     const g = (lx, ly, lz) => (lx >= 0 && ly >= 0 && lz >= 0 && lx < CS && ly < CS && lz < CS ? ch[lx | (ly << 5) | (lz << 10)] : w.get(ox + lx, oy + ly, oz + lz));
     const occ = (lx, ly, lz) => { const v = g(lx, ly, lz); return v && !(v & GLOW) ? 1 : 0; };
+    // which slices along each axis hold any voxel at all (thin shells leave most of a chunk empty)
+    occS.fill(0);
+    let count = 0;
+    for (let idx = 0; idx < CS * CS * CS; idx++) if (ch[idx]) { occS[idx & 31]++; occS[32 + ((idx >> 5) & 31)]++; occS[64 + (idx >> 10)]++; count++; }
+    if (!count) continue;
     for (const D of DIRS) {
       if (skip.has(D.a + ',' + D.s)) continue;
       const a = D.a, sgn = D.s;
@@ -229,27 +237,33 @@ export function meshWorld(w, opts = {}) {
       const uX = a === 2 ? 1 : 0, uY = a === 0 ? 1 : 0, uZ = a === 1 ? 1 : 0;
       const vX = a === 1 ? 1 : 0, vY = a === 2 ? 1 : 0, vZ = a === 0 ? 1 : 0;
       const tint = (opts.faceTint || FACE_TINT)[a + ',' + sgn];
+      // chunk index strides for (slice, u, v) on this axis
+      const ss = a === 0 ? 1 : a === 1 ? 32 : 1024, su = a === 0 ? 32 : a === 1 ? 1024 : 1, sv = a === 0 ? 1024 : a === 1 ? 1 : 32;
       for (let sl = 0; sl < CS; sl++) {
+        if (!occS[a * 32 + sl]) continue;
         let any = false;
-        for (let vv = 0; vv < CS; vv++) for (let uu = 0; uu < CS; uu++) {
-          const mi = uu + vv * CS;
-          kCol[mi] = 0;
-          const lx = a === 0 ? sl : a === 1 ? vv : uu, ly = a === 1 ? sl : a === 0 ? uu : vv, lz = a === 2 ? sl : a === 1 ? uu : vv;
-          const v = ch[lx | (ly << 5) | (lz << 10)];
+        kCol.fill(0);
+        const base = sl * ss;
+        for (let vv = 0; vv < CS; vv++) for (let uu = 0, row = base + vv * sv; uu < CS; uu++) {
+          const v = ch[row + uu * su];
           if (!v) continue;
+          const mi = uu + vv * CS;
+          const lx = a === 0 ? sl : a === 1 ? vv : uu, ly = a === 1 ? sl : a === 0 ? uu : vv, lz = a === 2 ? sl : a === 1 ? uu : vv;
+          // a face only exists where the neighbour is empty (or a glow voxel next to a solid one)
+          const ax = lx + nX, ay = ly + nY, az = lz + nZ;
+          const nb = g(ax, ay, az);
+          const glow = (v & GLOW) !== 0;
+          if (nb && !((nb & GLOW) && !glow)) continue;
           const x = ox + lx, y = oy + ly, z = oz + lz;
           if (bnd && (x < bnd.x0 || x >= bnd.x1 || y < bnd.y0 || y >= bnd.y1 || z < bnd.z0 || z >= bnd.z1)) continue;
           if (a === 1 && sgn < 0 && y <= bottomAbove) continue;
+          if (seen && !seen(x + nX, y + nY, z + nZ)) continue;
           if (room) {
             const qx = x + nX, qy = y + nY, qz = z + nZ;
             let inside = false;
             for (const b of room) if (qx >= b.x0 && qx < b.x1 && qy >= b.y0 && qy < b.y1 && qz >= b.z0 && qz < b.z1) { inside = true; break; }
             if (!inside) continue;
           }
-          const ax = lx + nX, ay = ly + nY, az = lz + nZ;
-          const nb = g(ax, ay, az);
-          const glow = (v & GLOW) !== 0;
-          if (nb && !((nb & GLOW) && !glow)) continue;
           const r8 = (v >> 16) & 255, g8 = (v >> 8) & 255, b8 = v & 255;
           if (glow) { cR[mi] = LIN[r8]; cG[mi] = LIN[g8]; cB[mi] = LIN[b8]; kAo[mi] = 3; kGlow[mi] = 1; }
           else {

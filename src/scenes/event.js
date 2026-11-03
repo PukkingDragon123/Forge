@@ -1,324 +1,364 @@
-// Mystery event: a dressed 3D room + a hand-drawn storybook page with choices, QTEs and item pickers.
+// First-person event (docs/REDESIGN.md §7): walk into a chamber where something waits — a clutch of
+// snake eggs, a petrified adventurer, a ring of winking mushrooms — built from voxel props around the
+// chamber's event spot. A small inked title, two short lines at most, and two or three wooden tags
+// to choose from. The outcome plays out with motion (loot flying into the bag, a jolt, a fight) and
+// a single line of text, then you move on.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
-import { buildStage as buildSet } from '../models/stage_vox.js';
-import { buildCharacter } from '../models/characters.js';
+import { makeFPWorld, yawPitchTo } from '../gfx/fpcam.js';
 import * as Props from '../models/props.js';
-import { buildMonster } from '../models/monsters.js';
-import { makeWorld, hud, speech, ambientDust } from './common.js';
-import { finish, openBag, gameOver } from './flow.js';
-import { EVENTS } from '../data/events.js';
-import { REGIONS } from '../data/regions.js';
-import { MATERIALS, RARITY } from '../data/materials.js';
-import { RECIPES } from '../data/blueprints.js';
-import { makeItem, matOf, itemTooltip } from '../systems/items.js';
-import { materialCard } from '../ui/cards.js';
+import * as MonM from '../models/monsters.js';
+import { voxelModel } from '../gfx/voxel.js';
+import { buildFPSafe, makePet, anchor, floor, walkIn, seedOf, glowSprite, grantItems, drawFlyers, revealChain, woodTag, cornerHud, EYE } from './fp_kit.js';
+import { finishNode, openBag, gameOver, actOf, actDef, monsterFor, pickEvent } from './flow.js';
+import { delveMusic } from './delve.js';
+import * as EV from '../data/events.js';
+import { STEWS } from '../data/stews.js';
+import * as MON from '../data/monsters.js';
+import { MATERIALS } from '../data/materials.js';
+import { makeItem, matOf } from '../systems/items.js';
 import { materialSprite } from '../art/sprites.js';
-import { COLORS } from '../ui/font.js';
 import { clamp, ease } from '../core/math.js';
-import { TimingQTE, MashQTE, ShellGame } from './travel_qte.js';
+import { fx as rnd } from '../core/rng.js';
 
-const PROP_ALIAS = { rubble: 'rock', silk: 'web' };
-const NPC_MONSTER = { mole: ['mole_brute', 0.55], snail: ['moss_snail', 1.0], kobold: ['kobold', 1.0] };
+// ------------------------------------------------------------------ vignettes
+// ctx.add(prop, opts, [right, up, toward], rotY, scale) places a prop relative to the event spot
+// (`toward` = toward the viewer). Keys are matched loosely against the event's `vignette` (or id).
+const VIGNETTES = [
+  [/statue_garden/, (c) => { c.add('statue', {}, [-0.8, 0, -0.3], 0.4, 1); c.add('statue', {}, [0, 0, -0.6], 0, 1.15); c.add('statue', {}, [0.85, 0, -0.25], -0.4, 0.95); c.add('vines', {}, [0.3, 0, -0.8], 0.2); c.glow('#c8ffd8', [0, 0.3, -0.3], 0.6); }],
+  [/lava/, (c) => { c.add('lavapool', { size: 1.1 }, [0, 0, 0.15]); c.add('shrine', {}, [0, 0, -0.7], 0, 0.9); c.add('vent', {}, [0.9, 0, -0.1]); }],
+  [/mirror/, (c) => { c.add('waterpool', { size: 1.4 }, [0, 0, 0]); c.add('crystal', {}, [-0.8, 0, -0.3], 0.4); c.add('crystal', {}, [0.8, 0, -0.35], -0.5); c.glow('#d8f0ff', [0, 0.05, 0], 1); }],
+  [/camp/, (c) => { c.add('campfire', { lit: false }, [0, 0, 0], 0, 0.9); c.add('sleepingbag', {}, [-0.75, 0, -0.1], 0.6); c.add('backpack', {}, [0.7, 0, -0.2], -0.5); c.add('lantern', {}, [0.45, 0, 0.35]); }],
+  [/hive|honey|bee/, (c) => { c.obj(hive(), [0, 1.25, -0.2], 0, 1); c.add('roots', {}, [0, 1.8, -0.5], 0, 0.8); c.glow('#ffd25e', [0, 1.1, -0.1], 0.6); c.bees = true; }],
+  [/shed|skin|slough/, (c) => { c.obj(shedSkin(), [0, 0, 0], 0.3, 1); c.add('bones', {}, [0.8, 0, 0.2], 1); c.add('rock', { size: 0.4 }, [-0.8, 0, -0.2]); }],
+  [/harp/, (c) => { for (let i = 0; i < 5; i++) c.add('crystal', {}, [(i - 2) * 0.32, 0, -0.2 - Math.abs(i - 2) * 0.12], 0, 0.7 + (2 - Math.abs(i - 2)) * 0.25); c.glow('#c8e8ff', [0, 0.4, -0.3], 0.8); }],
+  [/egg|clutch|nest/, (c) => { c.add('roots', {}, [0, 0, -0.5], 0, 0.8); for (let i = 0; i < 5; i++) c.obj(egg(c.seed + i), [Math.cos(i * 1.3) * 0.28, 0, Math.sin(i * 1.3) * 0.22], i, 1 + (i % 2) * 0.15); c.add('bones', {}, [0.7, 0, 0.1], 1.2); c.glow('#9affc8', [0, 0.25, 0], 0.5); }],
+  [/statue|adventur|petrif/, (c) => { c.add('statue', {}, [0, 0, -0.1], 0, 1.1); c.add('rock', { size: 0.5 }, [-0.7, 0, 0.2]); c.add('rock', { size: 0.35 }, [0.65, 0, 0.3]); c.add('pickaxe', {}, [0.5, 0, 0.35], 0.7); }],
+  [/mushroom|fairy|ring|spore/, (c) => { for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; c.add('mushroom', { glow: '#5af0c8' }, [Math.cos(a) * 0.62, 0, Math.sin(a) * 0.42], a, 0.75 + (i % 3) * 0.12); } c.add('mushroom', { color: '#c84ab0', glow: '#ff8af0' }, [0, 0, 0], 0, 1.35); c.glow('#5af0c8', [0, 0.2, 0], 0.9); }],
+  [/root|bound|tangle/, (c) => { c.add('chest', { kind: 'wood' }, [0, 0, 0], 0, 1); c.add('roots', {}, [0, 0, -0.25], 0, 1.1); c.add('vines', {}, [0.4, 0, -0.4], 0.4); c.add('vines', {}, [-0.45, 0, -0.35], -0.4); }],
+  [/forge|anvil|smith|dwarf/, (c) => { c.add('forge', {}, [-0.55, 0, -0.35], 0.3); c.add('anvil', {}, [0.45, 0, 0.05], -0.4); c.add('crate', {}, [1.0, 0, -0.4], 0.2); c.add('torch', {}, [-1.1, 0, -0.5]); }],
+  [/well|whisper|wish/, (c) => { c.obj(wellRing(), [0, 0, 0], 0, 1); c.add('chains', {}, [0, 0, -0.1], 0, 0.6); c.glow('#8ac8ff', [0, 0.05, 0], 0.6); }],
+  [/spring|bath|hot|pool|pond/, (c) => { c.add('waterpool', { size: 1.5 }, [0, 0, 0]); for (let i = 0; i < 6; i++) c.add('rock', { size: 0.25 + (i % 3) * 0.08 }, [Math.cos(i) * 0.95, 0, Math.sin(i) * 0.6], i); c.steam = true; }],
+  [/bridge|chasm|gap|ledge/, (c) => { c.add('ropebridge', {}, [0, 0, -0.6], 0, 1); c.add('torch', {}, [-0.9, 0, 0.1]); c.add('torch', {}, [0.9, 0, 0.1]); }],
+  [/glow|worm|grotto|firefl/, (c) => { for (let i = 0; i < 4; i++) c.add('stalactite', {}, [(i - 1.5) * 0.5, 1.9, -0.2 - (i % 2) * 0.3], i); c.worms = true; c.add('waterpool', { size: 1 }, [0, 0, 0]); }],
+  [/troll|sleep|giant|beast/, (c) => { c.monster(['stone_troll', 'drilltroll', 'mole_brute'], [0, 0, -0.2], 1); c.add('bones', {}, [0.8, 0, 0.3], 0.5); c.add('goldpile', {}, [-0.7, 0, 0.1]); }],
+  [/herb|garden|forage|plant|flower/, (c) => { c.add('vines', {}, [0, 0, -0.5], 0, 1.2); for (let i = 0; i < 6; i++) c.add('mushroom', { color: ['#e0a040', '#d04a3a', '#8ac850'][i % 3] }, [(i - 2.5) * 0.28, 0, (i % 2) * 0.25], i, 0.55); c.add('roots', {}, [0.6, 0, -0.3], 0.5, 0.7); c.glow('#c8ff8a', [0, 0.2, 0], 0.5); }],
+  [/shrine|altar|scale|serpent|snake/, (c) => { c.add('shrine', {}, [0, 0, -0.2], 0, 1); c.add('brazier', {}, [-0.85, 0, 0.1]); c.add('brazier', {}, [0.85, 0, 0.1]); }],
+  [/bone|skelet|grave|fallen/, (c) => { c.add('bones', {}, [0, 0, 0], 0, 1.2); c.add('urn', {}, [0.6, 0, -0.2]); c.add('web', {}, [-0.6, 0.4, -0.5]); }],
+  [/web|spider|silk/, (c) => { c.add('web', {}, [0, 0.3, -0.4], 0, 1.3); c.add('bones', {}, [0.4, 0, 0.1]); c.add('sack', {}, [-0.5, 0, 0]); }],
+  [/crystal|geode|prism/, (c) => { c.add('crystalcluster', {}, [0, 0, -0.1], 0, 1.2); c.add('crystal', {}, [-0.6, 0, 0.1], 0.5); c.add('crystal', {}, [0.65, 0, 0.05], -0.4); }],
+  [/lava|ember|fire|vent/, (c) => { c.add('lavapool', { size: 1.2 }, [0, 0, 0]); c.add('vent', {}, [0.8, 0, -0.2]); }],
+  [/door|gate|seal/, (c) => { c.add('door', {}, [0, 0, -0.5], 0, 1); c.add('torch', {}, [-0.8, 0, -0.3]); c.add('torch', {}, [0.8, 0, -0.3]); }],
+  [/book|librar|niche|scroll|journal/, (c) => { c.add('books', {}, [0, 0, 0], 0, 1.1); c.add('statue', {}, [0.7, 0, -0.4], -0.3, 0.8); c.add('lantern', {}, [-0.5, 0, 0.1]); }],
+  [/tomb|sarcoph|coffin/, (c) => { c.add('sarcophagus', {}, [0, 0, -0.2], 0, 1); c.add('urn', {}, [0.8, 0, 0]); c.add('urn', {}, [-0.8, 0, 0]); }],
+  [/cart|rail|spill/, (c) => { c.add('minecart', {}, [0, 0, -0.1], 0.4); c.add('rock', { size: 0.4 }, [0.6, 0, 0.3]); c.add('sack', {}, [-0.6, 0, 0.2]); }],
+];
+const DEFAULT_VIGNETTE = (c) => { c.add('statue', {}, [0, 0, -0.2], 0, 1); c.add('crystal', {}, [0.6, 0, 0.1]); c.add('bones', {}, [-0.5, 0, 0.2]); };
 
-function safeProp(name, opts) {
-  if (Props.PROP_NAMES && !Props.PROP_NAMES.includes(name)) return null;
-  try { return Props.buildProp(name, opts); } catch (e) { return null; }
+function egg(seed) {
+  return voxelModel(7, 9, 7, (g) => {
+    for (let y = 0; y < 9; y++) for (let z = 0; z < 7; z++) for (let x = 0; x < 7; x++) {
+      const dx = (x - 3) / 3.4, dy = (y - 4) / 4.4, dz = (z - 3) / 3.4;
+      if (dx * dx + dy * dy * (y > 4 ? 1.25 : 1) + dz * dz > 1) continue;
+      const h = Math.sin(x * 12.9 + y * 78.2 + z * 37.7 + seed) * 43758.5453 % 1;
+      g.set(x, y, z, Math.abs(h) > 0.82 ? '#3a6a4a' : y > 5 ? '#e8e4c8' : '#c8d0a8');
+    }
+  }, { size: 0.03, seed });
+}
+function hive() {
+  return voxelModel(12, 15, 12, (g) => {
+    for (let y = 0; y < 15; y++) for (let z = 0; z < 12; z++) for (let x = 0; x < 12; x++) {
+      const r = 5.6 * Math.sin(Math.PI * (y + 0.5) / 15) + 0.6;
+      if (Math.hypot(x - 5.5, z - 5.5) > r) continue;
+      g.set(x, y, z, y % 3 === 0 ? '#7a4a1a' : y === 3 && x === 5 ? '#2a1a0a' : '#d8a040');
+    }
+  }, { size: 0.035 });
+}
+function shedSkin() {
+  return voxelModel(40, 3, 14, (g) => {
+    for (let i = 0; i < 40; i++) {
+      const z = Math.round(6 + Math.sin(i * 0.35) * 4), w = i < 6 ? 2 : i > 34 ? 1 : 2;
+      for (let dz = -w; dz <= w; dz++) g.set(i, 0, z + dz, (i + dz) % 3 === 0 ? '#c8c0a0' : '#e8e0c8');
+      if (i % 4 === 0) g.set(i, 1, z, '#b8b090');
+    }
+  }, { size: 0.04 });
+}
+function wellRing() {
+  return voxelModel(18, 6, 18, (g) => {
+    for (let y = 0; y < 6; y++) for (let z = 0; z < 18; z++) for (let x = 0; x < 18; x++) {
+      const d = Math.hypot(x - 8.5, z - 8.5);
+      if (d > 8.6 || d < 6.4) continue;
+      const brick = ((x + (y % 2) * 2) >> 2) % 2;
+      g.set(x, y, z, y === 5 ? '#8a8a7a' : brick ? '#6a6458' : '#5a544a');
+    }
+    for (let z = 0; z < 18; z++) for (let x = 0; x < 18; x++) if (Math.hypot(x - 8.5, z - 8.5) < 6.4) g.set(x, 1, z, '#1a3a5a');
+  }, { size: 0.05 });
 }
 
+function buildVignette(scene, spot, faceYaw, key, seed) {
+  const group = new THREE.Group();
+  group.position.copy(spot);
+  group.rotation.y = faceYaw; // local +Z points at the viewer
+  scene.add(group);
+  const ctx = {
+    seed, group, monsters: [], glows: [], steam: false, worms: false,
+    add(name, opts, at, rotY = 0, scale = 1) {
+      if (Props.PROP_NAMES && !Props.PROP_NAMES.includes(name)) return null;
+      let o = null;
+      try { o = Props.buildProp(name, opts || {}); } catch (e) { return null; }
+      return this.obj(o, at, rotY, scale);
+    },
+    obj(o, at, rotY = 0, scale = 1) {
+      if (!o) return null;
+      o.position.set(at[0], at[1], at[2]); o.rotation.y = rotY; o.scale.multiplyScalar(scale);
+      group.add(o);
+      return o;
+    },
+    glow(col, at, size) { const g = glowSprite(col, size, 1.3); g.position.set(at[0], at[1], at[2]); group.add(g); this.glows.push(g); },
+    monster(ids, at, scale = 1) {
+      const id = ids.find((i) => MON.MONSTERS && MON.MONSTERS[i]);
+      if (!id) return;
+      try { const m = MonM.buildMonster(id); m.group.position.set(at[0], at[1], at[2]); m.group.scale.multiplyScalar(scale); m.play('idle'); group.add(m.group); this.monsters.push(m); } catch (e) { /* model not ready */ }
+    },
+  };
+  const k = String(key || '').toLowerCase();
+  const v = VIGNETTES.find(([re]) => re.test(k));
+  (v ? v[1] : DEFAULT_VIGNETTE)(ctx);
+  return ctx;
+}
+
+// ------------------------------------------------------------------ the scene
 export class EventScene extends Scene {
   enter(params = {}) {
     const game = this.game, run = game.run;
-    this.node = params.node || null;
-    this.ev = EVENTS.find((e) => e.id === params.event) || EVENTS[0];
-    this.region = run ? run.region : 0;
-    this.rng = run ? run.rng.fork('event' + this.ev.id + (this.node ? this.node.id : '')) : null;
-    const R = REGIONS[this.region];
-    this.set = buildSet('room', this.region, { room: 'event' });
-    this.world = makeWorld(this.set, { fogDensity: 0.04 });
-    this.rig = this.world.rig;
-    this.extra = new THREE.Group();
-    this.world.scene.add(this.extra);
-    const A = this.set.anchors || {};
-    const center = A.center ? A.center.clone() : new THREE.Vector3(0, 0, 0);
-    this.center = center;
-    const pp = new THREE.Vector3(center.x - 0.85, A.player ? A.player.y : center.y, center.z + 0.6);
-    this.char = buildCharacter(run ? run.char : 'clover');
-    this.char.group.position.copy(pp);
-    this.char.group.rotation.y = Math.PI / 2 - 0.5;
-    this.world.scene.add(this.char.group);
-    this.char.play('idle', { loop: true });
-    this.monsters = [];
-    this.dress(center);
-
-    const cp = new THREE.Vector3().copy(center);
-    this.camBase = { pos: [cp.x + 0.4, cp.y + 2.1, cp.z + 6.0], look: [cp.x + 0.4, cp.y + 0.35, cp.z - 0.2] }; // centred: the narration sits below
-    this.rig.cut(this.camBase.pos, this.camBase.look, 38);
-
-    this.phase = 'intro';
-    this.text = this.ev.text;
-    this.typed = 0;
-    this.results = [];      // lines shown on the result page
-    this.gained = [];       // items gained (for cards)
-    this.qte = null;
-    this.picker = null;
-    this.pendingFight = null;
-    this.bubble = null;
-    this.done = false;
-    game.audio && game.audio.music(R.music);
-    game.audio && game.audio.play('page_turn');
-  }
-
-  exit() { this.game.timeScale = 1; }
-
-  dress(center) {
-    const props = this.ev.props || [];
-    const slots = [[0.5, 0, -0.6], [1.5, 0, -1.0], [-0.1, 0, -1.5], [1.9, 0, -0.1], [-0.6, 0, -1.9]];
-    let si = 0;
-    const npc = this.ev.npc && NPC_MONSTER[this.ev.npc];
-    const place = (obj, s) => { obj.position.set(center.x + s[0], center.y + s[1], center.z + s[2]); this.extra.add(obj); };
-    for (const name of [...(npc ? [this.ev.npc] : []), ...props]) {
-      const s = slots[si++ % slots.length];
-      if (NPC_MONSTER[name]) {
-        try {
-          const [id, sc] = NPC_MONSTER[name];
-          const m = buildMonster(id);
-          m.group.scale.setScalar(sc);
-          place(m.group, [0.95, 0, -0.2]);
-          m.group.rotation.y = -0.3;
-          m.play('idle');
-          this.monsters.push(m);
-          si--;
-        } catch (e) { /* model not ready */ }
-        continue;
-      }
-      if (name === 'rubble') {
-        for (let i = 0; i < 4; i++) { const r = safeProp('rock', { size: 0.5 + i * 0.1 }); if (r) { place(r, [s[0] + (i - 1.5) * 0.35, 0, s[2] + (i % 2) * 0.3]); r.rotation.y = i; } }
-        const lan = safeProp('pickaxe', {}); if (lan) { place(lan, [s[0] + 0.8, 0, s[2] + 0.4]); lan.rotation.z = 1.2; }
-        continue;
-      }
-      const obj = safeProp(PROP_ALIAS[name] || name, name === 'waterpool' ? { size: 1.6 } : {});
-      if (obj) place(obj, s);
+    this.run = run;
+    if (!run) { game.go('title', {}, { transition: 'none' }); return; }
+    const act = actOf(run);
+    this.act = act;
+    this.node = params.node || run.map.nodes[run.map.current];
+    const all = EV.EVENTS || [];
+    this.ev = all.find((e) => e.id === params.event) || pickEvent(run);
+    this.rng = run.rng.fork ? run.rng.fork('event' + this.ev.id + (this.node ? this.node.id : '')) : run.rng;
+    const key = this.ev.vignette || this.ev.id || '';
+    this.stage = buildFPSafe('chamber', act, { seed: seedOf(run.seed, act, this.ev.id, 'event'), kind: 'event', vignette: key });
+    this.world = makeFPWorld([this.stage], { charId: run.char });
+    const fp = (this.fp = this.world.fp);
+    if (fp.arms) { fp.arms.hold && fp.arms.hold('torch'); }
+    const stand = anchor(this.stage, 'stand', new THREE.Vector3(0, EYE, -3));
+    this.spot = floor(anchor(this.stage, 'event', new THREE.Vector3(0, 0, -5.5), false));
+    const toward = new THREE.Vector3().subVectors(stand, this.spot).setY(0).normalize();
+    this.vig = buildVignette(this.world.scene, this.spot, Math.atan2(toward.x, toward.z), key, seedOf(this.ev.id));
+    this.focusAt = this.spot.clone().add(new THREE.Vector3(0, 0.45, 0));
+    this.pet = makePet(this.world.scene);
+    if (this.pet) {
+      const right = new THREE.Vector3(toward.z, 0, -toward.x);
+      this.pet.group.position.copy(this.spot).addScaledVector(toward, 1.5).addScaledVector(right, 0.45);
+      this.pet.group.rotation.y = Math.atan2(-toward.x, -toward.z);
+      this.pet.play('sniff');
     }
+    this.state = 'walkin';
+    this.t = 0; this.textK = 0;
+    this.result = null; this.flyers = []; this.pending = []; this.rare = [];
+    this.picker = null;
+    this.fade = 1;
+    // walk right up to it: the vignette should fill the view
+    const near = this.spot.clone().addScaledVector(toward, 2.25).setY(this.spot.y + EYE);
+    walkIn(fp, this.stage, this.focusAt, { to: near }).then(() => {
+      this.state = 'choose';
+      fp.setFov(56, 1.5);
+      if (this.pet) this.pet.play('idle');
+      game.audio && game.audio.play('page_turn', { vol: 0.5 });
+    });
+    delveMusic(game, run);
   }
+  exit() { if (this.stage && this.stage.dispose) { try { this.stage.dispose(); } catch (e) { /* placeholder */ } } for (const m of (this.vig ? this.vig.monsters : [])) m.dispose && m.dispose(); }
+
+  after(t, fn) { (this.timers || (this.timers = [])).push({ t, fn }); }
 
   // ------------------------------------------------------------------ outcomes
+  available(c) {
+    if (!c.req) return true;
+    try { return c.req(this.run); } catch (e) { return true; }
+  }
   choose(c) {
-    const run = this.game.run;
-    const rng = this.rng;
+    if (this.state !== 'choose') return;
+    const ok = this.available(c);
+    if (ok !== true) { this.game.audio && this.game.audio.play('deny'); return; }
     this.game.audio && this.game.audio.play('click');
-    const out = c.out(run, rng) || {};
-    this.apply(out);
+    const run = this.run, rng = this.rng;
+    let out;
+    try {
+      if (EV.resolveChoice) out = EV.resolveChoice(run, this.ev, c, rng);
+      else { const f = c.out || c.effect; out = typeof f === 'function' ? f(run, rng) : f || {}; }
+    } catch (e) { console.warn('event choice', e); out = {}; }
+    this.apply(out || {});
   }
-
   apply(out) {
-    const game = this.game, run = game.run, rng = this.rng;
-    if (out.qte) { this.startQTE(out.qte); if (out.text) this.results.push(out.text); return; }
-    if (out.pick) { this.openPicker(out.pick); return; }
-    const lines = [];
-    let mood = 'neutral';
-    if (out.text) this.text = out.text;
-    if (out.gain) for (const [id, q] of out.gain) {
-      if (!MATERIALS[id]) continue;
-      const it = makeItem(id, q ?? 2);
-      run.addItem(it);
-      this.gained.push(it);
-      mood = 'good';
-      game.audio && game.audio.play(RARITY[MATERIALS[id].rarity].order >= 2 ? 'ore_rare' : 'ore_common');
+    const game = this.game, run = this.run, rng = this.rng, fp = this.fp, au = game.audio;
+    if (out.qte) { // events have no QTEs any more: fortune decides
+      const q = out.qte;
+      return this.apply((rng.chance(q.chance ?? 0.6) ? q.win : q.lose) || {});
     }
-    if (out.coins) {
-      if (out.coins > 0) { const c = run.gain(out.coins); lines.push(`{gold}+${c} coins{/}`); mood = 'good'; game.audio && game.audio.play('coins'); }
-      else { const c = Math.min(run.coins, -out.coins); run.coins -= c; lines.push(`{bad}-${c} coins{/}`); mood = 'bad'; }
-    }
-    if (out.maxHp) { run.maxHp += out.maxHp; lines.push(`{good}+${out.maxHp} max HP{/}`); }
+    if (out.pick) { this.picker = { ...out.pick, items: run.bag.all().filter((it) => { try { return !out.pick.filter || out.pick.filter({ ...matOf(it), ...it }); } catch (e) { return false; } }) }; this.state = 'pick'; this.pickerText = out.text || null; return; }
+    if (out.next) return this.apply(out.next);
+    const res = { text: out.text || out.result || '', mood: 'neutral', gains: [] };
+    // health
+    if (out.maxHp) { run.maxHp += out.maxHp; run.hp = Math.min(run.maxHp, run.hp + Math.max(0, out.maxHp)); res.mood = 'good'; }
+    if (out.heal) { run.heal(out.heal); res.mood = 'good'; }
     if (out.hp) {
-      if (out.hp > 0) { const h = run.heal(out.hp); lines.push(`{heal}+${h} HP{/}`); game.audio && game.audio.play('heal'); if (mood !== 'bad') mood = 'good'; }
-      else { run.hurt(-out.hp); lines.push(`{bad}${out.hp} HP{/}`); mood = 'bad'; game.audio && game.audio.play('hurt'); this.rig.shake(0.4); game.renderer.doFlash(0.25, [1, 0.3, 0.2]); }
-    }
-    if (out.learn) {
-      const id = out.learn === true ? run.unknownRecipe(rng || undefined) : out.learn;
-      if (id && RECIPES[id]) {
-        const fresh = run.learnRecipe(id);
-        lines.push(`{gold}Recipe learned: ${RECIPES[id].name}{/}`);
-        game.ui.toast(`${fresh ? 'New recipe' : 'Recipe'}: ${RECIPES[id].name}`, { icon: 'recipe', color: COLORS.gold });
-        game.audio && game.audio.play('recipe_discover');
-        mood = 'good';
-      } else lines.push('{dim}You already know every secret written here.{/}');
-    }
-    if (out.fight) { this.pendingFight = out.fight; mood = 'bad'; game.audio && game.audio.play('monster_growl'); }
-    this.results.push(...lines);
-    this.react(mood);
-    this.phase = 'result';
-    this.typed = 0;
-    if (run.hp <= 0) { this.phase = 'dead'; this.co.start(function* () { yield 1.4; gameOver(game, this.ev.title); }.bind(this)); }
-  }
-
-  react(mood) {
-    const ch = this.char;
-    if (mood === 'good') { ch.play('cheer', { onDone: () => ch.play('idle', { loop: true }) }); ch.setExpression('happy'); }
-    else if (mood === 'bad') { ch.play('hurt', { onDone: () => ch.play('idle', { loop: true }) }); ch.setExpression('hurt'); }
-    else { ch.play('shrug', { onDone: () => ch.play('idle', { loop: true }) }); ch.setExpression('neutral'); }
-  }
-
-  startQTE(q) {
-    const game = this.game;
-    const pos = () => ({ x: Math.round((game.ui.w - 262) / 2), y: Math.round(game.ui.h / 2) });
-    let obj;
-    if (q.kind === 'mash') obj = new MashQTE(game, { label: q.label, need: 12, dur: 3.4, pos });
-    else if (q.kind === 'shells') obj = new ShellGame(game, { rng: this.rng, cx: pos().x, cy: pos().y });
-    else obj = new TimingQTE(game, { action: 'strike', label: q.label, dur: 1.1, window: 0.16, pos });
-    this.qte = { obj, def: q, resolved: false, linger: 0 };
-    this.phase = 'qte';
-    this.char.setExpression('determined');
-  }
-
-  openPicker(pick) {
-    const run = this.game.run;
-    const items = run.bag.all().filter((it) => { try { return pick.filter({ ...matOf(it), ...it }); } catch (e) { return false; } });
-    if (!items.length) {
-      this.text = 'You rummage through your pack, but have nothing suitable.';
-      this.typed = 0;
-      this.phase = 'choose';
-      return;
-    }
-    this.picker = { pick, items };
-    this.phase = 'pick';
-  }
-
-  continueOn() {
-    const game = this.game;
-    if (this.done) return;
-    this.done = true;
-    if (this.pendingFight) { game.go('combat', { node: this.node, monster: this.pendingFight, fromEvent: true }, { transition: 'dither' }); return; }
-    const go = () => { if (this.node) finish(game); else game.go('map', {}); };
-    if (game.run && game.run.bag.overflow.length) openBag(game, { title: 'Loot', onClose: go });
-    else go();
-  }
-
-  // ------------------------------------------------------------------ loop
-  update(dt, rdt) {
-    if (this.set.update) this.set.update(dt, this.time);
-    if (Props.tickProps) Props.tickProps(this.extra, dt, this.time, { add: this.world.sparks, alpha: this.world.dust });
-    this.char.update(dt);
-    for (const m of this.monsters) m.update(dt);
-    this.world.sparks.update(dt);
-    this.world.dust.update(dt);
-    const b = this.camBase;
-    const sway = Math.sin(this.time * 0.25) * 0.35;
-    const q = this.phase === 'qte' ? 1 : 0;
-    this.rig.aim([b.pos[0] + sway - q * 0.5, b.pos[1] - q * 0.25, b.pos[2] - q * 0.9], [b.look[0] - q * 0.6, b.look[1], b.look[2]], q ? 34 : 38, 1.5);
-    this.rig.update(dt);
-    ambientDust(this.world, [this.center.x + 0.5, this.center.y + 1.4, this.center.z], [3, 1.2, 1.5], REGIONS[this.region].pal.glow2, 0.25);
-    this.typed += rdt * 70;
-
-    if (this.qte) {
-      const st = this.qte.obj.update(rdt);
-      if (st !== 'pending' && !this.qte.resolved) { this.qte.resolved = true; this.qte.linger = 0.5; this.qte.win = st === 'win'; }
-      if (this.qte.resolved) {
-        this.qte.linger -= rdt;
-        if (this.qte.linger <= 0) {
-          const d = this.qte.def, win = this.qte.win;
-          this.qte = null;
-          this.apply((win ? d.win : d.lose) || { text: win ? 'Success!' : 'No luck.' });
-        }
+      if (out.hp > 0) { run.heal(out.hp); res.mood = 'good'; au && au.play('heal'); }
+      else {
+        const dead = run.hurt(-out.hp);
+        res.mood = 'bad'; fp.shake(0.4); fp.punch([0, 0, 1], 0.06);
+        game.renderer && game.renderer.doFlash && game.renderer.doFlash(0.25, [1, 0.2, 0.15]);
+        au && au.play('hurt');
+        res.hurt = -out.hp;
+        if (dead) { this.state = 'dead'; this.after(1.2, () => gameOver(game, this.ev.title)); this.result = res; return; }
       }
     }
-    this.game.timeScale = 1;
+    // the weapon's creeping stone
+    if (out.stone && run.weapon) run.weapon.stone = clamp((run.weapon.stone || 0) + out.stone, 0, 1);
+    if (out.buff) { if (run.addBuff) run.addBuff(out.buff); else if (run.buffs) run.buffs.push(out.buff); res.mood = 'good'; }
+    if (out.weapon) { const w = run.equip ? run.equip(out.weapon) : (run.weapon = out.weapon); this.rare.push(w); res.mood = 'good'; }
+    if (out.learn === 'stew') {
+      const known = run.stews || [];
+      const ids = Object.keys(STEWS || {}).filter((id) => !known.includes(id));
+      if (ids.length && run.learnStew) run.learnStew(this.rng.pick(ids));
+    } else if (out.learn && run.unknownRecipe && run.learnRecipe) { const r = run.unknownRecipe(); if (r) run.learnRecipe(r); }
+    if (out.coins && typeof run.coins === 'number') run.coins += out.coins;
+    // items
+    const list = [];
+    for (const g of out.gain || []) { const [id, q] = Array.isArray(g) ? g : [g, 2]; if (MATERIALS[id]) list.push(makeItem(id, q ?? 2)); }
+    for (const it of out.items || []) { if (typeof it === 'string') { if (MATERIALS[it]) list.push(makeItem(it, 2)); } else if (it && it.id) list.push(it); }
+    if (list.length) {
+      const from = fp.project(this.focusAt, 960, 540);
+      const g = grantItems(run, list, from, this.flyers);
+      this.rare.push(...g.rare); this.overflow = this.overflow || g.overflow;
+      res.mood = res.mood === 'bad' ? 'bad' : 'good';
+      au && au.play('loot', { vol: 0.7 });
+    }
+    if (this.pet) this.pet.play(out.pip || (res.mood === 'good' ? 'happy' : res.mood === 'bad' ? 'yelp' : 'idle'));
+    if (out.pip === 'dig') au && au.play('pip_dig');
+    // a fight breaks out
+    if (out.fight) {
+      const id = typeof out.fight === 'string' && MON.MONSTERS && MON.MONSTERS[out.fight] ? out.fight : monsterFor(run, out.fight === 'elite' ? 'elite' : 'monster');
+      this.state = 'fight';
+      this.result = res;
+      au && au.play('hiss'); fp.shake(0.5);
+      if (this.pet) this.pet.play('bark');
+      const elite = out.elite || out.fight === 'elite';
+      this.after(1.0, () => game.go('combat', { node: this.node, monster: id, elite, ambush: true }, { transition: 'none' }));
+      return;
+    }
+    this.result = res;
+    this.state = 'result';
+    this.textK = 0;
+  }
+  leave() {
+    if (this.state === 'done') return;
+    this.state = 'done';
+    const game = this.game;
+    revealChain(game, this.rare, () => {
+      if (this.overflow) { const o = openBag(game, { title: 'Found', onClose: () => finishNode(game) }); if (!o) finishNode(game); }
+      else finishNode(game);
+    });
+  }
+
+  // ------------------------------------------------------------------ update / draw
+  update(dt) {
+    if (!this.run) return;
+    if (this.timers) {
+      for (const tm of this.timers) tm.t -= dt;
+      const due = this.timers.filter((tm) => tm.t <= 0);
+      this.timers = this.timers.filter((tm) => tm.t > 0);
+      for (const tm of due) tm.fn();
+    }
+    this.t += dt;
+    this.fade = Math.max(0, this.fade - dt * 1.8);
+    if (this.state === 'choose' || this.state === 'result') this.textK = Math.min(1, this.textK + dt * 2.5);
+    this.fp.dragLook(this.game.input);
+    for (const m of this.vig.monsters) m.update(dt * 0.5);
+    for (const g of this.vig.glows) g.material.opacity = 0.75 + Math.sin(this.t * 2.3 + g.id) * 0.25;
+    const W = this.world, s = this.spot;
+    if (this.vig.steam && rnd.chance(dt * 9)) W.dust.emit({ pos: [s.x + rnd.float(-0.6, 0.6), s.y + 0.05, s.z + rnd.float(-0.4, 0.4)], vel: [0, 0.35, 0], spread: 0.05, life: [1.5, 2.5], size: [2, 4], sizeEnd: 6, color: '#e8f0f0', alpha: 0.35, fadeIn: 0.4 });
+    if (this.vig.bees && rnd.chance(dt * 8)) W.sparks.emit({ pos: [s.x + rnd.float(-0.4, 0.4), s.y + rnd.float(0.9, 1.5), s.z + rnd.float(-0.4, 0.3)], vel: [rnd.float(-0.3, 0.3), rnd.float(-0.1, 0.1), rnd.float(-0.3, 0.3)], life: [0.6, 1.4], size: 1, color: ['#ffd25e', '#fff0a0'], glow: 2, swirl: 1.2 });
+    if (this.vig.worms && rnd.chance(dt * 6)) W.sparks.emit({ pos: [s.x + rnd.float(-1, 1), s.y + rnd.float(1.4, 2), s.z + rnd.float(-0.6, 0.4)], vel: [0, -0.02, 0], life: [2, 4], size: 1, color: ['#8affe0', '#c8fff0'], glow: 3, fadeIn: 0.8, flicker: 0.4 });
+    if (this.state === 'result' && !this.game.overlays.length && !this.flyers.length && this.game.input.actionPressed('confirm')) this.leave();
+    if (this.state === 'choose' && !this.game.overlays.length) {
+      const ch = this.ev.choices || [];
+      for (let i = 0; i < Math.min(ch.length, 3); i++) if (this.game.input.keyPressed('Digit' + (i + 1))) this.choose(ch[i]);
+    }
+    if (this.pet && this.pet.update) this.pet.update(dt);
+    this.world.update(dt);
   }
 
   draw(ui) {
-    const game = this.game, run = game.run;
-    if (this.phase === 'qte' && this.qte) {
-      hud(ui, game, { bag: false });
-      const lx = Math.round((ui.w - 262) / 2);
-      if (this.qte.def.kind === 'shells') ui.text(this.qte.def.label || '', lx, 44, { align: 'center', color: COLORS.gold, outline: '#140c10' });
-      this.qte.obj.draw(ui);
+    if (!this.run) return;
+    const game = this.game, dt = ui.dt || 1 / 60;
+    const big = ui.touch ? 1.5 : 1;
+    const ev = this.ev, k = ease.outCubic(this.textK);
+    if (this.state !== 'walkin' && this.state !== 'done') {
+      // title tag + at most two short lines
+      ui.ctx.globalAlpha = k;
+      woodTag(ui, null, ui.w / 2, 16 - Math.round((1 - k) * 12), ev.title || '', { icon: 'event', scale: big });
+      const text = this.state === 'result' || this.state === 'fight' || this.state === 'dead' ? (this.result && this.result.text) || '' : this.state === 'pick' ? this.pickerText || '' : ev.text || '';
+      if (text) ui.text(text, ui.w / 2, 16 + 26 * big + 8, { align: 'center', color: '#f4e6c8', outline: '#140c10', maxW: 420 });
+      ui.ctx.globalAlpha = 1;
+    }
+    if (this.state === 'choose') this.drawChoices(ui, big);
+    if (this.state === 'pick') this.drawPicker(ui, big);
+    if (this.state === 'result') {
+      const r = this.result;
+      if (r && r.hurt) ui.big('-' + r.hurt, ui.w / 2, ui.h / 2 - 30, { scale: 2, top: '#ffd0c8', bottom: '#ff4a3a', alpha: clamp(2 - this.textK * 2 + 0.6, 0, 1) });
+      const h = woodTag(ui, 'ev-go', ui.w - 20, ui.h - 46 * big, 'Move on', { icon: 'arrowR', scale: big, align: 'right' });
+      if (h.clicked) this.leave();
+    }
+    const hh = cornerHud(ui, game);
+    if (hh.bag) openBag(game);
+    drawFlyers(ui, this.flyers, dt);
+    if (this.fade > 0) ui.rect(0, 0, ui.w, ui.h, '#07060b', this.fade);
+  }
+  drawChoices(ui, big) {
+    const ch = (this.ev.choices || []).slice(0, 3);
+    const gap = 8 * big, rowH = 26 * big;
+    const y0 = ui.h - 22 - ch.length * (rowH + gap);
+    ch.forEach((c, i) => {
+      const ok = this.available(c);
+      const RISK = { fight: 'monster', stone: 'curse', hp: 'heart', item: 'bag' };
+      const badge = RISK[c.risk] || null;
+      const sub = c.hint && !badge ? c.hint : null;
+      const h = woodTag(ui, 'ev-c' + i, ui.w / 2, y0 + i * (rowH + gap) + Math.round((1 - ease.outCubic(clamp(this.textK * 1.6 - i * 0.2, 0, 1))) * 30), c.label, { icon: c.icon || null, dim: ok !== true, scale: big, sub, subColor: '#8a2a1a', badge });
+      if (h.hover && ok !== true) ui.tooltip({ title: c.label, body: String(ok) });
+      if (h.clicked) this.choose(c);
+    });
+  }
+  drawPicker(ui, big) {
+    const p = this.picker;
+    const items = p.items.slice(0, 10);
+    const s = 32 * big, gap = 6;
+    const W = items.length * (s + gap) - gap;
+    const x0 = ui.w / 2 - W / 2, y = ui.h - 70 - s;
+    if (!items.length) {
+      const h = woodTag(ui, 'ev-none', ui.w / 2, y, 'Nothing fits — move on', { scale: big });
+      if (h.clicked) { this.result = { text: '' }; this.state = 'result'; }
       return;
     }
-    // cinematic: the scene plays above, the narrator and your choices sit in the letterbox below
-    this.lbT = Math.min(1, (this.lbT || 0) + ui.dt * 1.8);
-    const fullText = this.text;
-    const typing = this.phase === 'intro' || this.phase === 'result';
-    const shown = typing && !fullText.includes('{') ? fullText.slice(0, Math.floor(this.typed)) : fullText;
-    const textW = 620, x = Math.round(ui.w / 2 - textW / 2);
-    const choices = this.ev.choices;
-    const typedOut = this.typed >= fullText.length;
-    let body = 22 + ui.layout(fullText, 'body', textW).length * 11 + 8;
-    if (this.phase === 'choose' || this.phase === 'intro') body += choices.length * 16 + 4;
-    if (this.phase === 'result') body += this.results.length * 11 + (this.gained.length ? 52 : 0) + 18;
-    if (this.phase === 'pick') body += 70;
-    const H = Math.round(Math.max(96, body + 10) * ease.outCubic(this.lbT));
-    ui.rect(0, 0, ui.w, Math.round(32 * ease.outCubic(this.lbT)), '#050406');
-    ui.rect(0, ui.h - H, ui.w, H, '#050406');
-    for (let i = 0; i < 6; i++) ui.rect(0, ui.h - H - 6 + i, ui.w, 1, '#050406', (i + 1) / 7);
-    const h = hud(ui, game, { bag: this.phase !== 'pick' });
-    if (h.bagClicked && (this.phase === 'choose' || this.phase === 'intro' || this.phase === 'result')) openBag(game, {});
-    if (this.lbT < 0.6) return;
-    let y = ui.h - H + 10;
-    ui.text(`{gold}${this.ev.title}{/}`, x, y, {});
-    y += 14;
-    const pageHit = ui.hit('event-page', 0, ui.h - H, ui.w, H, { cursor: false, sound: false });
-    if (pageHit.clicked && typing && this.typed < fullText.length) this.typed = 9999;
-    ui.text(shown, x, y, { maxW: textW, color: '#efe2c8' });
-    y += ui.layout(fullText, 'body', textW).length * 11 + 8;
-    if ((this.phase === 'intro' || this.phase === 'choose') && typedOut) {
-      this.phase = 'choose';
-      choices.forEach((c, i) => {
-        const req = c.req ? c.req(run) : true;
-        const disabled = req !== true;
-        const label = `${i + 1}. ${c.label}`;
-        const lw = ui.measure(label) + 12;
-        const hh = ui.hit('evc' + i, x - 4, y - 2, Math.max(lw, 300), 14, { sound: false, cursor: disabled ? 'arrow' : 'hand' });
-        const col = disabled ? '#6a6058' : hh.hover ? '#ffe2a0' : '#d8c8b0';
-        if (hh.hover && !disabled) ui.text('›', x - 10 + Math.round(Math.sin(this.time * 8)), y, { color: '#ffd27a' });
-        ui.text(label, x + (hh.hover && !disabled ? 4 : 0), y, { color: col });
-        const note = disabled ? req : c.hint;
-        if (note) ui.text(`{dim}— ${note}{/}`, x + lw + 10, y, { font: 'small', color: disabled ? '#9a5a4a' : '#9a8a7a' });
-        if (((hh.clicked) || game.input.keyPressed('Digit' + (i + 1))) && !disabled) { game.audio && game.audio.play('ui_pop'); this.choose(c); }
-        y += 16;
-      });
-    }
-    if (this.phase === 'result' && typedOut) {
-      for (const l of this.results) { ui.text(l, x, y, { color: '#d8c8b0' }); y += 11; }
-      if (this.gained.length) {
-        this.gained.slice(0, 8).forEach((it, i) => {
-          const sx = x + i * 74;
-          const hh = ui.hit('evg' + it.uid, sx, y, 70, 46);
-          ui.img(materialSprite(it.id, 40), sx, y + 2 - (hh.hover ? 2 : 0));
-          ui.text(matOf(it).name, sx + 20, y + 40, { align: 'center', font: 'small', color: COLORS[matOf(it).rarity] || '#d8c8b0' });
-          if (hh.hover) ui.tooltip(itemTooltip(it));
-        });
-        y += 52;
-      }
-      const label = this.pendingFight ? 'Fight!' : 'Continue';
-      const hh = ui.hit('ev-continue', x - 4, y, 200, 14, { sound: false });
-      ui.text(`${hh.hover ? '› ' : ''}${label}`, x, y + 2, { color: this.pendingFight ? '#ff8a7a' : '#ffe2a0' });
-      if (!ui.touch) ui.text('{dim}(space){/}', x + ui.measure(label) + 20, y + 2, { font: 'small' });
-      if (hh.clicked || game.input.actionPressed('confirm')) this.continueOn();
-    }
-    if (this.phase === 'pick' && this.picker) this.drawPicker(ui, x, y);
-  }
-
-  drawPicker(ui, x, y) {
-    const game = this.game, run = game.run;
-    const { pick, items } = this.picker;
-    ui.text(`Choose something to {gold}${pick.verb || 'use'}{/}:`, x, y, { color: '#d8c8b0' });
-    y += 14;
-    items.slice(0, 10).forEach((it, i) => {
-      const sx = x + i * 58;
-      const hh = ui.hit('pick' + it.uid, sx, y, 52, 44);
-      ui.img(materialSprite(it.id, 40), sx + 4, y - (hh.hover ? 3 : 0));
-      if (hh.hover) { ui.tooltip(itemTooltip(it)); const card = materialCard(it); ui.img(card, Math.round(clamp(sx + 24 - card.width / 2, 6, ui.w - card.width - 6)), y - card.height - 30); }
-      if (hh.clicked) {
-        this.picker = null;
-        game.audio && game.audio.play('card_place');
-        const out = pick.then(it, run, this.rng) || {};
+    woodTag(ui, null, ui.w / 2, y - 30 * big, p.verb || 'Pick one', { scale: big });
+    items.forEach((it, i) => {
+      const x = x0 + i * (s + gap);
+      const h = ui.hit('ev-p' + i, x, y, s, s, { sound: false });
+      ui.rect(x, y, s, s, '#140c10', h.hover ? 0.75 : 0.5);
+      const spr = materialSprite(it.id, 32);
+      if (spr) ui.ctx.drawImage(spr, x, y - (h.hover ? 2 : 0), s, s);
+      if (h.hover) ui.tooltip({ title: MATERIALS[it.id] ? MATERIALS[it.id].name : it.id, body: '' });
+      if (h.clicked) {
+        let out = {};
+        try { out = p.then(it, this.run, this.rng) || {}; } catch (e) { console.warn('pick', e); }
+        this.picker = null; this.state = 'choose';
         this.apply(out);
       }
     });
-    const nv = ui.hit('pick-cancel', x + Math.min(10, items.length) * 58 + 10, y + 14, 90, 14, { sound: false });
-    ui.text(`${nv.hover ? '› ' : ''}Never mind`, x + Math.min(10, items.length) * 58 + 10, y + 16, { color: nv.hover ? '#ffe2a0' : '#9a8a7a' });
-    if (this.picker && (nv.clicked || game.input.actionPressed('back'))) { this.picker = null; this.phase = 'choose'; }
+    const back = woodTag(ui, 'ev-back', ui.w / 2, y + s + 10, 'Never mind', { scale: big });
+    if (back.clicked) { this.picker = null; this.state = 'choose'; }
   }
-
 }

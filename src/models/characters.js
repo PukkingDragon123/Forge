@@ -7,7 +7,8 @@
 // The designs themselves live in vox_char_party.js.
 import * as THREE from 'three';
 import { CHARACTERS } from '../data/characters.js';
-import { VPart, VOX_PARTY, voxToon, voxGlow } from './vox_char_kit.js';
+import { VPart, VOX_CHIBI, voxToon, voxGlow, hash } from './vox_char_kit.js';
+import { buildWeaponMesh } from './weapons3d.js';
 import { Kindle } from './vox_char_kindle.js';
 import { BUILD } from './vox_char_party.js';
 
@@ -25,8 +26,8 @@ const lin = (t) => t;
 const hold = () => 0;
 const outBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
-/** World size of one party voxel. */
-export const VS = VOX_PARTY;
+/** World size of one crew voxel (chibi grid). */
+export const VS = VOX_CHIBI;
 
 // ------------------------------------------------------------------ springs for secondary motion
 export class Spring {
@@ -373,11 +374,120 @@ const ANIMS = {
       const push = Math.sin(k * TAU) * 0.5 + 0.5;
       return { lean: 0.25 + push * 0.1, lSh: 1.1 - push * 0.3, rSh: 1.1 - push * 0.3, lEl: 0.9 - push * 0.6, rEl: 0.9 - push * 0.6, lAb: -0.1, rAb: -0.1, dy: -0.03 - push * 0.03, lKn: 0.3 + push * 0.15, rKn: 0.3 + push * 0.15, lHip: 0.3, rHip: 0.2, nod: 0.2, flare: push };
     },
+  },  // ---- camp life (seated where it makes sense) and the intro beats
+  sitEat: {
+    // the bowl held at the chest, the spoon making trips to a mouth nobody sees
+    loop: true, exact: true, prop: ['bowl', 'spoon'], f: (t, c) => {
+      const k = (t % 2.4) / 2.4, up = sm(seg(k, 0.15, 0.45)) * (1 - sm(seg(k, 0.6, 0.9)));
+      return { ...sitLegs(c), lean: 0.12 - up * 0.08, lSh: 0.95, lEl: 1.35, lAb: -0.05, lTw: 0.3, rSh: 0.85 + up * 0.75, rEl: 1.45 + up * 0.5, rAb: 0.05 + up * 0.25, nod: 0.25 - up * 0.3, tilt: Math.sin(t * 0.7) * 0.05, dy: sitLegs(c).dy + Math.sin(t * 2) * 0.003 };
+    },
+  },
+  drink: {
+    // lift the bowl in both hands, tip it back, then a happy shiver: really good stew
+    dur: 2.2, lambda: 26, prop: ['bowl'], expr: 'happy', f: (t, c, k) => {
+      const base = c.seated ? sitLegs(c) : {};
+      const hold = { lSh: 0.95, lEl: 1.4, lAb: 0.05, lTw: 0.3, rSh: 0.9, rEl: 1.5, rAb: -0.1, nod: 0.2, lean: 0.1 };
+      const lift = { lSh: 1.75, lEl: 1.25, lAb: 0.35, lTw: 0.3, rSh: 1.7, rEl: 1.3, rAb: 0.35, nod: -0.35, lean: -0.12 };
+      const p = keys(k, [[0, hold], [0.2, lift, sm], [0.6, over(lift, { nod: -0.42, lean: -0.16 }), lin], [0.72, over(hold, { nod: -0.05, by: 0.02, squash: -0.3 }), outQ], [0.8, over(hold, { squash: 0.4 }), inQ], [1, hold, sm]]);
+      const shiver = k > 0.72 && k < 0.95 ? Math.sin(t * 40) * 0.05 : 0;
+      return { ...base, ...p, twist: shiver, dy: (base.dy || 0) + (p.dy || 0), ears: k > 0.72 ? 1 : 0 };
+    },
+    propTilt: (k) => (k > 0.2 && k < 0.66 ? -1.1 * sm(seg(k, 0.2, 0.35)) : 0),
+  },
+  present: {
+    // holds something up and out, proud, turning it to catch the light
+    loop: true, lambda: 18, expr: 'smug', f: (t) => {
+      const b = Math.sin(t * 2.2);
+      return { rSh: 2.0 + b * 0.04, rEl: 0.35, rAb: 0.12, rTw: Math.sin(t * 0.9) * 0.35, lSh: 0.3, lAb: 0.55, lEl: 1.6, lTw: -1.8, lean: -0.08, nod: -0.22, tilt: 0.12, dy: b * 0.005, flare: 0.3 };
+    },
+  },
+  trip: {
+    // a step, the foot catches, arms windmill, a flop flat on the face
+    dur: 1.2, lambda: 40, expr: 'surprised', f: (t, c, k) => {
+      const H = c.dims.hipH;
+      const p = keys(k, [
+        [0, { lHip: 0.4, rHip: -0.3, lKn: 0.3, rKn: 0.2 }],
+        [0.18, { lHip: -0.5, rHip: 0.6, lKn: 0.2, rKn: 0.5, lean: 0.35, lSh: -0.9, rSh: -0.6, lAb: 0.6, rAb: 0.6, nod: -0.2 }, sm],
+        [0.32, { lHip: -0.7, rHip: 0.2, lKn: 0.9, rKn: 0.2, lean: 0.7, hrx: 0.3, lSh: 2.4, rSh: 1.6, lAb: 0.8, rAb: 0.9, lEl: 0.4, rEl: 0.6, nod: -0.4, by: 0.03 }, outQ],
+        [0.48, { lHip: -0.9, rHip: -0.5, lKn: 1.1, rKn: 0.9, lean: 0.4, hrx: 1.0, dy: -H * 0.45, lSh: 2.8, rSh: 2.5, lAb: 1.0, rAb: 0.7, nod: -0.5 }, inQ],
+        [0.58, { lHip: -1.0, rHip: -0.6, lKn: 1.3, rKn: 1.1, lean: 0.15, hrx: 1.42, dy: -H * 0.82, lSh: 2.9, rSh: 2.9, lAb: 0.9, rAb: 0.9, lEl: 0.3, rEl: 0.3, nod: -0.6, squash: 0.8 }, inQ],
+        [0.7, { lHip: -0.8, rHip: -0.5, lKn: 1.6, rKn: 1.2, lean: 0.1, hrx: 1.4, dy: -H * 0.8, lSh: 2.9, rSh: 2.9, lAb: 0.8, rAb: 0.8, nod: -0.55, squash: 0.2 }, outQ],
+        [1, LIE(c), sm],
+      ]);
+      return p;
+    }, exact: true, then: 'lie',
+  },
+  lie: {
+    // flat on the floor, legs kicked up behind, breathing
+    loop: true, exact: true, lambda: 10, f: (t, c) => { const b = Math.sin(t * 2); return over(LIE(c), { lKn: 1.4 + Math.sin(t * 1.3) * 0.25, rKn: 1.1 - Math.sin(t * 1.3) * 0.25, dy: LIE(c).dy + b * 0.002 }); },
+  },
+  cower: {
+    // crouched small, arms over the head, trembling
+    loop: true, exact: true, lambda: 30, expr: 'hurt', f: (t, c) => {
+      const q = Math.sin(t * 37) * 0.012;
+      return { dy: -c.dims.hipH * 0.35, lHip: 1.2, rHip: 1.1, lKn: 1.9, rKn: 1.9, lFt: 0.6, rFt: 0.6, lean: 0.45 + q, nod: 0.45, lSh: 2.5, rSh: 2.4, lEl: 1.7, rEl: 1.8, lAb: 0.45, rAb: 0.45, side: q, ears: -1 };
+    },
+  },
+  carry: {
+    // arms around something held at the chest (Pip): pairs with run/walk legs below
+    loop: true, lambda: 22, f: (t) => { const b = Math.sin(t * 2.2); return { lSh: 0.85, rSh: 0.85, lEl: 1.75, rEl: 1.75, lAb: -0.12, rAb: -0.12, lTw: 0.5, rTw: 0.5, lean: -0.04, nod: 0.12, dy: b * 0.004 }; },
+  },
+  carryRun: {
+    // fleeing with the pet hugged tight
+    loop: true, lambda: 24, expr: 'surprised', f: (t, c) => {
+      const r = ANIMS.run.f(t, c);
+      return { ...r, lSh: 0.8, rSh: 0.8, lEl: 1.85, rEl: 1.85, lAb: -0.15, rAb: -0.15, lTw: 0.5, rTw: 0.5, lean: 0.28, nod: 0.05 };
+    },
+  },
+  stir: {
+    // round and round the pot with the ladle, the other hand on the hip
+    loop: true, prop: ['ladle'], f: (t, c) => {
+      const a = t * 2.6, base = c.seated ? sitLegs(c) : { lHip: 0.15, lKn: 0.15 };
+      return { ...base, lean: 0.2, rSh: 1.05 + Math.sin(a) * 0.22, rAb: 0.15 + Math.cos(a) * 0.22, rEl: 0.85 - Math.sin(a) * 0.15, rTw: 0.3, lAb: 0.7, lEl: 1.75, lTw: -2.0, nod: 0.35 + Math.sin(a) * 0.04, turn: Math.cos(a) * 0.1, twist: Math.sin(a) * 0.08, dy: (base.dy || 0) + Math.sin(a * 2) * 0.003 };
+    },
+  },
+  polish: {
+    // a blade across the knees, the rag running along it
+    loop: true, exact: true, prop: ['blade', 'rag'], f: (t, c) => {
+      const s = Math.sin(t * 3.4);
+      return { ...sitLegs(c), lean: 0.22, nod: 0.42, lSh: 0.7, lEl: 0.95, lAb: -0.05, lTw: 0.6, rSh: 0.8 + s * 0.12, rAb: -0.15 + s * 0.3, rEl: 0.95 + s * 0.15, rTw: 0.2, twist: s * 0.05, tilt: 0.08 };
+    },
+  },
+  count: {
+    // gems in an open palm, tapped one by one, a nod for each
+    loop: true, exact: true, prop: ['gems'], f: (t, c) => {
+      const k = (t * 1.6) % 1, tap = Math.max(0, Math.sin(k * Math.PI)) ** 3;
+      return { ...sitLegs(c), lean: 0.16, lSh: 0.95, lEl: 1.5, lAb: -0.1, lTw: 0.9, rSh: 1.0 + tap * 0.12, rEl: 1.4 + tap * 0.2, rAb: -0.25, rTw: 0.3, nod: 0.32 + tap * 0.06, tilt: 0.1 + Math.sin(t * 0.8) * 0.04, ears: tap > 0.8 ? 0.3 : 0 };
+    },
+  },
+  hug: {
+    loop: true, lambda: 18, expr: 'happy', f: (t) => {
+      const b = Math.sin(t * 2.5);
+      return { lSh: 1.35, rSh: 1.35, lAb: 0.05, rAb: 0.05, lEl: 1.25, rEl: 1.25, lTw: -0.6, rTw: -0.6, lean: 0.14 + b * 0.02, nod: 0.12, twist: Math.sin(t * 1.4) * 0.1, dy: b * 0.004, ears: 0.5 };
+    },
+  },
+  stepOut: {
+    // breaking out of stone: a stiff shudder, a burst, shaking off the dust, a long breath out
+    dur: 1.7, lambda: 45, f: (t, c, k) => {
+      const stiff = { dy: -0.02, lSh: 0.2, rSh: 0.2, lAb: 0.05, rAb: 0.05, lEl: 0.3, rEl: 0.3, lean: 0.05, nod: 0.1 };
+      const p = keys(k, [
+        [0, stiff], [0.3, over(stiff, { squash: 0.3 }), lin],
+        [0.4, { by: 0.06, squash: -0.5, lSh: 2.4, rSh: 2.4, lAb: 0.9, rAb: 0.9, lEl: 0.2, rEl: 0.2, lean: -0.2, nod: -0.35, flare: 1, ears: 1 }, outBack],
+        [0.55, { squash: 0.5, lSh: 0.6, rSh: 0.6, lAb: 0.6, rAb: 0.6, lean: 0.2, nod: 0.2, ears: -0.5 }, inQ],
+        [0.8, { lSh: 0.4, rSh: 0.4, lAb: 0.4, rAb: 0.4, lEl: 0.5, rEl: 0.5, lean: 0.08, nod: 0.1 }, sm],
+        [1, { lean: -0.06, nod: -0.12, lAb: 0.25, rAb: 0.25, dy: 0.006 }, sm],
+      ]);
+      const sh = k < 0.3 ? Math.sin(t * 60) * 0.03 * (k / 0.3) : k > 0.55 && k < 0.8 ? Math.sin(t * 34) * 0.12 : 0;
+      return { ...p, twist: (p.twist || 0) + sh, turn: (p.turn || 0) + sh * 1.5 };
+    },
   },
 };
+/** Lying prone after a trip (legs kicked up behind). */
+function LIE(c) { return { hrx: 1.42, dy: -c.dims.hipH * 0.84, lean: 0.06, lHip: -0.9, rHip: -0.7, lKn: 1.4, rKn: 1.1, lSh: 2.85, rSh: 2.85, lAb: 0.75, rAb: 0.75, lEl: 0.4, rEl: 0.4, nod: -0.5, tilt: 0.25 }; }
+
 export const ANIM_INFO = Object.fromEntries(Object.entries(ANIMS).map(([k, v]) => [k, { dur: v.dur || v.period || 0, impact: v.impact ?? 0.5, loop: !!v.loop }]));
 export const ANIM_NAMES = Object.keys(ANIMS);
-const SEATED_OK = new Set(['sit', 'sitTalk', 'read', 'argue', 'laugh', 'sleep', 'idle', 'wave', 'point', 'shrug', 'cheer', 'hammer']);
+const SEATED_OK = new Set(['sit', 'sitTalk', 'read', 'argue', 'laugh', 'sleep', 'idle', 'wave', 'point', 'shrug', 'cheer', 'hammer', 'present', 'carry', 'hug']);
 
 // Body language stands in for faces: each mood leans, tilts and settles the figure a little.
 const EXPR_POSE = {
@@ -426,7 +536,12 @@ export class Character {
     this._wp = new THREE.Vector3(); this._prevWp = null; this.vel = new THREE.Vector3(); this.velLocal = new THREE.Vector3();
     this._prevSh = 0; this.swing = new Spring(60, 9);
     this._prevPose = { lean: 0, twist: 0, dy: 0 }; this.poseVel = { lean: 0, twist: 0, dy: 0 };
+    this.holdScale = 0.64;
+    this.stone = 0;
+    this.upright = [];
     BUILD[id](this);
+    buildProps(this);
+    if (!this.height) this.height = this.dims.hipH + this.dims.torsoH + this.dims.neckH + (this.headTop || 0.4);
     this.applyPose(this.pose);
     this.group.traverse((o) => { o.userData.character = this; });
   }
@@ -464,11 +579,16 @@ export class Character {
     R.ftL = J(R.knL, 0, -d.legLo, 0);
     R.ftR = J(R.knR, 0, -d.legLo, 0);
     for (const side of ['L', 'R']) {
-      // the grip sits in the fist
+      // the grip sits in the fist; weapons are drawn for full-size hands, so chibi fists hold them smaller
       const m = J(R['hand' + side], 0, -(v.grip ?? 4) * VS, 0.5 * VS);
       m.rotation.set(Math.PI / 2 - 0.55, 0, 0);
+      m.scale.setScalar(this.holdScale);
       R['mount' + side] = m;
+      // props (bowl, spoon, book…) hang from their own joint in the fist
+      R['prop' + side] = J(R['hand' + side], 0, -(v.grip ?? 4) * VS, 1.5 * VS);
     }
+    // where Pip rides when carried: at the chest, in front of the arms
+    R.carry = J(R.spine, 0, d.torsoH * 0.42, (v.chestZ ?? 9) * VS);
   }
   /**
    * Paint a voxel part (voxel units around its parent; a paint function or a ready VPart) and hang
@@ -532,7 +652,8 @@ export class Character {
     this.animOpts = opts;
     if (a.expr && opts.expr !== false && this.exprLock <= 0) this.setExpression(a.expr, { auto: true });
     if (!a.expr && opts.expr === undefined && this._autoExpr) this.setExpression('neutral', { auto: true });
-    for (const k in this.props) this.props[k].visible = a.prop === k;
+    const pr = Array.isArray(a.prop) ? a.prop : [a.prop];
+    for (const k in this.props) this.props[k].visible = pr.includes(k);
     if (name === 'hurt') this.flash('#ff9a82', 0.22);
   }
   /** Seconds from start of a one-shot anim until its impact frame. */
@@ -550,7 +671,7 @@ export class Character {
     const prev = this.held[hand];
     if (prev && prev.parent === mount) mount.remove(prev);
     this.held[hand] = mesh || null;
-    if (mesh) { mesh.position.set(0, 0, 0); mesh.rotation.set(0, 0, 0); mount.add(mesh); }
+    if (mesh) { mesh.position.set(0, 0, 0); mesh.rotation.set(0, 0, 0); mesh.userData.held = true; mount.add(mesh); }
     return prev;
   }
   showBackItem(b) { if (this.backItem) this.backItem.visible = b; }
@@ -562,6 +683,27 @@ export class Character {
     return out;
   }
   setVisible(b) { this.group.visible = b; }
+  /** The joint at the chest where a carried pet sits (add Pip's group to it). */
+  get carryPoint() { return this.rig.carry; }
+  /**
+   * Petrification 0..1: grey stone sweeps up from the feet, grained and cracked, with a pale jade
+   * rim where it advances; colour and glow die under it. At 1 the figure is a statue (frozen).
+   * Lower it again (with play('stepOut')) to break free.
+   */
+  setStone(k) {
+    k = clamp(k, 0, 1);
+    if (k > 0 && !this._stoneU) installStone(this);
+    this.stone = k;
+    if (this._stoneU) this._stoneU.uStoneOn.value = k > 0 ? 1 : 0;
+    if (this.kindle) this.kindle.group.visible = k < 0.6;
+    this._stoneSync();
+  }
+  _stoneSync() {
+    if (!this._stoneU) return;
+    this.group.updateMatrixWorld(true);
+    const y0 = this.group.getWorldPosition(this._wp).y;
+    this._stoneU.uStoneY.value = y0 - 0.06 + this.stone * (this.height + 0.16) * this.group.scale.y;
+  }
   flash(color = '#ffffff', t = 0.12) {
     this.flashT = t; this.flashDur = t;
     this.flashColor = new THREE.Color(color);
@@ -569,6 +711,9 @@ export class Character {
 
   update(dt) {
     dt = Math.min(dt, 0.1);
+    this._stoneSync();
+    if (this.stone >= 1) return; // a statue: nothing moves
+    dt *= 1 - this.stone * 0.85; // stiffening as the stone climbs
     this.time += dt;
     this.animT += dt * (this.animOpts.speed || 1);
     const a = ANIMS[this.anim];
@@ -577,7 +722,7 @@ export class Character {
       const k = this.animT / a.dur;
       if (k >= 1) {
         const cb = this.animOpts.onDone;
-        const next = this.animOpts.then || this.loopAnim;
+        const next = this.animOpts.then || a.then || this.loopAnim;
         this.play(next === this.anim ? 'idle' : next);
         cb && cb();
         return this.update(0);
@@ -645,6 +790,16 @@ export class Character {
     }
     this.extraUpdate && this.extraUpdate(dt);
     if (this.kindle) this.kindle.update(dt);
+    // props that must stay level (a bowl of stew, a palm of gems) counter-rotate against the hand
+    if (this.upright.length) {
+      const a = ANIMS[this.anim], tilt = a && a.propTilt ? a.propTilt(clamp(this.animT / (a.dur || 1), 0, 1)) : 0;
+      const gq = this.group.getWorldQuaternion(new THREE.Quaternion());
+      for (const pr of this.upright) {
+        if (!pr.visible || !pr.parent) continue;
+        const pq = pr.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+        pr.quaternion.copy(pq.multiply(gq)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, 0, 0)));
+      }
+    }
 
     if (this.flashT > 0) {
       this.flashT -= dt;
@@ -672,13 +827,108 @@ export class Character {
     R.elL.rotation.x = -p.lEl;
     R.elR.rotation.x = -p.rEl;
     R.elR.scale.y = 1 + smr * 0.2;
-    if (R.mountR) R.mountR.scale.set(1, 1 + smr * 0.5, 1);
+    if (R.mountR) { const hs = this.holdScale; R.mountR.scale.set(hs, hs * (1 + smr * 0.5), hs); }
     R.hipL.rotation.set(-p.lHip, 0, p.lHab);
     R.hipR.rotation.set(-p.rHip, 0, -p.rHab);
     R.knL.rotation.x = p.lKn;
     R.knR.rotation.x = p.rKn;
     R.ftL.rotation.x = p.lFt;
     R.ftR.rotation.x = p.rFt;
+  }
+}
+
+// ------------------------------------------------------------------ hand props
+const PROP_GEO = new Map();
+function propGeo(key, paint) {
+  let g = PROP_GEO.get(key);
+  if (!g) { const P = new VPart(); paint(P); g = P.geometry(VS, [0, 0, 0], { glowIntensity: 2 }); PROP_GEO.set(key, g); }
+  return g;
+}
+const PROPS = {
+  // a wooden bowl brimming with stew: chunks of root and mushroom in a warm broth
+  bowl: { hand: 'L', upright: true, at: [0, 2, 3], paint: (P) => {
+    P.loft(-4, 1, (y) => [5.4 + (y + 4) * 0.5, 5.4 + (y + 4) * 0.5], (x, y, z) => (y === 0 ? '#a8784a' : (y + 9) % 3 === 0 ? '#5a3a20' : '#7a5030'), { shell: 1.2 });
+    P.loft(-4, -2, () => [5, 5], '#6a4428');
+    P.loft(-1, 0, () => [6.2, 6.2], (x, y, z) => { const h = hash(x, z, 4); return h > 0.86 ? '#e8b060' : h > 0.74 ? '#c84a2a' : h > 0.64 ? '#7ab04a' : '#b8622a'; });
+  } },
+  spoon: { hand: 'R', at: [0, 0, 1], rot: [-0.6, 0, 0], paint: (P) => { P.cap([0, 0, 0], [0, 9, 0], 0.7, 0.7, '#8a6038'); P.ell(0, 10.5, 0.5, 1.8, 2.2, 1, '#a8784a'); } },
+  ladle: { hand: 'R', at: [0, 0, 0], rot: [0.2, 0, 0], paint: (P) => {
+    P.cap([0, -16, 0], [0, 8, 0], 0.8, 0.8, '#6a4a2a');
+    P.ell(0, -18, 1.5, 3.2, 2, 3.2, '#8a8a92'); P.loft(-19, -17, () => [3, 3], '#5a5a62', { shell: 0.9 });
+    P.cap([0, 8, 0], [0, 10, -1.5], 0.8, 0.6, '#8a8a92');
+  } },
+  rag: { hand: 'R', at: [0, -1, 1], paint: (P) => { P.ell(0, 0, 0, 3.4, 2.4, 3, (x, y, z) => (hash(x, y, z, 3) > 0.7 ? '#a89878' : '#c8b898')); P.cap([2, -1, 1], [4, -4, 2], 1, 0.6, '#b8a888'); } },
+  gems: { hand: 'L', upright: true, at: [0, 2, 3], glow: true, paint: (P) => {
+    for (const [x, z, c] of [[-2, -1, '#7ae0ff'], [1, 0, '#ff6a8a'], [0, 2, '#ffe07a'], [-1, 1, '#b07aff'], [2, -2, '#ffffff']]) P.ell(x, 0.5, z, 1.3, 1.6, 1.3, (xx, y) => (y > 0 ? { glow: true, c } : c));
+  } },
+  book: { hand: 'L', at: [0, -1, 3], rot: [-0.7, 0.2, 0], paint: (P) => {
+    P.box(-6, -1, -4, 6, 1, 5, (x, y) => (y > 0 ? '#efe6d0' : '#d8ccae'));
+    P.box(-6.5, -2, -4.5, 6.5, -1, 5.5, '#66142e');
+    for (const [x, z] of [[-7, -5], [6, -5], [-7, 5], [6, 5]]) P.set(x, -2, z, '#f0bc40');
+  } },
+};
+function buildProps(c) {
+  for (const [name, d] of Object.entries(PROPS)) {
+    if (c.props[name]) continue; // a design may bring its own
+    const j = c.joint(c.rig['prop' + d.hand], ...c.v(...d.at));
+    if (d.rot) j.rotation.set(...d.rot);
+    const g = propGeo(name, d.paint);
+    if (g.solid) { const m = new THREE.Mesh(g.solid, c.mat); m.castShadow = true; j.add(m); }
+    if (g.glow) { const m = new THREE.Mesh(g.glow, c.glowMat); j.add(m); }
+    j.visible = false;
+    c.props[name] = j;
+    if (d.upright) c.upright.push(j);
+  }
+  // a plain short blade lying across the knees for polishing
+  if (!c.props.blade) {
+    const j = c.joint(c.rig.propL, 0, 0, 0);
+    const w = buildWeaponMesh({ bp: 'sword', ids: ['iron', 'coal'], grade: 2 });
+    w.scale.setScalar(c.holdScale * 0.9);
+    w.rotation.set(Math.PI / 2, 0, -Math.PI / 2 + 0.25);
+    j.add(w);
+    j.visible = false;
+    c.props.blade = j;
+  }
+}
+
+// ------------------------------------------------------------------ petrification shader
+const STONE_GLSL = `
+uniform float uStoneY; uniform float uStoneOn; varying vec3 vStoneW;
+float stoneHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+`;
+function installStone(c) {
+  const U = { uStoneY: { value: -99 }, uStoneOn: { value: 0 } };
+  c._stoneU = U;
+  const mats = new Set();
+  const walk = (o) => {
+    if (o.userData.held || o.userData.noStone || (c.kindle && o === c.kindle.group)) return;
+    if (o.isMesh && o.material && !Array.isArray(o.material)) mats.add(o.material);
+    for (const ch of o.children) walk(ch);
+  };
+  walk(c.group);
+  for (const m of mats) {
+    const prev = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => {
+      prev && prev(sh, r);
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = 'varying vec3 vStoneW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vStoneW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = STONE_GLSL + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+  if (uStoneOn > 0.5) {
+    float edge = uStoneY - vStoneW.y;
+    if (edge > 0.0) {
+      float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+      vec3 stone = mix(vec3(0.075, 0.075, 0.085), vec3(0.42, 0.42, 0.40), clamp(lum * 2.2 + 0.18, 0.0, 1.0));
+      vec3 cell = floor(vStoneW / 0.016);
+      stone *= 0.86 + stoneHash(cell) * 0.24;
+      float crack = step(0.955, stoneHash(floor(vStoneW / 0.032) + vec3(3.0, 7.0, 1.0)));
+      stone *= 1.0 - crack * 0.55;
+      stone = mix(stone, vec3(0.55, 0.85, 0.62), smoothstep(0.03, 0.0, edge) * 0.65);
+      diffuseColor.rgb = stone;
+    }
+  }`);
+    };
+    m.customProgramCacheKey = () => 'stone1';
+    m.needsUpdate = true;
   }
 }
 
