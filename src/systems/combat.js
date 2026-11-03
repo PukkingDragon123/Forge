@@ -7,8 +7,8 @@
 import { MONSTERS } from '../data/monsters.js';
 
 /** Monster HP / damage multipliers per act (0 Undercroft … 3 Medusa's Garden). */
-export const HP_SCALE = [1, 2.5, 6, 13];
-export const DMG_SCALE = [1, 1.3, 1.6, 1.9];
+export const HP_SCALE = [1, 2.5, 6, 17];
+export const DMG_SCALE = [1, 1.3, 1.6, 2.0];
 const HP_BASE = 10;
 const actIdx = (r) => Math.max(0, Math.min(HP_SCALE.length - 1, r | 0));
 

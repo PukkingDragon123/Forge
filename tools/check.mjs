@@ -127,7 +127,7 @@ for (let a = 0; a < ACTS.length; a++) {
 
 // balance glance: a typical weapon per act vs the act's monsters (bot skill 0.6)
 const W = (bp, ids, char = 'clover') => finalizeWeapon(evaluate(bp, ids.map((id) => ({ id, q: 2, uid: Math.random() })), { char }), 2, { char });
-const typical = [W('sword', ['iron', 'copper', 'petrite']), W('sword', ['iron', 'silver', 'amethyst', 'petrite']), W('axe', ['magmasteel', 'iron', 'coal', 'ruby']), W('sword', ['mithril', 'gorgonite', 'silver', 'diamond'])];
+const typical = [W('sword', ['iron', 'copper', 'petrite']), W('sword', ['iron', 'silver', 'amethyst', 'petrite']), W('axe', ['magmasteel', 'iron', 'coal', 'ruby']), W('sword', ['gold', 'gorgonite', 'silver', 'emerald'])];
 for (let a = 0; a < ACTS.length; a++) {
   for (const [label, w] of [['typical', typical[a]], ...(a === 0 ? [['pickaxe', PICK_WEAPON]] : [])]) {
     const pool = Object.values(MONSTERS).filter((m) => m.region === a);

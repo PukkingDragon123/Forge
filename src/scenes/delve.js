@@ -80,8 +80,15 @@ export class DelveScene extends Scene {
       c.look = eye(stageToWorld(this.junction, deep));
       c.hover = 0;
     }
-    this.jpath = J.path && J.path.getPointAt ? worldCurve(this.junction, J.path) : null;
-    this.stand = eye(stageToWorld(this.junction, J.stand || new THREE.Vector3(0, EYE, -2)));
+    // stand where every tunnel mouth is in view (the dome's centre is too close to the side tunnels)
+    const standL = this.frameStand(J);
+    this.standL = standL;
+    this.jpath = null;
+    if (standL) {
+      const enterL = J.enter ? J.enter.clone() : new THREE.Vector3(0, EYE, 0.3);
+      this.jpath = worldCurve(this.junction, new THREE.CatmullRomCurve3([enterL, enterL.clone().lerp(standL, 0.5), standL]));
+    } else if (J.path && J.path.getPointAt) this.jpath = worldCurve(this.junction, J.path);
+    this.stand = eye(stageToWorld(this.junction, standL || J.stand || new THREE.Vector3(0, EYE, -2)));
     // ---- start walking
     const p0 = path.getPointAt(0);
     const t0 = path.getTangentAt(0);
@@ -121,6 +128,7 @@ export class DelveScene extends Scene {
     const go = this.jpath ? fp.moveAlong(this.jpath, Math.max(1.2, this.jpath.getLength() / 1.5), { ease: 'walk', look: this.centerLook(), lookWeight: 0.5 }) : fp.walkTo(this.stand, 1.1, { ease: 'walk', look: this.centerLook() });
     go.then(() => {
       fp.lookTo(this.centerLook(), 0.8);
+      fp.setFov(70, 2.5);
       this.state = 'choose';
       this.chooseT = 0;
       const a = fp.arms; a && a.play && a.play('idle');
@@ -129,6 +137,18 @@ export class DelveScene extends Scene {
       this.sniff = best;
       if (this.pet) { this.pet.play('sniff'); this.game.audio && this.game.audio.play('pip_sniff', { vol: 0.5 }); }
     });
+  }
+  /** Junction-local point between the entrance and the dome's stand where all mouths fit in ±43°. */
+  frameStand(J) {
+    if (!J.stand || !J.exits || !J.exits.length) return null;
+    const a = (J.enter || new THREE.Vector3(0, EYE, 0.3)).clone(), b = J.stand.clone();
+    const mouths = J.exits.map((e) => e.mouth || e.pos).filter(Boolean);
+    for (let k = 1; k >= 0; k -= 0.1) {
+      const p = a.clone().lerp(b, k);
+      const ok = mouths.every((m) => Math.abs(Math.atan2(m.x - p.x, -(m.z - p.z))) < 0.75);
+      if (ok) return p.setY(EYE);
+    }
+    return a.clone().lerp(b, 0.15).setY(EYE);
   }
   centerLook() {
     const v = new THREE.Vector3();
@@ -164,6 +184,7 @@ export class DelveScene extends Scene {
     const fp = this.fp, game = this.game;
     game.audio && game.audio.play('click');
     fp.lookTo(c.look, 0.45);
+    fp.setFov(62, 2);
     const here = this.fp.pos.clone();
     const pts = [here, here.clone().lerp(c.mouth, 0.5), c.mouth, c.mouth.clone().lerp(c.look, 0.5), c.look];
     const curve = new THREE.CatmullRomCurve3(pts);
