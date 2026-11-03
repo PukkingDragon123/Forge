@@ -190,9 +190,9 @@ export class Cine {
     s.C = campAnchors(s.stage);
     return s;
   }
-  /** A first-person world from fp_world: tunnel | junction | chamber | chase. */
+  /** A first-person world from fp_world: tunnel | junction | chamber | chase (opts.prebuilt: a stage built ahead of time). */
   fpSet(name, kind, act = 0, opts = {}) {
-    const st = buildFP(kind, act, opts);
+    const st = opts.prebuilt || buildFP(kind, act, opts);
     const group = st.group;
     this.scene.add(group);
     st.setCamera && st.setCamera(this.camera);
@@ -596,6 +596,13 @@ export class CutsceneScene extends Scene {
 
 // ================================================================== scripts
 const SCRIPTS = {};
+/** Stages built ahead of time by an earlier cinematic (the chase is baked while the intro plays). */
+const PREBUILT = {};
+function prebuild(key, make) {
+  if (!(key in PREBUILT)) { try { PREBUILT[key] = make(); } catch (e) { PREBUILT[key] = null; } }
+  return PREBUILT[key];
+}
+function takePrebuilt(key) { const st = PREBUILT[key] || null; delete PREBUILT[key]; return st; }
 
 /** The three Snake Heralds and Medusa: look + a fallback while the real monsters are being built. */
 const HERALDS = {
@@ -710,6 +717,8 @@ SCRIPTS.intro = (c) => {
   const at = (p, dir, dist, h, side = 0) => p.clone().addScaledVector(dir, dist).addScaledVector(sideV, side).setY((p.y || 0) + h);
   const steam = () => { const p = C.pot; c.P.alpha.emit({ pos: [p.x + rnd(-0.1, 0.1), p.y + 0.3, p.z + rnd(-0.1, 0.1)], vel: [0, rnd(0.25, 0.45), 0], spread: 0.04, life: [1.6, 2.6], size: [1, 2], sizeEnd: 4, color: ['#e8dcd0', '#d0c4c8'], alpha: 0.35, fadeIn: 0.4, swirl: 0.4 }); };
   let flight = null;
+  const chasePre = prebuild('chase0', () => buildFP('chase', 0, { seed: 7 }));
+  if (chasePre) c.tick((dt, t) => { if (chasePre.stream && chasePre.stream.step) chasePre.stream.step(); else if (chasePre.update) chasePre.update(dt, t); }, true);
   return {
     music: 'camp',
     shots: [
@@ -954,7 +963,7 @@ SCRIPTS.prologue = (c) => { c.fade = 1; c.later(0, () => c.finish(true)); return
 SCRIPTS.chase = (c) => {
   const who = c.who;
   let S;
-  try { S = c.fpSet('run', 'chase', 0, { seed: 7 }); } catch (e) { S = c.fpSet('run', 'tunnel', 0, { seed: 7, length: 40 }); }
+  try { S = c.fpSet('run', 'chase', 0, { seed: 7, prebuilt: takePrebuilt('chase0') }); } catch (e) { S = c.fpSet('run', 'tunnel', 0, { seed: 7, length: 40 }); }
   const A = S.A;
   const path = A.path && A.path.getPointAt ? A.path : new THREE.CatmullRomCurve3([V(0, 0.95, 0), V(0.4, 0.95, -14), V(-0.3, 0.95, -28), V(0, 0.95, -40)]);
   const arms = c.fpRig(who);

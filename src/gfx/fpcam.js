@@ -290,10 +290,8 @@ export function makeFPWorld(stages, opts = {}) {
     post: { bloom: 0.9, threshold: 0.74, vignette: 0.42, saturation: 1.12, contrast: 1.04, outline: 0.55, edge: 0.3, ...(opts.post || {}) },
     update(dt) {
       this.time += dt;
-      for (const st of this.stages) {
-        if (st.follow) { try { st.follow(fp.pos.x, fp.pos.y, fp.pos.z, fp.pos); } catch (e) { /* streaming is optional */ } }
-        st.update && st.update(dt, this.time); // stages tick their own props, flames, emitters and particles
-      }
+      // first-person pieces stream around the camera they were given (setCamera) inside update()
+      for (const st of this.stages) st.update && st.update(dt, this.time);
       fp.update(dt);
       sparks.update(dt); dust.update(dt);
     },
