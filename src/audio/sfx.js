@@ -489,4 +489,6 @@ export const SFX = {
   bat_flutter: { vol: 0.75, verb: 0.3, fn: (s) => { for (let i = 0; i < 9; i++) s.noise({ t: i * 0.05 + r(0, 0.015), dur: 0.03, vol: 0.09 * (1 - i / 12), filter: BP(r(700, 1100), null, 1.6) }); s.tone({ t: 0.1, type: 'sine', f: 4200, f2: 3600, dur: 0.05, vol: 0.02 }); return 0.5; } },
   page: { vol: 0.8, verb: 0.1, fn: (s) => { s.noise({ dur: 0.2, a: 0.07, vol: 0.13, filter: BP(1000, 2600, 0.8) }); crackle(s, 4, { spread: 0.15, vol: 0.05 }); return 0.22; } },
   quill: { vol: 0.7, verb: 0.08, fn: (s) => { for (let i = 0; i < 5; i++) s.noise({ t: i * 0.06 + r(0, 0.02), dur: r(0.03, 0.06), a: 0.01, vol: 0.06, filter: BP(r(3500, 5000), null, 3) }); return 0.35; } },
+  kindle_hit: { vol: 0.85, verb: 0.2, fn: (s) => { s.noise({ dur: 0.18, a: 0.005, vol: 0.2, filter: BP(1800, 600, 1) }); s.tone({ f: 900, f2: 300, dur: 0.16, vol: 0.08 }); crackle(s, 5, { spread: 0.15, vol: 0.12 }); return 0.25; } },
+  item_place: { vol: 0.8, verb: 0.06, fn: (s) => { thud(s, { f: 210, f2: 120, dur: 0.06, vol: 0.2 }); clink(s, { t: 0.02, f: 1700, ratio: 2.2, dur: 0.1, vol: 0.05 }); return 0.12; } },
 };

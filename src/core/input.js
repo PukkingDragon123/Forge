@@ -135,9 +135,14 @@ export class Input {
     this.pressed = this.released = this.rpressed = this.rreleased = false;
     this.keysPressed.clear(); this.keysReleased.clear();
     this.consumed = false;
-    // a finger held still becomes an inspect: right-click once, and the release won't click
+    // a finger held still becomes an inspect: right-click once, and the release won't click. The hold
+    // is timed in smooth frame time (each gap capped), so one slow frame can't turn a tap into a hold.
+    const now = performance.now();
+    const gap = Math.min(100, now - (this._lastPoll || now));
+    this._lastPoll = now;
     const p = this._primary !== null && this._ptr.get(this._primary);
-    if (p && p.touch && this.down && !this.longPress && performance.now() - p.t0 > HOLD_MS && Math.hypot(this.x - p.x, this.y - p.y) < HOLD_SLOP) {
+    if (p && this.down) p.held = (p.held || 0) + gap;
+    if (p && p.touch && this.down && !this.longPress && p.held > HOLD_MS && Math.hypot(this.x - p.x, this.y - p.y) < HOLD_SLOP) {
       this.longPress = true; this.suppressClick = true; this.rpressed = true;
     }
     // apply at most one press + one release of each button per frame; leave extra for next frame

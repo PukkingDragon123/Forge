@@ -342,9 +342,12 @@ function bob(b, t, per, ampY, ampZ) {
 }
 
 // ------------------------------------------------------------------ the rig
-// every pose is authored low; the whole rig sits OFF higher so the hands frame the bottom of the view
+// every pose is authored low; the whole rig sits OFF higher so the hands frame the bottom of the view.
+// SC shrinks the arms and what they hold; SPREAD pushes the hands out toward the sides and DROP lowers
+// them, so at rest they frame the lower corners and the weapon tip sits in the lower-right third.
 const OFF = new THREE.Vector3(0, 0.125, 0);
-const SHOULDER = { R: new THREE.Vector3(0.22, -0.29, 0.04), L: new THREE.Vector3(-0.22, -0.29, 0.04) };
+const SC = 0.8, SPREAD = 1.14, DROP = 0.03;
+const SHOULDER = { R: new THREE.Vector3(0.21, -0.3, 0.0), L: new THREE.Vector3(-0.21, -0.3, 0.0) };
 const POLE = { R: new THREE.Vector3(0.9, -0.7, 0.25), L: new THREE.Vector3(-0.9, -0.7, 0.25) };
 const DOWN = new THREE.Vector3(0, -1, 0);
 const GEO = new Map(); // per hero: { upper, fore:{L,R}, fist:{L,R}, open:{L,R} }
@@ -372,6 +375,7 @@ export class FPArms {
     this.root = new THREE.Group(); // sways with the camera's turns
     this.group.add(this.root);
     this.mat = voxToon();
+    this.mat.color.setScalar(0.8); // this close to the camera every torch hits them: sit a touch darker
     this.glowMat = voxGlow();
     const geo = heroGeo(this.charId);
     const add = (geoPair, parent) => {
@@ -379,14 +383,17 @@ export class FPArms {
       if (geoPair.solid) { const m = new THREE.Mesh(geoPair.solid, this.mat); m.castShadow = false; m.frustumCulled = false; g.add(m); }
       if (geoPair.glow) { const m = new THREE.Mesh(geoPair.glow, this.glowMat); m.castShadow = false; m.frustumCulled = false; g.add(m); }
       parent.add(g);
+      g.scale.setScalar(SC);
       return g;
     };
     this.side = {};
     for (const s of ['L', 'R']) {
       const upper = add(geo.upper, this.root), fore = add(geo.fore[s], this.root);
       const hand = new THREE.Group(); hand.rotation.order = 'YXZ';
+      hand.scale.setScalar(SC);
       this.root.add(hand);
       const fist = add(geo.fist[s], hand), open = add(geo.open[s], hand);
+      fist.scale.setScalar(1); open.scale.setScalar(1); // the hand group already carries SC
       open.visible = false;
       const mount = new THREE.Group(); mount.position.set(-0.5 * VS, 0, -5 * VS * (this.charId === 'durgan' ? 1.18 : 1));
       hand.add(mount);
@@ -407,7 +414,7 @@ export class FPArms {
     this._prevQ = null; this._sway = new THREE.Vector2(); this._swayV = new THREE.Vector2();
     this._e = new THREE.Euler(0, 0, 0, 'YXZ');
     // a faint warm fill so the hands read in the darkest tunnel (reaches only the arms)
-    this.fill = new THREE.PointLight(0xffd0a0, 0.012, 0.7, 2);
+    this.fill = new THREE.PointLight(0xffd0a0, 0.003, 0.6, 2);
     this.fill.position.set(0, -0.02, -0.12);
     this.root.add(this.fill);
     this.snap = true;
@@ -428,11 +435,13 @@ export class FPArms {
       m.rotation.set(0, 0, 0);
       this.side.R.mount.add(m);
       m.traverse((o) => { o.castShadow = false; o.frustumCulled = false; });
+      for (const bm of m.userData.bladeMats || []) if (bm.color) bm.color.setScalar(0.82);
       this.item = m;
       if (kind === 'weapon') this.weapon = m;
     } else if (kind === 'map') {
       if (!this._map) this._map = buildMap(this.mat);
       this.mapMesh = this._map;
+      this.mapMesh.scale.setScalar(SC * 1.1);
       this.root.add(this.mapMesh);
       if (obj && obj.isTexture) this.setMapTexture(obj);
     } else if (kind === 'torch') {
@@ -443,8 +452,8 @@ export class FPArms {
     } else if (kind === 'pet') {
       if (!this.pet) this.pet = obj && obj.group ? obj : buildPet();
       // Pip rides in the crook of the left arm looking ahead (his back and ears to us, the snout in profile)
-      this.pet.group.scale.setScalar(0.55);
-      this.pet.group.position.set(-0.12, -0.31 + OFF.y, -0.37);
+      this.pet.group.scale.setScalar(0.46);
+      this.pet.group.position.set(-0.15, -0.33 + OFF.y, -0.37);
       this.pet.group.rotation.set(0.1, Math.PI - 0.55, 0);
       this.root.add(this.pet.group);
       this.pet.play && this.pet.play('carried');
@@ -528,7 +537,7 @@ export class FPArms {
       if (!tgt && s === 'L' && (this.held === 'pickaxe')) tgt = this._pickLeft(pose.R);
       if (!tgt) tgt = (BASE.none)[s];
       const S = this.side[s];
-      S.p.lerp(new THREE.Vector3(...tgt.p).add(OFF), lam);
+      S.p.lerp(new THREE.Vector3(tgt.p[0] * SPREAD, tgt.p[1] - DROP, tgt.p[2]).add(OFF), lam);
       const qt = new THREE.Quaternion().setFromEuler(new THREE.Euler(tgt.r[0], tgt.r[1] * (s === 'L' ? 1 : 1), tgt.r[2], 'YXZ'));
       S.q.slerp(qt, lam);
       const open = !!tgt.open && !(s === 'R' && (this.held === 'weapon' || this.held === 'pickaxe')) && !(s === 'L' && this.held === 'torch');
@@ -554,7 +563,7 @@ export class FPArms {
   /** Where the left hand holds the pickaxe haft (below the right hand along the handle). */
   _pickLeft(R) {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(R.r[0], R.r[1], R.r[2], 'YXZ'));
-    const d = new THREE.Vector3(0, -0.11, 0).applyQuaternion(q);
+    const d = new THREE.Vector3(0, -0.11 * SC, 0).applyQuaternion(q);
     return { p: [R.p[0] + d.x - 0.01, R.p[1] + d.y, R.p[2] + d.z], r: [R.r[0], R.r[1], R.r[2] + 0.2], open: false };
   }
   _ik(s) {
@@ -563,9 +572,10 @@ export class FPArms {
     const toW = W.clone().sub(sh);
     let d = toW.length();
     const dir = toW.clone().divideScalar(d || 1);
-    d = clamp(d, Math.abs(L1 - L2) + 0.01, L1 + L2 - 0.002);
+    const l1 = L1 * SC, l2 = L2 * SC;
+    d = clamp(d, Math.abs(l1 - l2) + 0.01, l1 + l2 - 0.002);
     W.copy(sh).addScaledVector(dir, d);
-    const a = (L1 * L1 - L2 * L2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+    const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
     const pole = POLE[s].clone().addScaledVector(dir, -POLE[s].dot(dir)).normalize();
     const E = sh.clone().addScaledVector(dir, a).addScaledVector(pole, h);
     S.upper.position.copy(sh);

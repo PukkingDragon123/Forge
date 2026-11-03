@@ -188,8 +188,8 @@ export class EventScene extends Scene {
     const run = this.run, rng = this.rng;
     let out;
     try {
-      if (EV.resolveChoice) out = EV.resolveChoice(run, this.ev, c, rng);
-      else { const f = c.out || c.effect; out = typeof f === 'function' ? f(run, rng) : f || {}; }
+      const f = c.out || c.effect;
+      out = typeof f === 'function' ? f(run, rng) : f || {};
     } catch (e) { console.warn('event choice', e); out = {}; }
     this.apply(out || {});
   }
