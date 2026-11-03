@@ -81,8 +81,8 @@ const DESIGN = {
       } else {
         // the forge-gauntlet: riveted iron plates, brass bands, coals glowing through the vents
         P.cap([0, 2, 0], [0, -nF + 1, 0], 7.4, 8, metalT(C.iron, 8));
-        skin(P, (x, y) => y >= 0 || y <= -nF + 3, C.brass[2]);
-        studRing(P, 1, 10, C.brass[3]); studRing(P, -nF + 2, 10, C.brass[3]);
+        skin(P, (x, y) => y >= 0 || y === -nF + 2, C.brass[1]); // narrow, dull brass bands
+        studRing(P, 1, 8, C.brass[2]); studRing(P, -nF + 3, 8, C.brass[2]);
         // two thin vents on the outer side, coals glinting through (embers, not a lamp, this close to the eye)
         for (const vy of [-7, -12]) P.paint((x, y, z) => {
           if (y !== vy) return undefined;
@@ -96,7 +96,7 @@ const DESIGN = {
       const C = PAL.bran, M = side === 'L' ? metalT(C.iron, 9) : hideT(C.leather, 7);
       glove(P, side, open, M, { r: 1.05 });
       if (side === 'L') {
-        for (let x = -3; x <= 3; x += 2) stud(P, x, 3, -7, C.brass[3]);
+        for (let x = -3; x <= 3; x += 2) stud(P, x, 3, -7, C.brass[2]);
         skin(P, (x, y, z) => y === 1 && z < -6 && (x & 1), G(C.coal[2]));
       } else skin(P, (x, y, z) => y === -1 && z > -1 && z < 2, C.leather[3]);
     },
@@ -110,8 +110,8 @@ const DESIGN = {
       P.loft(-nF, 2, (y) => { const t = clamp(-y / nF, 0, 1); return [6.2 + t * t * 3.4, 6.2 + t * t * 3.4]; }, clothT(C.robe, 9), { shell: 1.6 });
       P.paint((x, y, z) => {
         const t = clamp(-y / nF, 0, 1), r = 6.2 + t * t * 3.4, d = Math.hypot(x + 0.5, z + 0.5);
-        if (y <= -nF + 1) return C.trim[(x + z) & 1 ? 2 : 3];
-        if (y <= -nF + 3 && d > r - 0.9) return C.trim[2];
+        if (y <= -nF + 1) return C.trim[(x + z) & 1 ? 1 : 2];
+        if (y <= -nF + 3 && d > r - 0.9) return C.trim[1];
         if (d < r - 1) return C.lining[2];
         if (y === -nF + 5 && ((x + z + 40) % 3 === 0)) return G(C.rune);
         return undefined;
@@ -132,8 +132,8 @@ const DESIGN = {
     fore(P) {
       const C = PAL.durgan;
       P.cap([0, 2, 0], [0, -nF + 1, 0], 7.2, 7.8, hideT(C.leather, 94));
-      skin(P, (x, y) => (y >= -1 && y <= 1) || (y <= -nF + 4 && y >= -nF + 2), C.bronze[2]);
-      studRing(P, -8, 8, C.bronze[3]);
+      skin(P, (x, y) => (y >= -1 && y <= 1) || y === -nF + 3, C.bronze[1]);
+      studRing(P, -8, 8, C.bronze[2]);
       // a fur cuff at the wrist
       P.loft(-nF - 1, -nF + 2, () => [9, 9], furT(C.fur, 99), { shell: 2 });
     },
@@ -150,7 +150,7 @@ const DESIGN = {
       const C = PAL.clover;
       P.cap([0, 1, 0], [0, -nF + 1, 0], 5.2, 5, clothT(C.shirt, 6));
       P.cap([0, -6, 0], [0, -nF + 1, 0], 6, 5.8, hideT(C.vest, 41), false, { flat: true });
-      skin(P, (x, y) => y === -9 || y === -15, C.gold[2]);
+      skin(P, (x, y) => y === -9 || y === -15, C.gold[1]);
       // fluff at the wrist
       P.loft(-nF - 1, -nF + 2, () => [6.8, 6.8], furT(C.fur, 42), { shell: 1.8 });
     },
@@ -194,7 +194,7 @@ function glove(P, side, open, col, o = {}) {
 
 /**
  * Lighting cap for things right under the camera: a lamp a hand's breadth away can't blow them out
- * past ~1.2× their own colour (no glowing-orange gloves); emissive flashes and glow voxels still shine.
+ * past their own colour (no glowing-orange gloves); emissive flashes and glow voxels still shine.
  */
 function litCap(mat) {
   if (mat.userData.litCap) return mat;
@@ -202,7 +202,7 @@ function litCap(mat) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     prev && prev(sh, r);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = min(outgoingLight - totalEmissiveRadiance, diffuseColor.rgb * 1.2) + totalEmissiveRadiance;\n#include <opaque_fragment>');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = min(outgoingLight - totalEmissiveRadiance, diffuseColor.rgb * 1.0) + totalEmissiveRadiance;\n#include <opaque_fragment>');
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
   mat.customProgramCacheKey = () => key() + '|litcap';
