@@ -121,10 +121,12 @@ if (serve) {
   const { hosts } = await ctx.serve({ servedir: 'dev', port });
   console.log(`\n  FORGLITE dev server: http://localhost:${port}\n`);
 } else {
-  mkdirSync('dist', { recursive: true });
-  const result = await esbuild.build({ ...common, write: false, minify: !process.env.NOMIN, outfile: 'dist/game.js', define: { DEV: 'false' } });
+  // OUTDIR lets several people build side by side without overwriting each other's dist/
+  const D = process.env.OUTDIR || 'dist';
+  mkdirSync(D, { recursive: true });
+  const result = await esbuild.build({ ...common, write: false, minify: !process.env.NOMIN, outfile: D + '/game.js', define: { DEV: 'false' } });
   const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-  writeFileSync('dist/index.html', shell(`<script>${js}</script>`));
+  writeFileSync(D + '/index.html', shell(`<script>${js}</script>`));
   // claude.ai artifact flavour: the host supplies the document skeleton, so only head content + body
   const art = shell(`<script>${js}</script>`)
     .replace(/^<!doctype html>\s*<html[^>]*>\s*<head>\s*/i, '')
@@ -132,7 +134,7 @@ if (serve) {
     .replace(/<\/head>\s*<body>\s*/i, '')
     .replace(/\s*<\/body>\s*<\/html>\s*$/i, '')
     .replace('html, body {', ':root { color-scheme: dark; }\n  html, body {');
-  writeFileSync('dist/forglite-artifact.html', art);
-  const kb = (readFileSync('dist/index.html').length / 1024).toFixed(0);
-  console.log(`dist/index.html written (${kb} KB)`);
+  writeFileSync(D + '/forglite-artifact.html', art);
+  const kb = (readFileSync(D + '/index.html').length / 1024).toFixed(0);
+  console.log(`${D}/index.html written (${kb} KB)`);
 }
