@@ -6,6 +6,8 @@ import { Run } from '../systems/run.js';
 import * as RG from '../data/regions.js';
 import * as MON from '../data/monsters.js';
 import * as EV from '../data/events.js';
+import * as ENC from '../systems/encounters.js';
+import * as MG from '../systems/mapgen.js';
 import { CHARACTER_ORDER } from '../data/characters.js';
 import { save } from '../core/save.js';
 import { checkUnlocks } from '../systems/unlocks.js';
@@ -21,16 +23,16 @@ export function monsterPool(act, tier = 'normal') {
   const all = Object.values(MON.MONSTERS || {});
   return all.filter((m) => m.tier === tier).slice(0, 4);
 }
-/** The monster id for a node (elites/bosses by act, normals from the act pool). */
-export function monsterFor(run, type) {
+/** The monster id for a node (elites/bosses by act, normals from the act pool). `node` may be a type string. */
+export function monsterFor(run, nodeOrType = 'monster') {
+  const node = typeof nodeOrType === 'string' ? null : nodeOrType;
+  const type = node ? node.type : nodeOrType;
+  const tier = type === 'boss' ? 'boss' : type === 'elite' ? 'elite' : 'normal';
+  if (ENC.monsterFor) return ENC.monsterFor(run, node || { id: 'x' + run.stats.floors, type, seed: run.rng.int ? run.rng.int(0, 1e6) : Math.random() * 1e6 }, tier);
   const act = actOf(run), A = actDef(run), rng = run.rng;
-  if (type === 'boss') return A.boss;
-  if (type === 'elite') {
-    const pool = monsterPool(act, 'elite');
-    return pool.length ? rng.pick(pool).id : (A.elite && A.elite[0]);
-  }
-  const pool = monsterPool(act, 'normal');
-  return rng.pick(pool).id;
+  if (tier === 'boss') return A.boss;
+  const pool = monsterPool(act, tier);
+  return pool.length ? rng.pick(pool).id : (A.elite && A.elite[0]);
 }
 
 /** The friend a herald of this act holds (rescue order = CHARACTER_ORDER minus the hero). */
@@ -49,27 +51,40 @@ export function startRun(game, charId, seed) {
 }
 
 // ------------------------------------------------------------------ nodes
-/** Delve arrived at a node: route to its first-person scene. opts: { ambush } (a monster that jumped you in the tunnel). */
+/**
+ * Delve arrived at a node: route to its first-person scene (systems/encounters.js decides what waits).
+ * opts.ambush: a monster id that jumps you in the tunnel first — the fight happens on the way, and
+ * the room itself waits (run.flags.pendingNode) until finishNode sends you on into it.
+ */
 export function enterNode(game, node, opts = {}) {
   const run = game.run;
-  run.map.current = node.id;
-  if (!run.map.visited.includes(node.id)) run.map.visited.push(node.id);
-  run.stats.floors = (run.stats.floors || 0) + 1;
-  const rng = run.rng;
-  switch (node.type) {
-    case 'monster': return game.go('combat', { node, monster: monsterFor(run, 'monster'), ambush: !!opts.ambush }, { transition: opts.ambush ? 'none' : 'fade', dur: 0.35 });
-    case 'elite': return game.go('combat', { node, monster: monsterFor(run, 'elite'), elite: true }, { transition: 'fade', dur: 0.35 });
-    case 'boss': return game.go('combat', { node, monster: monsterFor(run, 'boss'), boss: true }, { transition: 'fade' });
-    case 'vein': case 'mining': return game.go('vein', { node }, { transition: 'fade', dur: 0.35 });
-    case 'treasure': return game.go('treasure', { node }, { transition: 'fade', dur: 0.35 });
-    case 'camp': return game.go('camp', { node }, { transition: 'fade' });
-    case 'event': return game.go('event', { node, event: pickEvent(run, rng).id }, { transition: 'fade', dur: 0.35 });
-    default: return game.go('delve', {}, { transition: 'fade' });
+  if (opts.ambush) {
+    run.flags.pendingNode = node.id;
+    const id = typeof opts.ambush === 'string' ? opts.ambush : monsterFor(run, 'monster');
+    run.flags.lastMonster = id;
+    return game.go('combat', { node: run.map.nodes[run.map.current], monster: id, ambush: true }, { transition: 'none' });
   }
+  if (MG.arriveAt) MG.arriveAt(run.map, node.id);
+  else { run.map.current = node.id; if (!run.map.visited.includes(node.id)) run.map.visited.push(node.id); }
+  run.stats.floors = (run.stats.floors || 0) + 1;
+  const enc = ENC.encounterFor ? ENC.encounterFor(run, node) : legacyEncounter(run, node);
+  if (!enc) return game.go('delve', {}, { transition: 'fade' });
+  if (enc.scene === 'combat') run.flags.lastMonster = enc.params.monster;
+  const dur = enc.scene === 'camp' || (enc.params && enc.params.boss) ? 0.6 : 0.35;
+  return game.go(enc.scene, enc.params, { transition: 'fade', dur });
+}
+function legacyEncounter(run, node) {
+  const t = node.type;
+  if (t === 'monster' || t === 'elite' || t === 'boss') return { scene: 'combat', params: { node, monster: monsterFor(run, t), elite: t === 'elite', boss: t === 'boss' } };
+  if (t === 'vein' || t === 'mining') return { scene: 'vein', params: { node } };
+  if (t === 'event') return { scene: 'event', params: { node, event: pickEvent(run).id } };
+  if (t === 'treasure' || t === 'camp') return { scene: t, params: { node } };
+  return null;
 }
 
 /** A fresh event for this act (each event at most once per run while others remain). */
 export function pickEvent(run, rng = run.rng) {
+  if (ENC.eventFor) { const id = ENC.eventFor(run, run.map.nodes[run.map.current]); const ev = (EV.EVENTS || []).find((e) => e.id === id); if (ev) return ev; }
   const act = actOf(run);
   const all = EV.EVENTS || [];
   const seen = run.flags.events || (run.flags.events = []);
@@ -85,6 +100,13 @@ export function pickEvent(run, rng = run.rng) {
 /** Encounter done. A boss frees a friend and opens the next act; anything else walks on. */
 export function finishNode(game, opts = {}) {
   const run = game.run;
+  // a tunnel ambush is over: walk on into the room it was guarding
+  if (run.flags.pendingNode !== undefined && run.flags.pendingNode !== null) {
+    const id = run.flags.pendingNode;
+    run.flags.pendingNode = null;
+    const next = run.map.nodes[id];
+    if (next) return enterNode(game, next);
+  }
   const node = run.map.nodes[run.map.current];
   if (node) node.done = true;
   if (node && node.type === 'boss') {
