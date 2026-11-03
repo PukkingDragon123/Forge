@@ -14,6 +14,12 @@ import { RevealOverlay } from './reveal.js';
 import { TestScene } from './test.js';
 import { ForgeTestScene } from './forgetest.js';
 import { CutsceneScene } from './cutscene.js';
+import { ArenaScene } from './arena.js';
+import { DungeonScene } from './dungeon.js';
+import { CraftOverlay } from './craft.js';
+import { MineZoomOverlay } from './minezoom.js';
+import { DialogueOverlay } from './dialogue.js';
+import { TutorialScene } from './tutorial.js';
 
 export function registerScenes(game) {
   game.register('title', TitleScene);
@@ -32,4 +38,10 @@ export function registerScenes(game) {
   game.register('test', TestScene);
   game.register('cutscene', CutsceneScene);
   game.register('forgetest', ForgeTestScene);
+  game.register('arena', ArenaScene);
+  game.register('dungeon', DungeonScene);
+  game.register('craft', CraftOverlay);
+  game.register('minezoom', MineZoomOverlay);
+  game.register('dialogue', DialogueOverlay);
+  game.register('tutorial', TutorialScene);
 }
