@@ -4,7 +4,8 @@ import { RNG } from '../core/rng.js';
 import { save } from '../core/save.js';
 import { CHARACTERS, CHARACTER_ORDER } from '../data/characters.js';
 import { MATERIALS, RARITY } from '../data/materials.js';
-import { RECIPES } from '../data/blueprints.js';
+import { RECIPES, BLUEPRINTS } from '../data/blueprints.js';
+import { evaluate, finalizeWeapon } from './forge.js';
 import { ACTS } from '../data/regions.js';
 import { Backpack } from './backpack.js';
 import { makeItem, matOf } from './items.js';
@@ -13,6 +14,18 @@ import { unlockedMaterial } from './unlocks.js';
 
 export const BAG_W = 6, BAG_H = 5;
 const BUFF_KEYS = ['dmg', 'guard', 'stoneResist', 'loot', 'regen'];
+
+// Medusa's gaze turned your weapon to stone. It still cuts, and now it petrifies whatever it kills,
+// but it starts a third of the way to crumbling: forging a fresh blade is the first big decision.
+const STONE_BLADES = { bran: ['sword', ['iron', 'copper']], elio: ['staff', ['ember', 'copper']], durgan: ['axe', ['iron', 'tin']], clover: ['dagger', ['silver']] };
+function stoneBlade(charId) {
+  const [bp, ids] = STONE_BLADES[charId] || STONE_BLADES.bran;
+  try {
+    const res = evaluate(bp, ids.map((id) => makeItem(id, 2)), { char: charId });
+    const w = finalizeWeapon(res, 1, { char: charId });
+    return { ...w, name: 'Stonebitten ' + (BLUEPRINTS[bp] ? BLUEPRINTS[bp].name : 'Blade'), stone: 0.3, starter: true };
+  } catch (e) { return null; }
+}
 
 export class Run {
   constructor(charId, seed = String(Date.now())) {
@@ -33,7 +46,7 @@ export class Run {
     this.map = generateMap(this.rng.fork('map0'), 0);
     this.stats = { kills: 0, elites: 0, bosses: 0, statues: 0, veins: 0, ores: 0, stews: 0, forged: 0, masterworks: 0, crumbled: 0, shattered: 0, rescues: 0, floors: 0, time: 0, coins: 0 };
     this.flags = {};
-    this.weapon = null;        // finalized weapon + { stone: 0..1 }; null → you fight with the pickaxe
+    this.weapon = stoneBlade(this.char); // finalized weapon + { stone: 0..1 }; null → you fight with the pickaxe
     this.pick = { swings: 3, quality: 0, perks: {} }; // vein mining: swings per vein, +quality, pickaxe traits
     this.companions = [];      // rescued friends, in rescue order
     this.statues = CHARACTER_ORDER.filter((id) => id !== this.char); // still in stone

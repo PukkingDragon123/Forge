@@ -887,15 +887,15 @@ SCRIPTS.intro = (c) => {
           c.act(hero, ['cower', 'block'], { loop: true });
           c.sfx('stone_crack', { vol: 0.5 });
         } },
-      // 14. the weapon crumbles
+      // 14. the weapon doesn't break: the curse sinks into the stone blade (it will petrify what it kills)
       { dur: 2.2,
         cam: tool ? { pos: [tool.position.clone().addScaledVector(aud, 1.35).add(V(0, 0.95, 0)), tool.position.clone().addScaledVector(aud, 1.2).add(V(0, 0.85, 0))], look: [tool.position.clone().setY(0.25), tool.position.clone().setY(0.2)], fov: 32 }
           : { pos: [at(hs, hcam, 1.4, 0.8)], look: [headOf(hero)], fov: 34 },
         at: [[1.0, (c) => {
-          c.sfx('stone_shatter'); c.shake(0.2);
+          c.sfx('gaze', { vol: 0.45, pitch: 1.4 }); c.flash(0.18, '#7affc0');
           if (tool) {
-            const p = tool.position.clone(); tool.visible = false;
-            c.debris.spawn({ pos: [p.x, 0.25, p.z], count: 22, colors: ['#8a8696', '#6a6676', '#a8a4b4'], speed: 1.2, up: 1.2, spread: 0.25, gravity: 9, floor: 0.02, life: 2.2, scale: [0.4, 1] });
+            const p = tool.position.clone();
+            c.debris.spawn({ pos: [p.x, 0.3, p.z], count: 12, colors: ['#7affc0', '#c8ffe8', '#8a8696'], speed: 0.6, up: 1.4, spread: 0.2, gravity: 2, floor: 0.02, life: 1.8, scale: [0.2, 0.5] });
           }
         }]] },
       // 15. the heralds rise and take the statues down into the dark
