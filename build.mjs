@@ -23,22 +23,9 @@ const shell = (body) => `<!doctype html>
          -webkit-tap-highlight-color: transparent; overscroll-behavior: none; position: fixed; inset: 0; }
   #stage { position: fixed; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
   #stage canvas { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
-  /* loading screen: sits above the stage until real frames flow; its sparks animate on the
-     compositor, so they keep moving while the first voxel scenes are being built */
-  #boot { position: fixed; inset: 0; z-index: 8; background: #07060b; display: flex; align-items: center; justify-content: center; }
-  #boot .in { display: flex; flex-direction: column; align-items: center; gap: 14px; color: #c9a36a;
-              font: 14px monospace; letter-spacing: 2px; text-align: center; }
-  #boot .anvil { position: relative; width: 64px; height: 40px; }
-  #boot .anvil i { position: absolute; bottom: 8px; width: 6px; height: 6px; background: #ffd27a;
-                   box-shadow: 0 0 8px 2px #ff9a3a; animation: spark 1.1s ease-out infinite; opacity: 0; }
-  #boot .anvil i:nth-child(1) { left: 22px; animation-delay: 0s; } #boot .anvil i:nth-child(2) { left: 30px; animation-delay: .36s; }
-  #boot .anvil i:nth-child(3) { left: 38px; animation-delay: .72s; }
-  #boot .anvil b { position: absolute; left: 10px; right: 10px; bottom: 0; height: 8px; background: #5a4a52; box-shadow: 0 -3px 0 #8a7a82; }
-  @keyframes spark { 0% { transform: translate(0, 0); opacity: 1; } 100% { transform: translate(var(--dx, 14px), -30px); opacity: 0; } }
-  #boot .anvil i:nth-child(1) { --dx: -16px; } #boot .anvil i:nth-child(3) { --dx: 18px; }
-  #boot small { color: #8a7a6a; font-size: 11px; letter-spacing: 1px; }
-  #boot .turn { display: none; }
-  @media (orientation: portrait) and (pointer: coarse) { #boot .in { transform: rotate(90deg); } #boot .turn { display: block; } }
+  /* no loading screen: a plain dark veil over the stage that fades out once the first frames are up */
+  #boot { position: fixed; inset: 0; z-index: 8; background: #07060b; transition: opacity .6s ease; pointer-events: none; }
+  #boot.off { opacity: 0; }
   #err { display: none; position: fixed; inset: 0; z-index: 9; background: rgba(7, 6, 11, .94); color: #f0d8b0;
          align-items: center; justify-content: center; padding: 24px; white-space: pre-wrap; text-align: center;
          font: 13px/1.5 monospace; }
@@ -46,7 +33,7 @@ const shell = (body) => `<!doctype html>
 </style>
 </head>
 <body>
-<div id="boot"><div class="in"><div class="anvil"><i></i><i></i><i></i><b></b></div><div>KINDLING THE FORGE…</div><small>carving the caverns, voxel by voxel</small><small class="turn">turn your phone sideways</small></div></div>
+<div id="boot"></div>
 <div id="err"></div>
 <div id="stage"></div>
 <script>

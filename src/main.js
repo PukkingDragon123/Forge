@@ -40,15 +40,12 @@ if (params.get('char')) {
   const r = +(params.get('region') || 0);
   for (let i = 0; i < r; i++) game.run.nextRegion();
 }
-// Let the loading screen paint first (the first scenes are built from voxels and take a moment on a
-// phone), then start, and lift the loading screen once real frames are flowing.
+// Let the dark veil paint first, then start; the veil fades once real frames are flowing (scenes
+// build their heavy parts progressively, so there is no loading screen).
 const boot = document.getElementById('boot');
 const begin = () => {
   try {
-    // a first launch opens on the prologue and builds the camp only after it (half the first wait)
-    const intro = !params.get('scene') && !save.data.seen.intro;
-    if (intro) game.go('cutscene', { id: 'prologue', onDone: () => { save.data.seen.intro = true; save.write(); game.go('title', { skipintro: 1 }, { transition: 'fade' }); } }, { transition: 'none' });
-    else game.go(params.get('scene') || 'title', Object.fromEntries(params.entries()), { transition: 'none' });
+    game.go(params.get('scene') || 'title', Object.fromEntries(params.entries()), { transition: 'none' });
   } catch (e) {
     if (window.__forgliteFail) window.__forgliteFail(e && e.message ? e.message : String(e), true);
     throw e;
@@ -58,7 +55,7 @@ const begin = () => {
   const lift = () => {
     if (++n < 4) { requestAnimationFrame(lift); return; }
     window.__forgliteBooted = true;
-    if (boot) boot.remove();
+    if (boot) { boot.classList.add('off'); setTimeout(() => boot.remove(), 700); }
   };
   requestAnimationFrame(lift);
 };
