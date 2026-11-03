@@ -10,8 +10,6 @@ import { CameraRig } from '../gfx/camera.js';
 import { buildCharacter } from '../models/characters.js';
 import { buildStage } from '../models/stage_vox.js';
 import { buildPet } from '../models/pet.js';
-import { buildWeaponMesh } from '../models/weapons3d.js';
-import { buildOreModel } from '../models/ore_voxel.js';
 import { noteCanvas, tagCanvas } from '../art/handpaint.js';
 import { campAnchors, playFirst } from '../art/cutscene_art.js';
 import { dim } from './common.js';
@@ -75,13 +73,12 @@ export class TitleScene extends Scene {
       c.home = seat.facing;
       c.group.rotation.y = seat.facing;
       c.seatHeight = seat.height;
-      c.setSeated && c.setSeated(true, seat.height);
+      c.seated0 = seat.height > 0.05; // Durgan stands at the pot with his ladle
+      c.setSeated && c.setSeated(c.seated0, seat.height);
       scene.add(c.group);
       this.chars[id] = c;
     }
-    // Bran's blade to polish, a fistful of diamonds for Clover
-    try { this.blade = buildWeaponMesh({ bp: 'sword', ids: ['iron', 'iron', 'silver'], grade: 3 }); } catch (e) { this.blade = null; }
-    try { this.gem = buildOreModel('diamond', { res: 14, glow: 2 }); this.gem.scale.setScalar(0.18); } catch (e) { this.gem = null; }
+    // (hand props — Durgan's ladle, Bran's blade and rag, Clover's gems, Elio's book — come with the anims)
     for (const id of CHARACTER_ORDER) this.routine(this.chars[id]);
     // Pip asleep in his bed by the fire
     try {
@@ -107,12 +104,7 @@ export class TitleScene extends Scene {
   project(v) { return this.rig.project(v, 960, 540); }
   headOf(c) { return c.headPos ? c.headPos() : c.group.localToWorld(V(0, 0.8, 0)); }
 
-  routine(c) {
-    const anim = playFirst(c, ROUTINE[c.id] || ['sit'], { loop: true });
-    // a blade for Bran to polish, a diamond for Clover to count
-    if (c.id === 'bran' && this.blade) c.hold(anim === 'polish' || anim === 'sit' ? this.blade : null, 'right');
-    if (c.id === 'clover' && this.gem) c.hold(this.gem, 'right');
-  }
+  routine(c) { playFirst(c, ROUTINE[c.id] || ['sit'], { loop: true }); }
   habit(id) {
     const c = this.chars[id];
     const [names, dur] = rnd.pick(HABITS[id]);
@@ -143,9 +135,10 @@ export class TitleScene extends Scene {
     const endPos = zc ? v3(zc.pos) : head.clone().addScaledVector(out, 1.55).add(V(0, 0.2, 0)).addScaledVector(right, -0.15);
     const endLook = zc ? v3(zc.look) : head.clone().add(V(0, -0.12, 0)).addScaledVector(right, 0.42);
     const startPos = this.rig.pos.clone(), startLook = this.rig.look.clone();
-    const mid = startPos.clone().lerp(endPos, 0.5).add(V(0, 0.45, 0)).addScaledVector(right, -0.7);
+    // the arc swings out through the wide shot (never through the camp or past someone's face)
+    const mid = startPos.clone().lerp(endPos, 0.5).lerp(V(...this.home.pos), 0.55).add(V(0, 0.3, 0)).addScaledVector(right, -0.4);
     this.zoom = {
-      t: 0, dur: 1.55, fov0: this.rig.fov, fov1: zc ? zc.fov || 28 : 28,
+      t: 0, dur: 1.55, fov0: this.rig.fov, fov1: zc ? (zc.fov || 34) + 4 : 30,
       pos: new THREE.CatmullRomCurve3([startPos, mid, endPos], false, 'centripetal'),
       look0: startLook, look1: endLook, endPos, endLook, out, right,
     };
@@ -155,7 +148,6 @@ export class TitleScene extends Scene {
     this.turnFrom = c.group.rotation.y; this.turnTo = faceTo(c.group.position, camPos); this.turnT = 0;
     playFirst(c, GREET[id] || ['wave'], { onDone: () => this.focus === id && playFirst(c, ['idle'], { loop: true }) });
     c.setExpression && c.setExpression('happy');
-    c.hold(null, 'right');
     for (const o of CHARACTER_ORDER) if (o !== id) { const oc = this.chars[o]; oc.lookAt && oc.lookAt(this.headOf(c)); }
     this.bubble = { id, text: HELLO[id] || '', t: 2.4, dur: 2.4, delay: 0.9 };
     this.game.audio.play('ui_pop');
@@ -168,7 +160,7 @@ export class TitleScene extends Scene {
     const id = this.focus;
     const c = this.chars[id];
     if (c) {
-      c.setSeated && c.setSeated(true, c.seatHeight);
+      c.setSeated && c.setSeated(c.seated0, c.seatHeight);
       c.group.rotation.y = c.home;
       c.setExpression && c.setExpression('neutral');
       this.routine(c);
@@ -200,7 +192,6 @@ export class TitleScene extends Scene {
     this.stage.update && this.stage.update(dt, this.time);
     for (const id in this.chars) this.chars[id].update(dt);
     if (this.pip) this.pip.update(dt);
-    if (this.gem && this.gem.parent) this.gem.rotation.y += dt * 1.2;
     this.fadeIn = Math.max(0, this.fadeIn - dt * 1.6);
     // camera
     const z = this.zoom;
@@ -317,8 +308,9 @@ export class TitleScene extends Scene {
       };
       obj('codex', this.A.books, 0.3, 0.12, 'Codex', () => { this.panel = 'codex'; this.game.audio.play('page_turn'); });
       obj('settings', this.A.lantern, 0.24, 0, 'Settings', () => { this.panel = 'settings'; });
-      // gear in the corner for touch players (the lantern can be small on a phone)
-      if (ui.touch && ui.iconButton('settings-gear', ui.w - 26, ui.h - 30, 'tool', { size: 20 })) this.panel = 'settings';
+      obj('codex-map', this.A.mapCrate, 0.3, 0.1, 'Codex', () => { this.panel = 'codex'; this.game.audio.play('map_unfold'); });
+      // a small medallion in the corner for settings (always there on phones, and when the camp has no lantern)
+      if ((ui.touch || !this.A.lantern) && ui.iconButton('settings-gear', ui.w - 26, ui.h - 30, 'tool', { size: 20 })) this.panel = 'settings';
     }
     // one tiny hint, until someone is picked
     if (!this.panel && !this.picked && this.time > 2.2) {

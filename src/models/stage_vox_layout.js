@@ -282,7 +282,7 @@ export function paintShell(L, A, w) {
       }
       if (m === MAT.VOID) bot = Math.max(bot, top - 2);
       const nw = dist[i];
-      for (let y = bot; y <= top; y++) w.set(X, y, Z, m === MAT.VOID ? (y === top ? (h3(X, Z, 1, 2) > 0.985 ? glowC(A.glow) : C('#06050a')) : dark) : floorColor(A, X, y, Z, top - y, m, nw));
+      for (let y = bot; y <= top; y++) w.set(X, y, Z, m === MAT.VOID ? (y === top ? (h3(X, Z, 1, 2) > 0.985 ? glowC(A.glow) : C('#06050a')) : dark) : top - y > 3 ? tone(A.rock, 0.16 + (((y >> 3) & 1) ? 0.12 : 0) + h3(X, y, Z, 3) * 0.1 + (h3(X, y, Z, 4) > 0.985 ? 0.2 : 0)) : floorColor(A, X, y, Z, top - y, m, nw));
       // ---- ceiling (reaching up to taller neighbours: shafts, holes, vault crowns)
       const c0 = ceil[i];
       let ct = c0 + 2;
@@ -561,6 +561,7 @@ export class Piece {
     st.fog.density = A.fogD; st.fogDensity = A.fogD;
     const rig = makeLightRig({ amb: A.amb, ambI: opts.ambI ?? 0.62, sky: A.sky, skyI: 0.22, key: A.key, keyI: A.keyI, keyDir: [-0.3, 1, 0.4], lamps: this.lamps.map((l) => ({ ...l, i: l.i * 1.35 })), bands: 22 });
     const seen = (x, y, z) => L.seen(x, y, z);
+    st.bakeRig = rig;
     const TS = opts.tile || 64;
     const tiles = new Map();
     const timing = st.timing = { paint: 0, shell: 0, mesh: 0, chunks: 0 };

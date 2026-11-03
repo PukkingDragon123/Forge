@@ -706,7 +706,12 @@ export class CombatScene extends Scene {
         const col = e.kind === 'unblockable' ? '#ff4a4a' : e.kind === 'heavy' ? '#ff9a3a' : '#ffe08a';
         this.co.start(function* (s) {
           const T = s.tele;
-          while (s.tele === T && !T.res && s.phase === 'fight') { s.mon.flash && s.mon.flash(col, 0.07); yield 0.16; }
+          // a pulsing glint, quicker as the blow nears (the cue to Guard)
+          while (s.tele === T && !T.res && s.phase === 'fight') {
+            s.mon.flash && s.mon.flash(col, 0.045);
+            const left = T.impact - s.sim.t;
+            yield left > 0.5 ? 0.3 : 0.14;
+          }
         }, this);
         this.sfx(e.kind === 'unblockable' ? 'qte_prompt' : 'monster_growl', { vol: 0.5 });
         return;
@@ -985,8 +990,10 @@ export class CombatScene extends Scene {
     const hw = this.hitWorld();
     this.sparks.emit({ pos: hw.toArray(), radial: [2, 5], count: 80, life: [0.4, 1], size: [1, 2], color: ['#ffffff', '#ffd25e', '#ff8a3a'], glow: 3, gravity: 4, drag: 1.5 });
     yield 1.4;
+    // one part, no ore (ore only comes from statues and veins)
+    const drops = (this.def.drops || []).filter((d) => MATERIALS[d.id] && !(MATERIALS[d.id].tags || []).includes('boss'));
     const items = [];
-    for (const d of this.def.drops || []) if (MATERIALS[d.id] && rnd.chance(Math.min(1, d.chance * 0.7))) { items.push(makeItem(d.id, 1)); break; }
+    if (drops.length) { const d = drops.find((x) => rnd.chance(Math.min(1, x.chance))) || drops[0]; items.push(makeItem(d.id, 1)); }
     this.poseT.y = 0;
     yield* this.lootSeq(items, hw);
     yield* this.wrapUp();

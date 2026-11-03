@@ -6,9 +6,9 @@
 // The core around the fire is baked before the first frame; the rest of the hall streams in over
 // the next frames out of the dark (tiles fade up as they arrive).
 import * as THREE from 'three';
-import { S, C, glowC, tone, h3, box, ell, cyl, cylX, cylZ, seg } from './stage_vox_kit.js';
+import { S, C, glowC, tone, h3, box, ell, cyl, cylX, cylZ, seg, VWorld, meshWorld, worldMeshes } from './stage_vox_kit.js';
 import * as PR from './stage_vox_props.js';
-import { Layout, Piece, ACT_STYLES, CAMP_STYLE, MAT, vx, roots, fern, tufts, crystalCluster, banner, cobweb, rubble, lilyPads } from './stage_vox_layout.js';
+import { Layout, Piece, ACT_STYLES, CAMP_STYLE, MAT, vx, roots, fern, tufts, crystalCluster, banner, cobweb, rubble, lilyPads, floorColor } from './stage_vox_layout.js';
 import { noise2 } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
 import { LAYER_FX } from '../gfx/renderer.js';
@@ -22,10 +22,10 @@ const IRON = pal(['#1e1c26', '#33303e', '#4e4a5e', '#706c86', '#a09cb4']);
 export const CAMPMENU = {
   fire: [0, 0],
   seats: {
-    bran: { x: -1.72, z: 0.2, h: 0.28, log: 'z' },
-    elio: { x: -0.9, z: -1.38, h: 0.28, log: 'x' },
-    durgan: { x: 0.66, z: -0.86, h: 0, log: null },   // stands at the pot with the ladle
-    clover: { x: 1.78, z: 0.05, h: 0.3, log: 'crate' },
+    bran: { x: -1.62, z: 0.2, h: 0.18, log: 'z' },
+    elio: { x: -0.86, z: -1.3, h: 0.18, log: 'x' },
+    durgan: { x: 0.62, z: -0.82, h: 0, log: null },   // stands at the pot with the ladle
+    clover: { x: 1.68, z: 0.05, h: 0.17, log: 'crate' },
   },
   petBed: [0.98, 1.02], chest: [1.5, -2.3], mapCrate: [-2.35, 1.35], sacks: [[-2.85, -0.55], [-2.55, -1.45], [-3.2, -1.05]],
   crate: [2.8, -1.05], anvil: [2.75, 1.45], books: [-1.55, -2.05], bowls: [[-0.62, 0.7], [0.42, 0.82], [-0.75, -0.55]],
@@ -104,6 +104,9 @@ export function buildCampMenu(Stage, opts = {}) {
   // floor dressing: earth around the fire, a rug by Elio's books
   L.edit(-1.2, 1.2, -1.2, 1.2, (x, z) => Math.hypot(x, z * 1.1) < 1.0 + noise2(x * 2, z * 2) * 0.25, { mat: MAT.EARTH });
   L.edit(-2.2, -0.3, -2.5, -1.7, null, { mat: MAT.RUG });
+  // the pit under the crack where Medusa climbs out (covered by loose flagstones until crackOpen)
+  const crackLens = lensOf(LY.crack[0], LY.crack[1]);
+  L.edit(crackLens.x0, crackLens.x1, crackLens.z0, crackLens.z1, crackLens.test, { floor: -2.4, mat: MAT.VOID });
   // columns (left out of the space: the shell paints them as masonry)
   const cols = [[-4.6, -2.3], [4.65, -2.3], [-4.6, 2.2], [4.65, 2.2]];
   for (const [cx, cz] of cols) for (let Z = vx(cz - 0.45); Z <= vx(cz + 0.45); Z++) for (let X = vx(cx - 0.45); X <= vx(cx + 0.45); X++) if (Math.hypot((X + 0.5) * S - cx, (Z + 0.5) * S - cz) < 0.4) { const i = L.i(X, Z); if (i >= 0) L.inside[i] = 0; }
@@ -116,9 +119,9 @@ export function buildCampMenu(Stage, opts = {}) {
   P.lamp(0, 0.75, 0, '#ffa040', 7.2, 1.9);
   P.lamp(0, 2.4, 2.8, '#ff9a50', 7.5, 0.4);
   const SEAT = LY.seats;
-  P.op(-2.4, -1, -0.8, 1.2, (w) => logZ(w, vx(SEAT.bran.x - 0.05), 0, vx(SEAT.bran.z), 26, 3.6, 1));
-  P.op(-1.8, 0, -2, -0.8, (w) => PR.logSeat(w, vx(SEAT.elio.x), 0, vx(SEAT.elio.z - 0.04), 26, 3.6, 2));
-  P.op(1.3, 2.3, -0.5, 0.6, (w) => PR.crate(w, vx(SEAT.clover.x + 0.04), 0, vx(SEAT.clover.z), 9, 7, 9, { seed: 6, mark: '#c05a4e' }));
+  P.op(-2.4, -1, -0.8, 1.2, (w) => logZ(w, vx(SEAT.bran.x - 0.04), 0, vx(SEAT.bran.z), 22, 2.25, 1));
+  P.op(-1.8, 0, -2, -0.8, (w) => PR.logSeat(w, vx(SEAT.elio.x), 0, vx(SEAT.elio.z - 0.03), 22, 2.25, 2));
+  P.op(1.2, 2.2, -0.5, 0.6, (w) => PR.crate(w, vx(SEAT.clover.x + 0.03), 0, vx(SEAT.clover.z), 8, 4, 8, { seed: 6, mark: '#c05a4e' }));
   P.op(0.4, 1.6, 0.4, 1.6, (w) => petBasket(w, vx(LY.petBed[0]), 0, vx(LY.petBed[1])));
   for (const [bx, bz] of LY.bowls) P.op(bx - 0.2, bx + 0.2, bz - 0.2, bz + 0.2, (w) => { const X = vx(bx), Z = vx(bz); for (let py = 0; py < 3; py++) for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2, rr = 2.2 + py * 0.5; w.set(Math.round(X + Math.cos(a) * rr), py, Math.round(Z + Math.sin(a) * rr), tone(PR.WOOD, 0.45 + py * 0.1)); } w.set(X, 1, Z, glowC('#e8823a')); w.set(X + 1, 1, Z, C('#c86a3a')); });
   const ores = [['#e08a4a', '#c86a3a', '#ffd27a'], ['#c8c8d8', '#9a9aa8', '#ffffff'], ['#ffd25e', '#e8b84a', '#fff0b0']];
@@ -171,6 +174,15 @@ export function buildCampMenu(Stage, opts = {}) {
   }
   P.op(5.4, 6.2, -4.2, -3.2, (w) => crystalCluster(w, vx(5.85), 0, vx(-3.9), 30, '#9ae8ff', 3, 5));
   P.lamp(5.6, 0.6, -3.6, '#9ae8ff', 2.4, 1);
+  // the pit's depths: glowing seams in the rock and a baked glow low enough to stay off the floor above
+  const cc = [(LY.crack[0][0] + LY.crack[1][0]) / 2, (LY.crack[0][1] + LY.crack[1][1]) / 2];
+  P.op(crackLens.x0, crackLens.x1, crackLens.z0, crackLens.z1, (w) => {
+    for (let Z = Math.floor(crackLens.z0 / S); Z < crackLens.z1 / S; Z++) for (let X = Math.floor(crackLens.x0 / S); X < crackLens.x1 / S; X++) {
+      const x = (X + 0.5) * S, z = (Z + 0.5) * S; if (!crackLens.test(x, z)) continue;
+      if (h3(X, Z, 3, 1) > 0.7) w.set(X, vx(-2.4), Z, glowC(h3(X, Z, 4, 2) > 0.5 ? A.glow : '#c8a0ff'));
+    }
+  });
+  P.lamp(cc[0], -2.05, cc[1], A.glow, 1.85, 2.4);
   // dressing everywhere else: torches, ferns & flowers at the wall foot, roots, cobwebs, rubble
   const campClear = [{ x: 0, z: 0, r: 2.4 }, { x: 0, z: 3.6, r: 2.0 }, { x: LY.crate[0], z: LY.crate[1], r: 0.9 }, { x: LY.chest[0], z: LY.chest[1], r: 1.0 }, { x: gx, z: gz, r: 1.4 }, { x: fx, z: fzz, r: 1.3 }, { x: LY.anvil[0], z: LY.anvil[1], r: 0.8 }];
   decorateCamp(P, A, r, campClear);
@@ -201,7 +213,7 @@ export function buildCampMenu(Stage, opts = {}) {
   // ---- anchors, cameras
   const At = st.anchors;
   At.seats = {};
-  for (const id of Object.keys(SEAT)) { const s = SEAT[id]; At.seats[id] = { pos: V(s.x, s.h, s.z), rotY: Math.atan2(-s.x, -s.z), height: s.h, facing: Math.atan2(-s.x, -s.z) }; }
+  for (const id of Object.keys(SEAT)) { const s = SEAT[id]; At.seats[id] = { pos: V(s.x, s.h, s.z), rotY: Math.atan2(-s.x, -s.z), height: s.h, facing: Math.atan2(-s.x, -s.z), standing: s.h === 0 }; }
   At.seatList = ['bran', 'elio', 'durgan', 'clover'].map((id) => At.seats[id]);
   Object.assign(At, {
     fire: V(0, 0, 0), pot: V(0, 0.62, 0), potTop: V(0, 0.82, 0), chest: V(LY.chest[0], 0, LY.chest[1]), chestLid: V(LY.chest[0], 0.5, LY.chest[1] + 0.3),
@@ -217,14 +229,15 @@ export function buildCampMenu(Stage, opts = {}) {
   const zoom = {};
   for (const id of Object.keys(At.seats)) {
     const s = At.seats[id].pos, toCam = new THREE.Vector3(menu.pos[0] - s.x, 0, menu.pos[2] - s.z).normalize();
-    const head = s.y + (id === 'durgan' ? 0.62 : 0.66);
-    const p = s.clone().addScaledVector(toCam, 1.55).add(V(toCam.z * 0.35, 0, -toCam.x * 0.35));
-    zoom[id] = { pos: [p.x, head + 0.32, p.z], look: [s.x, head - 0.06, s.z], fov: 34 };
+    // chibi heights (A): Bran 0.98, Elio 1.08, Durgan 0.84 (standing), Clover 1.18 with ears; seated heads sit ~0.5 m above the seat
+    const head = id === 'durgan' ? 0.66 : s.y + ({ bran: 0.52, elio: 0.56, clover: 0.55 }[id] || 0.54);
+    const p = s.clone().addScaledVector(toCam, 1.35).add(V(toCam.z * 0.3, 0, -toCam.x * 0.3));
+    zoom[id] = { pos: [p.x, head + 0.26, p.z], look: [s.x, head - 0.1, s.z], fov: 34 };
   }
   st.cams = { menu, zoom, wide: { pos: [0, 3.6, 6.3], look: [0, 0.8, -1.2], fov: 50 }, gate: { pos: [1.2, 1.4, -0.6], look: [gx, 1.0, gz - 2], fov: 44 } };
   st.camera = { ...menu };
   // ---- the floor splitting open (intro): a jagged glowing fissure, broken slabs tipping, a dark mouth
-  buildCrack(st, At.crack, A);
+  buildCrack(st, At.crack, A, crackLens);
   return st;
 }
 
@@ -255,49 +268,86 @@ function decorateCamp(P, A, r, clear) {
     P.op(x - 0.6, x + 0.6, z - 0.6, z + 0.6, (wd) => roots(wd, A, vx(x), vx(ce) - 1, vx(z), Math.round((ce - 2.3) / S), k + 20, k % 4 === 0 ? A.glow : null));
   }
 }
-// the floor splitting open: jagged glowing fissure, broken slabs tipping out, a dark pit — st.crackOpen(k)
-function buildCrack(st, crack, A) {
-  const g = new THREE.Group(); g.visible = false;
+/** The lens of floor that splits: between a and b (metres), widest in the middle, jagged lips. */
+function lensOf(a, b) {
+  const [ax, az] = a, [bx, bz] = b, dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
+  const hw = (t) => 0.1 + 0.5 * Math.sin(Math.PI * t) ** 0.8 + (noise2(t * 18, 3) - 0.5) * 0.12;
+  const test = (x, z) => { const t = ((x - ax) * ux + (z - az) * uz) / L, d = (x - ax) * -uz + (z - az) * ux; return t > 0 && t < 1 && Math.abs(d) < hw(t); };
+  const pad = 0.7;
+  return { test, hw, a, b, L, ux, uz, x0: Math.min(ax, bx) - pad, x1: Math.max(ax, bx) + pad, z0: Math.min(az, bz) - pad, z1: Math.max(az, bz) + pad };
+}
+// the floor splitting open: loose flagstone pieces over a real pit — crack lines glow, the slabs tip and
+// tumble in, light and spores well up from below. st.crackOpen(k), k 0 → 1.
+function buildCrack(st, crack, A, lens) {
+  const g = new THREE.Group();
   st.group.add(g);
-  const a = crack.a, b = crack.b, len = a.distanceTo(b), dir = b.clone().sub(a).normalize(), nrm = V(-dir.z, 0, dir.x);
-  // the glowing gash: a jagged additive ribbon that widens with k
-  const N = 24, pos = [], idx = [];
-  for (let i = 0; i <= N; i++) { const t = i / N, j = (Math.sin(t * 23.1) + Math.sin(t * 11.7)) * 0.07; const p = a.clone().lerp(b, t).addScaledVector(nrm, j); pos.push(p.x, 0.012, p.z, p.x, 0.012, p.z); }
+  const NB = 5, pieces = [];
+  for (let k = 0; k < NB * 2; k++) pieces.push({ w: new VWorld(), n: 0, sx: 0, sz: 0 });
+  const X0 = Math.floor(lens.x0 / S), X1 = Math.ceil(lens.x1 / S), Z0 = Math.floor(lens.z0 / S), Z1 = Math.ceil(lens.z1 / S);
+  for (let Z = Z0; Z < Z1; Z++) for (let X = X0; X < X1; X++) {
+    const x = (X + 0.5) * S, z = (Z + 0.5) * S;
+    if (!lens.test(x, z)) continue;
+    const t = ((x - lens.a[0]) * lens.ux + (z - lens.a[1]) * lens.uz) / lens.L, d = (x - lens.a[0]) * -lens.uz + (z - lens.a[1]) * lens.ux;
+    const bin = Math.max(0, Math.min(NB - 1, Math.floor((t + (noise2(d * 9, t * 4) - 0.5) * 0.08) * NB))), side = d < (noise2(t * 12, 7) - 0.5) * 0.1 ? 0 : 1;
+    const pc = pieces[bin * 2 + side];
+    for (let y = -3; y <= -1; y++) pc.w.set(X, y, Z, floorColor(A, X, y, Z, -1 - y, MAT.STONE, 10));
+    pc.n++; pc.sx += x; pc.sz += z;
+  }
+  const rig = st.bakeRig;
+  pieces.forEach((pc, k) => {
+    if (!pc.n) return;
+    const res = meshWorld(pc.w, { light: rig, skip: new Set(), bottomAbove: -1e9 });
+    const m = worldMeshes(res, 1.6);
+    const cx = pc.sx / pc.n, cz = pc.sz / pc.n;
+    for (const c of m.children) c.geometry.translate(-cx, 0, -cz);
+    m.position.set(cx, 0, cz);
+    const t = ((cx - lens.a[0]) * lens.ux + (cz - lens.a[1]) * lens.uz) / lens.L;
+    m.userData = { home: V(cx, 0, cz), side: k & 1 ? 1 : -1, t, spin: ((k * 13) % 7 - 3) * 0.12, fall: Math.abs(t - 0.5) < 0.32 ? 1 : 0.25 };
+    g.add(m); pc.mesh = m;
+  });
+  const slabs = pieces.filter((p) => p.mesh).map((p) => p.mesh);
+  const nrm = V(-lens.uz, 0, lens.ux), a = crack.a, b = crack.b;
+  // glowing crack lines across the slabs (before they part)
+  const N = 26, pos = [], idx = [];
+  for (let i = 0; i <= N; i++) { const t = i / N, j = (Math.sin(t * 23.1) + Math.sin(t * 11.7)) * 0.05; const p = a.clone().lerp(b, t).addScaledVector(nrm, j); pos.push(p.x, 0.014, p.z, p.x, 0.014, p.z); }
   for (let i = 0; i < N; i++) { const q = i * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx);
   const base = pos.slice();
   const glowM = new THREE.MeshBasicMaterial({ color: new THREE.Color(A.glow).multiplyScalar(2.2), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
-  const gash = new THREE.Mesh(geo, glowM); gash.renderOrder = 6; gash.layers.set(LAYER_FX); g.add(gash);
-  const pit = new THREE.Mesh(new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x050308, fog: false }));
-  pit.position.copy(crack.center).setY(0.008); pit.scale.set(0.001, 1, 0.001); g.add(pit);
-  // broken flagstone slabs along both lips (voxel-ish boxes in the floor colours)
-  const slabs = [];
-  const slabMat = new THREE.MeshLambertMaterial({ color: new THREE.Color('#665462') });
-  for (let i = 0; i < 8; i++) for (const s of [-1, 1]) {
-    const t = (i + 0.5) / 8, w = 0.22 + ((i * 7 + (s > 0 ? 3 : 0)) % 5) * 0.03;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(len / 8 * 0.95, 0.08, w), slabMat);
-    const p = a.clone().lerp(b, t).addScaledVector(nrm, s * (w / 2 + 0.02));
-    m.position.set(p.x, 0.0, p.z); m.rotation.y = -Math.atan2(dir.z, dir.x);
-    m.userData = { home: p.clone(), side: s, t, w, spin: ((i * 13) % 7 - 3) * 0.1 };
-    g.add(m); slabs.push(m);
-  }
-  const light = new THREE.PointLight(new THREE.Color(A.glow), 0, 4, 1.3); light.position.copy(crack.center).setY(0.2); g.add(light);
-  st.lights.push(light);
+  const gash = new THREE.Mesh(geo, glowM); gash.renderOrder = 6; gash.layers.set(LAYER_FX); gash.visible = false; g.add(gash);
+  // light from the depths (for the figure climbing out) and on the slabs' undersides
+  const light = new THREE.PointLight(new THREE.Color(A.glow), 0, 5, 1.2); light.position.copy(crack.center).setY(-1.0); g.add(light);
+  const lip = new THREE.PointLight(new THREE.Color(A.glow), 0, 3.2, 1.4); lip.position.copy(crack.center).setY(0.35); g.add(lip);
+  st.lights.push(light, lip);
   st.crackK = 0;
   st.crackOpen = (k) => {
     k = Math.max(0, Math.min(1, k));
-    st.crackK = k; g.visible = k > 0;
-    const wd = 0.015 + k * 0.32, p = geo.attributes.position;
-    for (let i = 0; i <= N; i++) { const t = i / N, taper = Math.sin(t * Math.PI) ** 0.6, jw = wd * taper * (0.7 + 0.3 * Math.sin(t * 37)); p.setXYZ(i * 2, base[i * 6] + nrm.x * jw, 0.012, base[i * 6 + 2] + nrm.z * jw); p.setXYZ(i * 2 + 1, base[i * 6 + 3] - nrm.x * jw, 0.012, base[i * 6 + 5] - nrm.z * jw); }
+    st.crackK = k;
+    // 0 → 0.35: hairline cracks glow and widen, slabs shiver
+    const k1 = Math.min(1, k / 0.35), k2 = Math.max(0, (k - 0.35) / 0.65);
+    gash.visible = k > 0 && k < 0.85;
+    const wd = 0.004 + k1 * 0.045, p = geo.attributes.position;
+    for (let i = 0; i <= N; i++) { const t = i / N, taper = Math.sin(t * Math.PI) ** 0.6, jw = wd * taper * (0.7 + 0.3 * Math.sin(t * 37)); p.setXYZ(i * 2, base[i * 6] + nrm.x * jw, 0.014, base[i * 6 + 2] + nrm.z * jw); p.setXYZ(i * 2 + 1, base[i * 6 + 3] - nrm.x * jw, 0.014, base[i * 6 + 5] - nrm.z * jw); }
     p.needsUpdate = true;
-    glowM.opacity = Math.min(1, k * 3);
-    const pk = Math.max(0, (k - 0.45) / 0.55);
-    pit.scale.set(0.001 + pk * len * 0.36, 1, 0.001 + pk * 0.55);
-    pit.rotation.y = -Math.atan2(dir.z, dir.x);
-    light.intensity = k * 3.5;
-    for (const m of slabs) { const u = m.userData, kk = Math.max(0, Math.min(1, k * 1.6 - Math.abs(u.t - 0.5))); m.position.copy(u.home).addScaledVector(nrm, u.side * kk * 0.35); m.position.y = kk * 0.06 - kk * kk * 0.05; m.rotation.z = u.side * kk * 0.5; m.rotation.x = u.spin * kk; }
-    if (k > 0.02 && k < 1 && rnd.chance(0.5)) { const t = rnd.float(0.1, 0.9), q = a.clone().lerp(b, t); st.P.alpha.emit({ pos: [q.x, 0.05, q.z], vel: [rnd.float(-0.3, 0.3), rnd.float(0.4, 1.2), rnd.float(-0.3, 0.3)], spread: 0.1, life: [0.6, 1.2], size: [1, 2], gravity: -6, color: ['#665462', '#84707a', '#3a3036'], alpha: 0.95 }); st.P.add.emit({ pos: [q.x, 0.05, q.z], vel: [0, rnd.float(0.4, 1.0), 0], spread: 0.15, life: [0.8, 1.6], size: 1, color: [A.glow, '#e0fff0'], glow: 3, swirl: 0.6 }); }
+    glowM.opacity = Math.min(1, k1 * 1.5) * (1 - Math.max(0, (k - 0.6) / 0.25));
+    // 0.35 → 1: the slabs part along the lips, the middle ones tumble into the pit
+    for (const m of slabs) {
+      const u = m.userData, e = Math.max(0, Math.min(1, k2 * 1.4 - Math.abs(u.t - 0.5) * 0.6));
+      const shiver = k1 < 1 && k > 0 ? (Math.sin(performance.now() * 0.05 + u.t * 40) * 0.004) : 0;
+      m.position.copy(u.home).addScaledVector(nrm, u.side * e * 0.22);
+      m.position.y = shiver + (e > 0 ? -(e * e) * 2.3 * u.fall + e * 0.04 : 0);
+      m.rotation.set(u.spin * e * 2, 0, 0);
+      m.rotateOnWorldAxis(V(lens.ux, 0, lens.uz), u.side * e * (1.1 + u.fall * 0.8));
+      m.visible = m.position.y > -2.3;
+    }
+    light.intensity = k * 4.5; lip.intensity = k1 * 1.6;
+    if (k > 0.02 && k < 1 && rnd.chance(0.6)) {
+      const t = rnd.float(0.1, 0.9), q = a.clone().lerp(b, t);
+      st.P.alpha.emit({ pos: [q.x, 0.04, q.z], vel: [rnd.float(-0.3, 0.3), rnd.float(0.4, 1.2), rnd.float(-0.3, 0.3)], spread: 0.1, life: [0.6, 1.2], size: [1, 2], gravity: -6, color: ['#665462', '#84707a', '#3a3036'], alpha: 0.95 });
+      st.P.add.emit({ pos: [q.x, k2 > 0 ? -0.4 : 0.04, q.z], vel: [0, rnd.float(0.5, 1.3), 0], spread: 0.15, life: [0.8, 1.8], size: [1, 2], color: [A.glow, '#e0fff0', '#c8a0ff'], glow: 3, swirl: 0.6 });
+    }
   };
+  st.crackOpen(0);
 }
 
 /** Rest nook of the delve (third-person camp scene): fire, pot, anvil, seats for the hero + 3 friends + Pip. */
@@ -318,7 +368,7 @@ export function buildCampsite(Stage, act = 0) {
   P.lamp(0, 0.75, 0, '#ffa040', 6, 1.8);
   // seats: hero (front-left), three friends around the back, Pip by the fire
   const seats = [[-1.45, 0.45, 'z'], [-0.95, -1.2, 'x'], [0.95, -1.2, 'x'], [1.5, 0.45, 'z']];
-  seats.forEach(([sx, sz, ax], k) => P.op(sx - 0.8, sx + 0.8, sz - 0.8, sz + 0.8, (w) => (ax === 'z' ? logZ(w, vx(sx), 0, vx(sz), 24, 3.4, k) : PR.logSeat(w, vx(sx), 0, vx(sz), 24, 3.4, k))));
+  seats.forEach(([sx, sz, ax], k) => P.op(sx - 0.8, sx + 0.8, sz - 0.8, sz + 0.8, (w) => (ax === 'z' ? logZ(w, vx(sx), 0, vx(sz), 22, 2.25, k) : PR.logSeat(w, vx(sx), 0, vx(sz), 22, 2.25, k))));
   P.op(1.8, 3.4, 1.0, 2.2, (w) => PR.anvil(w, vx(2.6), 0, vx(1.6)));
   P.op(-3.4, -1.8, 1.0, 2.6, (w) => { PR.bedroll(w, vx(-2.9), 0, vx(1.5), PR.CLOTH.salmon, 1); PR.sack(w, vx(-2.2), 0, vx(2.4), 1, PR.CLOTH.cream, [C(A.ore[0]), C(A.ore[1])]); });
   if (act === 1) { P.water(-4.3, -2.5, -2.8, -1.0, -0.06); P.op(-4.3, -2.5, -2.8, -1, (w) => crystalCluster(w, vx(-3.6), -6, vx(-2.1), 26, A.crystal, 4, 5)); P.lamp(-3.4, 0.5, -1.9, A.crystal, 3, 1.2); }
@@ -339,7 +389,7 @@ export function buildCampsite(Stage, act = 0) {
   st.ambient(['dust', 'motes']);
   st.focus.set(0, 1.2, -0.4); st.spread.set(3.5, 1.6, 2.5);
   const At = st.anchors;
-  At.seats = seats.map(([sx, sz]) => ({ pos: V(sx, 0.27, sz), rotY: Math.atan2(-sx, -sz), height: 0.27 }));
+  At.seats = seats.map(([sx, sz]) => ({ pos: V(sx, 0.18, sz), rotY: Math.atan2(-sx, -sz), height: 0.18 }));
   Object.assign(At, { fire: V(0, 0, 0), pot: V(0, 0.55, 0), anvil: V(2.6, 0.68, 1.6), pet: V(0.55, 0, 0.95), hero: At.seats[0], center: V(0, 0.6, -0.3) });
   st.cams = { main: { pos: [0.2, 1.9, 4.2], look: [0, 0.45, -0.5], fov: 44 }, pot: { pos: [0.9, 1.2, 1.3], look: [0, 0.55, 0], fov: 40 }, anvil: { pos: [1.4, 1.3, 3.0], look: [2.6, 0.7, 1.6], fov: 40 } };
   st.camera = { ...st.cams.main };

@@ -172,18 +172,21 @@ export function campAnchors(st) {
     seats[id] = { pos: V(pos.x, 0, pos.z), facing, height: s ? (s.height ?? s.h ?? pos.y ?? 0.3) : 0.3 };
   }
   const near = (id, dx, dz) => { const s = seats[id].pos; return V(s.x + dx, 0, s.z + dz); };
-  const exit = v3(A.exitTunnel) || v3(A.mineEntrance) || V(-2.6, 0, -3.4);
+  const ex = A.exitTunnel && A.exitTunnel.pos ? A.exitTunnel : null; // campmenu: { pos, mouth, deep, path }
+  const exit = (ex ? v3(ex.pos) : v3(A.exitTunnel)) || v3(A.mineEntrance) || V(-2.6, 0, -3.4);
   return {
     fire, seats,
     pot: v3(A.pot) || fire.clone().setY(0.45),
     chest: v3(A.chest) || V(-2.4, 0, -1.6),
     petBed: v3(A.petBed) || fire.clone().add(V(0.9, 0, 1.35)),
-    medusaRise: v3(A.medusaRise) || fire.clone().add(V(0, 0, -2.0)),
+    medusaRise: v3(A.medusaRise) || (A.crack && A.crack.center ? v3(A.crack.center) : null) || fire.clone().add(V(0, 0, -2.0)),
     exitTunnel: V(exit.x, 0, exit.z),
-    exitDeep: v3(A.mineDeep) ? V(A.mineDeep.x, 0, A.mineDeep.z) : V(exit.x, 0, exit.z - 2.4),
+    exitDeep: ex && ex.deep ? V(ex.deep.x, 0, ex.deep.z) : v3(A.mineDeep) ? V(A.mineDeep.x, 0, A.mineDeep.z) : V(exit.x, 0, exit.z - 2.4),
+    exitPath: ex && ex.path ? ex.path : null,
     sacks: (A.sacks && (Array.isArray(A.sacks) ? A.sacks : [A.sacks]).map(v3)) || [V(-1.7, 0, -2.4)],
     crate: v3(A.crate) || V(3.6, 0, -1.6),
-    lantern: v3(A.lantern) || near('bran', 1.4, -0.6).setY(1.4),
+    lantern: v3(A.lantern) || null,
+    mapCrate: v3(A.mapCrate) || null,
     books: v3(A.books) || near('elio', 0.5, -0.4),
     crack: A.crack || null,
     cams: A.cams || st.cams || null,

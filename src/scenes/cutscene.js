@@ -633,18 +633,21 @@ SCRIPTS.intro = (c) => {
   // the crew in their seats, doing their evening things
   const crew = {};
   const ROUT = { durgan: ['stir', 'sit'], bran: ['polish', 'sit'], elio: ['read', 'sit'], clover: ['count', 'sit'] };
+  // whoever cooks stands at the pot: if the hero is Durgan, Bran takes his spot and Durgan takes Bran's log
+  const seatOf = Object.fromEntries(CHARACTER_ORDER.map((id) => [id, id]));
+  if (who === 'durgan') { seatOf.durgan = 'bran'; seatOf.bran = 'durgan'; }
   for (const id of CHARACTER_ORDER) {
-    const st = C.seats[id];
+    const st = C.seats[seatOf[id]];
     const ch = c.char(id, 'camp', st.pos.clone(), st.facing, 'idle');
-    ch.setSeated && ch.setSeated(true, st.height);
-    c.act(ch, id === who ? ['sit'] : ROUT[id], { loop: true });
+    ch.setSeated && ch.setSeated(st.height > 0.05, st.height);
+    c.act(ch, id === who ? ['sit', 'idle'] : id === cook ? ['stir', 'sit'] : ROUT[id], { loop: true });
     c.settle(ch, 20);
     crew[id] = ch;
   }
   const hero = crew[who], K = crew[cook];
   const friendIds = CHARACTER_ORDER.filter((id) => id !== who);
   const friends = friendIds.map((id) => crew[id]);
-  const hs = C.seats[who].pos.clone();
+  const hs = C.seats[seatOf[who]].pos.clone();
   const outH = hs.clone().sub(F).setY(0);
   if (outH.lengthSq() < 1e-4) outH.set(0, 0, 1);
   outH.normalize();
@@ -685,8 +688,9 @@ SCRIPTS.intro = (c) => {
   const crackPts = myCrack ? myCrack.pts : [rise.clone().addScaledVector(sideV, -1.2), rise, rise.clone().addScaledVector(sideV, 1.2)];
   const crackLight = c.light('camp', 'point', '#5affb0', 0, rise.clone().setY(0.3), { dist: 8, decay: 1.15, fl: 0.18, sp: 6 });
   const beams = [-1, -0.3, 0.45, 1].map((k, i) => { const b = c.add(beam(4.2, 0.03, 0.35 + (i % 2) * 0.12, '#7affc0', 0, 1.6), 'camp'); aimBeam(b, rise.clone().addScaledVector(sideV, k * 1.2).setY(-0.1), rise.clone().addScaledVector(sideV, k * 1.7).setY(4.0)); return b; });
-  const med = c.medusa('camp', rise.clone().setY(-2.8), faceTo(rise, hs));
+  const med = c.medusa('camp', rise.clone(), faceTo(rise, hs));
   med.group.visible = false;
+  c.freeze(med);
   // three heralds, one for each friend, and the one that turns on you
   const heralds = friends.map((f, i) => {
     const id = HERALD_ORDER[i], H = HERALDS[id];
@@ -721,7 +725,7 @@ SCRIPTS.intro = (c) => {
           [0.9, (c) => { c.sfx('ladle'); bowl.visible = true; bowl.position.copy(C.pot).setY(C.pot.y + 0.35); }],
           [2.0, (c) => {
             const p0 = bowl.position.clone();
-            flight = c.tween(1.6, (k) => { const p1 = handOf(hero); bowl.position.lerpVectors(p0, p1, k); bowl.position.y += Math.sin(k * Math.PI) * 0.4; bowl.rotation.y = k * 3; }, 'inOutSine', () => { hero.hold(bowl, 'right'); });
+            flight = c.tween(1.6, (k) => { const p1 = handOf(hero); bowl.position.lerpVectors(p0, p1, k); bowl.position.y += Math.sin(k * Math.PI) * 0.4; bowl.rotation.y = k * 3; }, 'inOutSine', () => { bowl.visible = false; c.act(hero, ['sitEat', 'drink', 'cheer'], { loop: true }); });
           }],
         ] },
       // 3. the hero drinks: really good
@@ -729,7 +733,7 @@ SCRIPTS.intro = (c) => {
         cam: { pos: (c, k) => headOf(hero).addScaledVector(hcam, 1.3 - k * 0.15).add(V(0, 0.08, 0)), look: (c) => headOf(hero).add(V(0, -0.12, 0)), fov: 30 },
         enter: (c) => { c.act(K, ['cheer', 'laugh'], {}); },
         at: [
-          [0.6, (c) => { if (bowl.parent !== (hero.rig && hero.rig.mountR)) hero.hold(bowl, 'right'); c.act(hero, ['drink', 'sitEat', 'cheer'], { loop: true }); c.sfx('slurp'); }],
+          [0.6, (c) => { bowl.visible = false; c.act(hero, ['drink', 'sitEat', 'cheer'], { loop: true }); c.sfx('slurp'); }],
           [1.7, (c) => { c.sfx('swallow'); }],
           [2.0, (c) => {
             c.sfx('yum'); hero.setExpression && hero.setExpression('happy');
@@ -742,8 +746,7 @@ SCRIPTS.intro = (c) => {
       { dur: 2.8,
         cam: { pos: [at(hs, hcam, 2.0, 1.1, 0.5), at(hs, hcam, 1.8, 1.05, 0.35)], look: [headOf(hero).add(V(0, -0.25, 0)), headOf(hero).add(V(0, -0.2, 0))], fov: 34 },
         enter: (c) => {
-          hero.hold(null, 'right');
-          c.setOf('camp').add(bowl); bowl.position.copy(hs.clone().addScaledVector(hcam, 0.35)).setY(0.02); bowl.visible = true;
+          bowl.position.copy(hs.clone().addScaledVector(hcam, 0.35)).setY(0.02); bowl.rotation.set(0, 0, 0); bowl.visible = true;
           c.act(hero, ['sitTalk', 'sit'], { loop: true });
           c.say(hero, 'Found this in a creepy old chest…', 2.6, 0.2);
           for (const f of friends) f.lookAt && f.lookAt(headOf(hero));
@@ -800,9 +803,11 @@ SCRIPTS.intro = (c) => {
               const land = hs.clone().lerp(F, 0.45).setY(0.03);
               flight = c.tween(1.0, (k) => { totem.position.lerpVectors(p0, land, k); totem.position.y += Math.sin(k * Math.PI) * 0.55; totem.rotation.x = k * 7; totem.rotation.z = k * 3; }, 'linear', () => {
                 c.sfx('statue_break'); c.shake(0.3); c.haptic(40);
-                let pcs = null;
-                try { pcs = totem.shatter && totem.shatter(); } catch (e) { pcs = null; }
-                if (pcs && pcs.length) c.shards.push(...pcs); else totem.visible = false;
+                let sh = null;
+                try { sh = totem.shatter && totem.shatter(c.setOf('camp'), 0.02); } catch (e) { sh = null; }
+                if (sh && sh.update) c.tick((dt) => { sh.update(dt); return !sh.done; }, true);
+                else if (Array.isArray(sh) && sh.length) c.shards.push(...sh);
+                totem.visible = false;
                 c.debris.spawn({ pos: [land.x, 0.1, land.z], count: 18, colors: ['#a8b0a0', '#7a8a78', '#c8d0c0', '#5a8a6a'], speed: 1.6, up: 1.4, spread: 0.2, gravity: 9, floor: 0.02, life: 2, scale: [0.4, 1] });
                 c.P.add.emit({ pos: [land.x, 0.12, land.z], radial: [0.4, 1.6], radialUp: 1.4, count: 40, life: [0.4, 1.2], size: [1, 2], color: ['#7affc0', '#e0fff0'], glow: 3, gravity: 1 });
               });
@@ -831,10 +836,9 @@ SCRIPTS.intro = (c) => {
       { dur: 6.0,
         cam: { pos: [at(rise, aud, 2.6, 0.3, 0.7), at(rise, aud, 2.4, 0.35, 0.5)], look: [rise.clone().setY(0.4), rise.clone().setY(1.9)], fov: [38, 44], roll: [0.05, -0.03] },
         enter: (c) => {
-          med.group.visible = true;
-          c.act(med, ['crawlOut', 'intro', 'idle'], {});
+          med.group.visible = true; c.freeze(med, false);
           med.setEyes && med.setEyes(0);
-          c.tween(3.6, (k) => (med.group.position.y = -2.8 + 2.8 * k), 'outCubic');
+          if (!c.act(med, ['crawlOut'], {})) { med.group.position.y = -2.8; c.tween(3.6, (k) => (med.group.position.y = -2.8 + 2.8 * k), 'outCubic'); c.act(med, ['intro', 'idle'], {}); }
           c.sfx('medusa_whisper', { vol: 0.8 }); c.later(1.2, () => c.sfx('hiss', { vol: 0.6 }));
           c.later(3.7, () => { c.act(med, ['rise', 'roar', 'idle'], {}); c.sfx('rumble', { vol: 0.6 }); c.shake(0.3); c.postTo({ bloom: 1.35 }, 0.4); });
           c.every(26, () => c.P.alpha.emit({ pos: [rise.x + rnd(-1, 1), 0.05, rise.z + rnd(-0.4, 0.4)], vel: [0, rnd(0.2, 0.5), 0], spread: 0.1, life: [1.6, 2.8], size: [2, 3], sizeEnd: 5, color: ['#1a3a2a', '#2a4a3a'], alpha: 0.4, fadeIn: 0.3, swirl: 0.6 }));
@@ -842,15 +846,16 @@ SCRIPTS.intro = (c) => {
       // 11. she thanks you, and spares you
       { dur: 5.2,
         cam: { pos: (c, k) => headOf(hero).addScaledVector(flat(hs).sub(rise).normalize(), 1.0).addScaledVector(sideV, 0.5 - k * 0.1).add(V(0, 0.32, 0)), look: (c) => med.group.position.clone().add(V(0, (med.height || 2.2) * 0.8, 0)), fov: 40 },
-        enter: (c) => { c.act(med, ['talk', 'idle'], { loop: true }); c.sfx('medusa_whisper', { vol: 0.6 }); },
+        enter: (c) => { c.act(med, ['cover', 'talk', 'idle'], { loop: true }); c.sfx('medusa_whisper', { vol: 0.6 }); c.later(2.2, () => c.act(med, ['talk', 'cover'], { loop: true })); },
         at: [[2.4, (c) => c.caption('Thank you, little forger. You, I will spare.', 0, 2.8)]],
         cap: 'Free… at last.', capAt: 0.3, capDur: 2.0 },
       // 12. her eyes open
       { dur: 2.2,
         cam: { pos: (c, k) => med.group.position.clone().add(V(0, (med.height || 2.2) * 0.85, 0)).addScaledVector(flat(hs).sub(rise).normalize(), 1.4 - k * 0.3), look: (c) => med.group.position.clone().add(V(0, (med.height || 2.2) * 0.85, 0)), fov: [30, 26] },
         enter: (c) => {
-          c.act(med, ['gaze', 'special', 'roar'], {});
-          c.later(0.5, () => { c.tween(0.7, (k) => med.setEyes && med.setEyes(k), 'inQuad'); c.sfx('gaze'); });
+          const own = c.act(med, ['gaze'], {});
+          if (!own) c.act(med, ['special', 'roar'], {});
+          c.later(0.5, () => { if (!own) c.tween(0.7, (k) => med.setEyes && med.setEyes(k), 'inQuad'); c.sfx('gaze'); });
           c.later(1.4, () => { c.flash(0.6, '#7affc0'); c.punch = 5; c.haptic(50); });
         } },
       // 13. the gaze rolls over the camp: friends, ore and your weapon turn to stone
@@ -918,7 +923,11 @@ SCRIPTS.intro = (c) => {
           });
           c.later(2.6, () => {
             c.act(hero, ['carry', 'idle'], { loop: true });
-            if (pip) { c.act(pip, ['carried', 'idle'], { loop: true }); hero.hold(pip.group, 'left'); }
+            if (pip) {
+              c.act(pip, ['carried', 'idle'], { loop: true });
+              if (hero.carryPoint) { hero.carryPoint.add(pip.group); pip.group.position.set(0, 0, 0); pip.group.rotation.set(0, 0, 0); }
+              else hero.hold(pip.group, 'left');
+            }
             c.sfx('pip_whine', { vol: 0.6 });
           });
           c.postTo({ saturation: 0.9 }, 1);
@@ -927,9 +936,9 @@ SCRIPTS.intro = (c) => {
       { dur: 3.6,
         cam: { pos: (c, k) => hero.group.position.clone().addScaledVector(flat(hero.group.position).sub(flat(C.exitTunnel)).normalize(), 2.4 - k * 0.6).add(V(0, 1.1, 0)).addScaledVector(sideV, 0.6), look: (c) => hero.group.position.clone().add(V(0, 0.55, 0)), fov: 42, smooth: 5 },
         enter: (c) => {
-          c.act(hero, ['run'], { loop: true });
-          c.walk(hero, C.exitTunnel, 1.5, { anim: 'run', then: false });
-          c.later(1.5, () => c.walk(hero, C.exitDeep, 1.2, { anim: 'run', then: false }));
+          const runA = c.act(hero, ['carryRun', 'run'], { loop: true }) || 'run';
+          c.walk(hero, C.exitTunnel, 1.5, { anim: runA, then: false });
+          c.later(1.5, () => c.walk(hero, C.exitDeep, 1.2, { anim: runA, then: false }));
           c.later(0.4, () => { c.act(snake, ['attack', 'special'], {}); c.sfx('dodge'); c.sfx('hiss', { vol: 0.7 }); c.shake(0.2); });
           c.every(6, () => c.sfx('footstep_stone', { vol: 0.5 }));
           c.later(2.5, () => { c.fadeTo = 1; c.fadeRate = 1.2; });
@@ -1139,7 +1148,7 @@ SCRIPTS.boss = (c, p) => {
         enter: (c) => {
           mon.group.visible = true; c.freeze(mon, false);
           c.act(mon, isMedusa ? ['rise', 'intro', 'idle'] : ['intro', 'idle'], {});
-          if (isMedusa) { mon.setEyes && mon.setEyes(0); c.walk(mon, spawn, 2.4, { anim: 'idle', then: false, face: false }); }
+          if (isMedusa) { mon.setEyes && mon.setEyes(0); c.tween(2.4, (k) => mon.group.position.lerpVectors(start, spawn, k), 'outCubic'); }
           else c.tween(from === 'ceiling' ? 1.0 : 1.6, (k) => mon.group.position.lerpVectors(start, spawn, k), from === 'ceiling' ? 'inQuad' : 'outCubic', () => { if (from === 'ceiling') { c.shake(0.6); c.sfx('drop'); c.debris.spawn({ pos: [spawn.x, 0.1, spawn.z], count: 20, colors: ['#4a4054', '#6a6070'], speed: 2, up: 2, spread: 0.4, gravity: 9, floor: 0.02, life: 1.6 }); } });
           c.sfx(isMedusa ? 'medusa_whisper' : 'boss_intro', { vol: 0.8 });
           if (from === 'water') c.sfx('splash');
@@ -1181,7 +1190,7 @@ SCRIPTS.rescue = (c, p) => {
   c.act(friend, ['cower', 'block'], { loop: true }); c.settle(friend, 20);
   if (friend.setStone) friend.setStone(1); else c.petrify(friend, 0.01, { sound: false });
   c.freeze(friend);
-  const pip = c.pet('lair', hpos.clone().addScaledVector(sideR, 0.45), faceTo(hpos, fpos), 'sit');
+  const pip = c.pet('lair', hpos.clone().addScaledVector(sideR, 0.45), faceTo(hpos, fpos), 'idle');
   if (pip) c.act(pip, ['sniff', 'idle'], { loop: true });
   const toF = flat(fpos).sub(hpos).normalize();
   const camSide = sideR.clone();
@@ -1265,11 +1274,9 @@ SCRIPTS.ending = (c) => {
   const F = flat(C.fire);
   const M = C.cams && C.cams.menu ? v3(C.cams.menu.pos) : C.camera && C.camera.pos ? v3(C.camera.pos) : F.clone().add(V(0, 2.5, 6));
   const aud = V(M.x - F.x, 0, M.z - F.z).normalize();
-  const crewC = CHARACTER_ORDER.map((id) => { const st = C.seats[id]; const ch = c.char(id, 'camp', st.pos.clone(), st.facing, 'idle'); ch.setSeated && ch.setSeated(true, st.height); c.act(ch, id === 'durgan' ? ['stir', 'sit'] : ['drink', 'sitEat', 'sit'], { loop: true }); return ch; });
+  const crewC = CHARACTER_ORDER.map((id) => { const st = C.seats[id]; const ch = c.char(id, 'camp', st.pos.clone(), st.facing, 'idle'); ch.setSeated && ch.setSeated(st.height > 0.05, st.height); c.act(ch, id === 'durgan' ? ['stir', 'sit'] : ['drink', 'sitEat', 'sit'], { loop: true }); return ch; });
   const pipC = c.pet('camp', C.petBed.clone(), faceTo(C.petBed, F), 'happy');
   if (pipC) c.act(pipC, ['happy', 'idle'], { loop: true });
-  const bowls = crewC.map((ch) => { const b = buildBowl(); ch.hold(b, 'right'); return b; });
-  void bowls;
   return {
     music: 'ending', hold: true,
     shots: [
@@ -1279,7 +1286,10 @@ SCRIPTS.ending = (c) => {
           c.envTo(0.7, 0.75, 0.72, 1, 0);
           c.later(1.2, () => {
             c.sfx('stone_shatter'); c.sfx('rumble', { vol: 0.6 }); c.shake(0.5);
-            med.group.visible = false;
+            let sh = null;
+            try { sh = med.shatter && med.shatter(); } catch (e) { sh = null; }
+            if (sh && sh.update) c.tick((dt) => { sh.update(dt); return !sh.done; }, true); // (her pieces live in her group)
+            else med.group.visible = false;
             c.debris.spawn({ pos: [mpos.x, 1.0, mpos.z], count: 60, colors: ['#8a8696', '#6a6676', '#a8a4b4', '#5a8a6a'], speed: 2.4, up: 2, spread: 0.6, gravity: 9, floor: 0.02, life: 2.6, scale: [0.5, 1.2] });
             c.P.add.emit({ pos: [mpos.x, 1.2, mpos.z], radial: [0.8, 3], radialUp: 1.5, count: 90, life: [0.8, 2], size: [1, 3], color: ['#7affc0', '#e0fff0', '#ffffff'], glow: 3, drag: 1.2 });
             c.envTo(1, 0.96, 0.9, 1, 2.4); c.flash(0.4, '#e0fff0');
@@ -1324,7 +1334,7 @@ SCRIPTS.fallen = (c, p) => {
         enter: (c) => {
           c.sfx('defeat_sting'); c.sfx('heartbeat'); c.later(1.4, () => c.sfx('heartbeat', { vol: 0.8 }));
           c.postTo({ saturation: 0.6, vignette: 0.7, exposure: 0.9 }, 2.5);
-          if (pip) { c.act(pip, ['whine', 'sniff', 'idle'], { loop: true }); c.later(0.8, () => c.sfx('pip_whine')); }
+          if (pip) { c.act(pip, ['sniff'], { loop: true }); c.later(0.8, () => c.sfx('pip_whine')); }
         } },
       { dur: 4.6,
         cam: { pos: [down(1)], look: [flat(stand).addScaledVector(fwd, 1.2).setY(0.05)], fov: [60, 54], roll: 0.1, sway: 0.006 },
