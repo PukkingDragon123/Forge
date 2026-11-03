@@ -7,6 +7,7 @@ import { buildWeaponMesh, crackWeapon } from '../models/weapons3d.js';
 import { toon } from '../gfx/materials.js';
 import { buildFPArms } from '../models/fp_arms.js';
 import { buildPet } from '../models/pet.js';
+import { buildMedusa, buildMedusaTotem } from '../models/medusa.js';
 
 export class CharPreview extends Scene {
   enter() {
@@ -41,6 +42,7 @@ export class CharPreview extends Scene {
       if (q.get('anim2')) c.loopAnim = q.get('anim2');
       if (q.get('expr')) c.setExpression(q.get('expr'), { hold: 999 });
       if (q.get('rot')) c.group.rotation.y = +q.get('rot');
+      if (q.get('carry')) { const pip = buildPet(); pip.play('carried'); pip.group.scale.setScalar(0.8); pip.group.rotation.y = 0; c.carryPoint.add(pip.group); c.pip = pip; }
       return c;
     });
     if (q.get('exprs')) { // expression sheet: one explorer, every face in a row
@@ -57,6 +59,28 @@ export class CharPreview extends Scene {
       this.chars = ex;
       const h = { bran: 1.53, elio: 1.21, durgan: 0.9, clover: 1.12 }[id];
       this.rig.cut([0, h + 0.03, 4.4], [0, h - 0.02, 0], 34);
+    }
+    if (q.get('medusa')) { // ?medusa=idle:0,gaze:1.2,attack:0.25 (state:seconds), &stone=0,0.5 &totem=1
+      this.chars.forEach((c) => c.setVisible(false));
+      const list = q.get('medusa').split(','), st = (q.get('stone') || '0').split(',').map(Number);
+      this.meds = list.map((e, i) => {
+        const [state, tt] = e.split(':');
+        const m = buildMedusa();
+        m.group.position.set((i - (list.length - 1) / 2) * 1.9, 0, 0);
+        m.group.rotation.y = +(q.get('prot') ?? 0.35);
+        scene.add(m.group);
+        m.play(state);
+        for (let k = 0, n = Math.round(+(tt || 0) * 60); k < n; k++) m.update(1 / 60);
+        if (st[i % st.length]) m.setStone(st[i % st.length]);
+        if (q.get('cracks')) { m.stoneCracks(); for (let c = 0; c < +q.get('cracks'); c++) m.crackAt(c); for (let k = 0; k < 20; k++) m.update(1 / 60); }
+        return m;
+      });
+      if (q.get('totem')) { const tt = buildMedusaTotem(); tt.position.set(1.2, 0, 0.8); tt.scale.setScalar(+(q.get('tscale') || 1)); scene.add(tt); this.totem = tt; }
+      const n = list.length;
+      this.rig.cut([0, 1.25, 3.2 + n * 1.3], [0, 1.0, 0], 34);
+      if (q.get('cam') === 'face') this.rig.cut([0, 1.8, 1.6], [0, 1.72, 0], 30);
+      if (q.get('cam') === 'totem') this.rig.cut([1.2, 0.2, 1.35], [1.2, 0.12, 0.8], 30);
+      this.chars = [];
     }
     if (q.get('pet')) { // pet sheet: ?pet=idle,walk,sleep… one Pip per anim
       this.chars.forEach((c) => c.setVisible(false));
@@ -121,7 +145,7 @@ export class CharPreview extends Scene {
     else if (q.get('weapons') && q.get('wcam')) { const x = -2.6 + +q.get('wcam') * 0.65; this.rig.cut([x, 0.75, 1.5], [x, 0.72, 0], 34); }
     else if (q.get('weapons')) this.rig.cut([0, 0.75, 3.4], [0, 0.72, 0], 40);
     else if (q.get('poses')) { const n = this.posed.length, sp = +(q.get('sp') || 0.95); this.rig.cut([0, 0.62, 1.0 + n * sp * 1.0], [0, 0.42, 0], 34); }
-    else if (cam === 'wide' && !this.pets) this.rig.cut([0, 0.85, 4.8], [0, 0.55, 0], 34);
+    else if (cam === 'wide' && !this.pets && !this.meds) this.rig.cut([0, 0.85, 4.8], [0, 0.55, 0], 34);
     this.ff = +(q.get('t') || 0);
   }
   /** First-person arms bench: ?fp=bran&hold=weapon&anim=swing&t=0.2&freeze=1 */
@@ -162,11 +186,12 @@ export class CharPreview extends Scene {
       this.fire.tick(this.time);
       return;
     }
+    if (this.meds) { if (!this.q.get('freeze')) this.meds.forEach((m) => m.update(dt)); this.fire.tick(this.time); this.rig.update(dt); return; }
     if (this.pets) { if (!this.q.get('freeze')) this.pets.forEach((p) => p.update(dt)); this.rig.update(dt); return; }
     if (this.ff > 0) { const n = Math.ceil(this.ff / 0.016); for (let i = 0; i < n; i++) this.chars.forEach((c) => c.update(0.016)); this.ff = 0; }
     this.fire.tick(this.time);
     if (this.q.get('walk')) this.chars.forEach((c, i) => { c.group.position.x += dt * 0.8; if (c.group.position.x > 3) c.group.position.x -= 5.6; });
-    if (!this.q.get('freeze')) this.chars.forEach((c) => c.update(dt));
+    if (!this.q.get('freeze')) this.chars.forEach((c) => { c.update(dt); if (c.pip) c.pip.update(dt); });
     if (this.weapons) this.weapons.forEach((w, i) => { w.rotation.y = this.q.get('spin') === '0' ? 0.45 : this.time * 0.6 + i; });
     this.rig.update(dt);
   }

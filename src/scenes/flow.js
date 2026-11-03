@@ -158,3 +158,6 @@ export function openMap(game, opts = {}) {
 export const arrive = (game, node) => enterNode(game, node);
 export const finish = (game, opts) => finishNode(game, opts);
 export const travel = (game, edge, node) => enterNode(game, node);
+
+// handy for automated tests (like window.FORGLITE)
+if (typeof window !== 'undefined') window.FORGLITE_FLOW = { startRun, enterNode, finishNode, gameOver, victory, openBag, openMap, monsterFor, friendOf };

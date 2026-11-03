@@ -247,6 +247,7 @@ export class EventScene extends Scene {
       au && au.play('hiss'); fp.shake(0.5);
       if (this.pet) this.pet.play('bark');
       const elite = out.elite || out.fight === 'elite';
+      run.flags.lastMonster = id;
       this.after(1.0, () => game.go('combat', { node: this.node, monster: id, elite, ambush: true }, { transition: 'none' }));
       return;
     }

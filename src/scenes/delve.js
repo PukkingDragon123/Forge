@@ -7,6 +7,7 @@ import { Scene } from '../core/game.js';
 import { makeFPWorld, stageToWorld } from '../gfx/fpcam.js';
 import { buildFPSafe, makePet, eye, seedOf, worldCurve, EYE } from './fp_kit.js';
 import { enterNode, openMap, openBag, actOf, actDef } from './flow.js';
+import * as ENC from '../systems/encounters.js';
 import { clamp, ease } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
 
@@ -80,15 +81,8 @@ export class DelveScene extends Scene {
       c.look = eye(stageToWorld(this.junction, deep));
       c.hover = 0;
     }
-    // stand where every tunnel mouth is in view (the dome's centre is too close to the side tunnels)
-    const standL = this.frameStand(J);
-    this.standL = standL;
-    this.jpath = null;
-    if (standL) {
-      const enterL = J.enter ? J.enter.clone() : new THREE.Vector3(0, EYE, 0.3);
-      this.jpath = worldCurve(this.junction, new THREE.CatmullRomCurve3([enterL, enterL.clone().lerp(standL, 0.5), standL]));
-    } else if (J.path && J.path.getPointAt) this.jpath = worldCurve(this.junction, J.path);
-    this.stand = eye(stageToWorld(this.junction, standL || J.stand || new THREE.Vector3(0, EYE, -2)));
+    this.jpath = J.path && J.path.getPointAt ? worldCurve(this.junction, J.path) : null;
+    this.stand = eye(stageToWorld(this.junction, J.stand || new THREE.Vector3(0, EYE, -2)));
     // ---- start walking
     const p0 = path.getPointAt(0);
     const t0 = path.getTangentAt(0);
@@ -127,9 +121,11 @@ export class DelveScene extends Scene {
     this.state = 'arrive';
     const go = this.jpath ? fp.moveAlong(this.jpath, Math.max(1.2, this.jpath.getLength() / 1.5), { ease: 'walk', look: this.centerLook(), lookWeight: 0.5 }) : fp.walkTo(this.stand, 1.1, { ease: 'walk', look: this.centerLook() });
     go.then(() => {
-      fp.lookTo(this.centerLook(), 0.8);
-      fp.setFov(70, 2.5);
+      fp.setFov(68, 2.5);
       this.state = 'choose';
+      this.scan = this.choices.length > 1 ? this.choices.map((c) => c.mouth).concat([this.centerLook()]) : [this.centerLook()];
+      this.scanT = 0;
+      this.lookHome = this.centerLook();
       this.chooseT = 0;
       const a = fp.arms; a && a.play && a.play('idle');
       // Pip sits and sniffs toward the most interesting tunnel (ore and chests smell best)
@@ -137,18 +133,6 @@ export class DelveScene extends Scene {
       this.sniff = best;
       if (this.pet) { this.pet.play('sniff'); this.game.audio && this.game.audio.play('pip_sniff', { vol: 0.5 }); }
     });
-  }
-  /** Junction-local point between the entrance and the dome's stand where all mouths fit in ±43°. */
-  frameStand(J) {
-    if (!J.stand || !J.exits || !J.exits.length) return null;
-    const a = (J.enter || new THREE.Vector3(0, EYE, 0.3)).clone(), b = J.stand.clone();
-    const mouths = J.exits.map((e) => e.mouth || e.pos).filter(Boolean);
-    for (let k = 1; k >= 0; k -= 0.1) {
-      const p = a.clone().lerp(b, k);
-      const ok = mouths.every((m) => Math.abs(Math.atan2(m.x - p.x, -(m.z - p.z))) < 0.75);
-      if (ok) return p.setY(EYE);
-    }
-    return a.clone().lerp(b, 0.15).setY(EYE);
   }
   centerLook() {
     const v = new THREE.Vector3();
@@ -189,17 +173,17 @@ export class DelveScene extends Scene {
     const pts = [here, here.clone().lerp(c.mouth, 0.5), c.mouth, c.mouth.clone().lerp(c.look, 0.5), c.look];
     const curve = new THREE.CatmullRomCurve3(pts);
     const dur = curve.getLength() / 1.7;
-    const isAmbush = c.node.type === 'monster' && this.rng.chance(0.2);
+    const ambushId = ENC.ambushFor ? ENC.ambushFor(this.run, c.node) : (c.node.type === 'monster' && this.rng.chance(0.2) ? 'adder' : null);
     if (this.pet) this.pet.play('walk');
     this.goT = 0; this.goDur = dur + 0.35;
     this.after(0.35, () => {
       fp.moveAlong(curve, dur, { ease: 'walk', look: 'tangent' });
-      if (isAmbush) this.after(dur * 0.48, () => this.startAmbush(c));
+      if (ambushId) this.after(dur * 0.48, () => this.startAmbush(c, ambushId));
       else this.after(dur * 0.72, () => enterNode(game, c.node));
     });
   }
   /** Something lunges out of the dark before you reach the room. */
-  startAmbush(c) {
+  startAmbush(c, monsterId) {
     const fp = this.fp, game = this.game;
     this.ambush = { t: 0, c };
     fp.path = null;
@@ -209,7 +193,7 @@ export class DelveScene extends Scene {
     game.hitStop && game.hitStop(0.12);
     if (this.pet) this.pet.play('bark');
     game.renderer && game.renderer.doFlash && game.renderer.doFlash(0.35, [1, 0.3, 0.25]);
-    this.after(0.75, () => enterNode(game, c.node, { ambush: true }));
+    this.after(0.75, () => enterNode(game, c.node, { ambush: monsterId || true }));
   }
 
   // ------------------------------------------------------------------ timers
@@ -265,7 +249,7 @@ export class DelveScene extends Scene {
     // hold anywhere (or Space) to hurry along; drag to glance around
     const hurry = walking && !this.game.overlays.length && (inp.down || inp.action('strike') || inp.action('fast'));
     fp.setHurry(hurry ? 3 : 1);
-    if (this.state !== 'choose' || !this.overChoice) fp.dragLook(inp);
+    if (this.state !== 'choose' || !this.overChoice) fp.dragLook(inp, this.state === 'choose' ? { maxYaw: 1.0, maxPitch: 0.3 } : {});
     // story beats while walking out
     if (this.state === 'walk') {
       const k = fp.progress;
@@ -285,6 +269,16 @@ export class DelveScene extends Scene {
     if (this.title) this.title.t += dt;
     if (this.state === 'choose') {
       this.chooseT += dt;
+      // on arrival the head turns to each tunnel in turn, then settles ahead; later it follows the
+      // tunnel you hover (and comes back when you don't)
+      if (this.scan && this.scan.length) {
+        this.scanT -= dt;
+        if (this.scanT <= 0) { const v = this.scan.shift(); fp.lookTo(v, 0.55); this.scanT = this.scan.length ? 0.8 : 0; }
+      } else {
+        const hov = this.choices.find((c) => c.hover > 0.5);
+        if (hov && this.lookingAt !== hov) { this.lookingAt = hov; fp.lookTo(hov.mouth.clone().lerp(this.lookHome, 0.25), 0.6); }
+        if (!hov && this.lookingAt) { this.idleT = (this.idleT || 0) + dt; if (this.idleT > 0.7) { this.lookingAt = null; this.idleT = 0; fp.lookTo(this.lookHome, 0.8); } } else this.idleT = 0;
+      }
       if (this.choices.length === 1 && this.chooseT > 1.1 && !this.mapOpen) this.choose(this.choices[0]);
       if (!this.mapOpen && !this.game.overlays.length) {
         const keyFor = { '-1': ['ArrowLeft', 'KeyA'], 0: ['ArrowUp', 'KeyW'], 1: ['ArrowRight', 'KeyD'] };
@@ -376,8 +370,11 @@ export class DelveScene extends Scene {
     // tunnel mouths: tap one to walk in; a chalk mark says what the old map says lies beyond
     for (const c of this.choices) {
       const p = fp.project(c.mouth, ui.w, ui.h);
-      if (p.behind) continue;
-      const x = clamp(p.x, 60, ui.w - 60), y = clamp(p.y, 70, ui.h - 90);
+      // a tunnel out of view pins its marker to that edge of the screen, with an arrow
+      let off = 0;
+      if (p.behind) { off = c.dir || 1; } else if (p.x < 36) off = -1; else if (p.x > ui.w - 36) off = 1;
+      const x = off ? (off < 0 ? 52 : ui.w - 52) : clamp(p.x, 60, ui.w - 60), y = off ? Math.round(ui.h * 0.45) : clamp(p.y, 70, ui.h - 90);
+      if (off) ui.icon(off < 0 ? 'arrowL' : 'arrowR', x + (off < 0 ? -34 : 34), y, { center: true, scale: 2, alpha: 0.7 + 0.3 * Math.sin(this.time * 4) });
       const h = ui.hit('mouth' + c.dir, x - 64, y - 70, 128, 140, { sound: false });
       if (h.hover) this.overChoice = true;
       c.hover += ((h.hover ? 1 : 0) - c.hover) * 0.25;

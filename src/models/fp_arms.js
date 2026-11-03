@@ -106,9 +106,9 @@ const DESIGN = {
     fore(P) {
       const C = PAL.elio;
       // a bell sleeve flaring to the wrist: gold trim, teal lining, a cuff of glowing marks
-      P.loft(-nF, 2, (y) => { const t = clamp(-y / nF, 0, 1); return [6.6 + t * t * 5.6, 6.6 + t * t * 5.6]; }, clothT(C.robe, 9), { shell: 1.6 });
+      P.loft(-nF, 2, (y) => { const t = clamp(-y / nF, 0, 1); return [6.2 + t * t * 3.4, 6.2 + t * t * 3.4]; }, clothT(C.robe, 9), { shell: 1.6 });
       P.paint((x, y, z) => {
-        const t = clamp(-y / nF, 0, 1), r = 6.6 + t * t * 5.6, d = Math.hypot(x + 0.5, z + 0.5);
+        const t = clamp(-y / nF, 0, 1), r = 6.2 + t * t * 3.4, d = Math.hypot(x + 0.5, z + 0.5);
         if (y <= -nF + 1) return C.trim[(x + z) & 1 ? 2 : 3];
         if (y <= -nF + 3 && d > r - 0.9) return C.trim[2];
         if (d < r - 1) return C.lining[2];
@@ -255,7 +255,7 @@ const BASE = {
   pickaxe: { R: H([0.12, -0.24, -0.31], [-0.55, 0.15, 0.95]), L: null }, // the left hand rides the haft
   map: { R: H([0.135, -0.16, -0.42], [0.15, -0.2, -0.1], true), L: H([-0.135, -0.16, -0.42], [0.15, 0.2, 0.1], true) },
   torch: { R: H([0.17, -0.3, -0.31], [0.3, 0, -0.15]), L: H([-0.16, -0.24, -0.34], [-0.25, 0, 0.1]) },
-  pet: { R: H([0.17, -0.3, -0.31], [0.3, 0, -0.15]), L: H([-0.06, -0.3, -0.28], [0.5, 0.6, 1.2], true) },
+  pet: { R: H([0.17, -0.3, -0.31], [0.3, 0, -0.15]), L: H([-0.08, -0.33, -0.3], [0.5, 0.6, 1.2], true) },
 };
 /** Blend two poses (b may be partial). */
 function mixPose(a, b, t) {
@@ -442,9 +442,10 @@ export class FPArms {
       this.side.L.mount.add(this.item);
     } else if (kind === 'pet') {
       if (!this.pet) this.pet = obj && obj.group ? obj : buildPet();
-      this.pet.group.scale.setScalar(0.62);
-      this.pet.group.position.set(-0.07, -0.25 + OFF.y, -0.33);
-      this.pet.group.rotation.set(-0.15, 0.55, 0);
+      // Pip rides in the crook of the left arm looking ahead (his back and ears to us, the snout in profile)
+      this.pet.group.scale.setScalar(0.55);
+      this.pet.group.position.set(-0.12, -0.31 + OFF.y, -0.37);
+      this.pet.group.rotation.set(0.1, Math.PI - 0.55, 0);
       this.root.add(this.pet.group);
       this.pet.play && this.pet.play('carried');
     }

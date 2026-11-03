@@ -1119,6 +1119,8 @@ SCRIPTS.boss = (c, p) => {
   const mh = (mon.height || 2.2) + (mon.fly || 0);
   const glow = H.glow || '#9aff6a';
   const rim = c.light('lair', 'point', glow, 0, spawn.clone().add(V(0, mh * 0.9, 0)).addScaledVector(fwd, 1.6), { dist: 9, decay: 1.2, fl: 0.1 });
+  // a key from our side so the boss reads in its dark lair
+  const key = c.light('lair', 'point', '#ffd8b0', 0, flat(stand).lerp(spawn, 0.45).add(V(0, Math.max(1.6, mh * 0.8), 0)).addScaledVector(sideB, 0.8), { dist: 9, decay: 1.1, fl: 0.06 });
   return {
     music: isMedusa ? 'medusa' : 'boss',
     shots: [
@@ -1141,7 +1143,7 @@ SCRIPTS.boss = (c, p) => {
           else c.tween(from === 'ceiling' ? 1.0 : 1.6, (k) => mon.group.position.lerpVectors(start, spawn, k), from === 'ceiling' ? 'inQuad' : 'outCubic', () => { if (from === 'ceiling') { c.shake(0.6); c.sfx('drop'); c.debris.spawn({ pos: [spawn.x, 0.1, spawn.z], count: 20, colors: ['#4a4054', '#6a6070'], speed: 2, up: 2, spread: 0.4, gravity: 9, floor: 0.02, life: 1.6 }); } });
           c.sfx(isMedusa ? 'medusa_whisper' : 'boss_intro', { vol: 0.8 });
           if (from === 'water') c.sfx('splash');
-          c.lightTo(rim, 5, 1.6);
+          c.lightTo(rim, 5, 1.6); c.lightTo(key, 3.2, 1.2);
           if (isMedusa) c.caption('You came back, little forger.', 1.0, 2.4);
         } },
       // the roar
@@ -1150,7 +1152,7 @@ SCRIPTS.boss = (c, p) => {
         at: [[0.25, (c) => {
           c.act(mon, isMedusa ? ['laugh', 'roar'] : ['roar', 'special'], {});
           c.sfx(isMedusa ? 'medusa_laugh' : 'herald_roar'); c.punch = 6; c.haptic(60);
-          c.burst(spawn.clone().setY(mh * 0.7), glow, { size: 0.8, r: 5, flash: 0.3, shake: 0.9, n: 60 });
+          c.burst(spawn.clone().setY(mh * 0.7), glow, { size: 0.35, r: 3, flash: 0.25, shake: 0.9, n: 60 });
           if (arms) arms.play('guard');
         }]] },
       // name card, and the fight begins
@@ -1190,7 +1192,7 @@ SCRIPTS.rescue = (c, p) => {
     shots: [
       // the statue starts to crack
       { set: 'lair', dur: 3.6, dip: 0.8,
-        cam: { pos: [fpos.clone().addScaledVector(toF, -2.4).addScaledVector(camSide, 1.0).setY(1.1), fpos.clone().addScaledVector(toF, -2.0).addScaledVector(camSide, 0.8).setY(1.0)], look: [fpos.clone().setY(0.6), fpos.clone().setY(0.65)], fov: 38 },
+        cam: { pos: [flat(fpos).addScaledVector(toF, -1.8).addScaledVector(camSide, 2.0).setY(1.2), flat(fpos).addScaledVector(toF, -1.5).addScaledVector(camSide, 1.7).setY(1.1)], look: [fpos.clone().setY(fpos.y + 0.6), fpos.clone().setY(fpos.y + 0.65)], fov: 38 },
         enter: (c) => {
           c.envTo(0.75, 0.75, 0.8, 0.8, 0);
           [0.5, 1.4, 2.3, 3.0].forEach((t, i) => c.later(t, () => {
@@ -1204,7 +1206,7 @@ SCRIPTS.rescue = (c, p) => {
         } },
       // the stone bursts: your friend steps out
       { dur: 3.0,
-        cam: { pos: [fpos.clone().addScaledVector(toF, -1.6).addScaledVector(camSide, 0.6).setY(0.9), fpos.clone().addScaledVector(toF, -1.4).addScaledVector(camSide, 0.5).setY(0.85)], look: [fpos.clone().setY(0.55)], fov: 34 },
+        cam: { pos: [flat(fpos).addScaledVector(toF, -2.3).addScaledVector(camSide, 1.2).setY(1.15), flat(fpos).addScaledVector(toF, -2.1).addScaledVector(camSide, 1.0).setY(1.1)], look: [fpos.clone().setY(fpos.y + 0.7)], fov: 38 },
         enter: (c) => {
           c.flash(0.5, '#fff0c0'); c.shake(0.35); c.sfx('stone_shatter'); c.sfx('rescue'); c.haptic(50);
           c.unpetrify(friend, 0.6);
@@ -1229,7 +1231,7 @@ SCRIPTS.rescue = (c, p) => {
         } },
       // a word, and they're with you
       { dur: 3.6,
-        cam: { pos: (c) => fh().addScaledVector(toF, -1.4).addScaledVector(camSide, 0.6).add(V(0, 0.1, 0)), look: (c) => fh().add(V(0, -0.15, 0)), fov: 32 },
+        cam: { pos: (c) => fh().addScaledVector(toF, -1.1).addScaledVector(camSide, 1.0).add(V(0, 0.1, 0)), look: (c) => fh().add(V(0, -0.15, 0)), fov: 32 },
         enter: (c) => {
           c.act(friend, ['cheer', 'idle'], {});
           c.say(friend, RESCUE_LINE[fid] || 'Thank you!', 2.4, 0.2);

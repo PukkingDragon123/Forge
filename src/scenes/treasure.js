@@ -27,7 +27,9 @@ export class TreasureScene extends Scene {
     this.node = params.node || run.map.nodes[run.map.current];
     this.rng = run.rng.fork ? run.rng.fork('chest' + (this.node ? this.node.id : 0)) : run.rng;
     this.kind = this.rng.chance(0.1) ? 'gold' : this.rng.pick(KIND_BY_ACT[Math.min(3, act)]);
-    this.ambush = !params.noAmbush && this.rng.chance(0.2);
+    // systems/encounters.js decides (once per node) whether this chest is a mimic
+    this.ambush = params.mimic !== undefined ? !!params.mimic : !params.noAmbush && this.rng.chance(0.2);
+    this.ambushMonster = params.monster || null;
     this.stage = buildFPSafe('chamber', act, { seed: seedOf(run.seed, act, this.node && this.node.id, 'chest'), kind: 'treasure' });
     this.world = makeFPWorld([this.stage], { charId: run.char });
     const fp = (this.fp = this.world.fp);
@@ -76,7 +78,8 @@ export class TreasureScene extends Scene {
         au && au.play('hiss', { vol: 1 }); au && au.play('snake_rattle');
         fp.shake(0.8); fp.punch([0, 0, 1], 0.1);
         game.renderer && game.renderer.doFlash && game.renderer.doFlash(0.3, [1, 0.3, 0.25]);
-        const id = MON.MONSTERS && MON.MONSTERS.mimic && this.rng.chance(0.5) ? 'mimic' : monsterFor(this.run, 'monster');
+        const id = this.ambushMonster || (MON.MONSTERS && MON.MONSTERS.mimic ? 'mimic' : monsterFor(this.run, 'monster'));
+        this.run.flags.lastMonster = id;
         this.after(0.5, () => game.go('combat', { node: this.node, monster: id, ambush: true }, { transition: 'none' }));
       });
       return;

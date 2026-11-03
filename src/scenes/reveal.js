@@ -1,6 +1,7 @@
 // Item reveal overlay: the screen sinks into darkness, the find spins as a glowing voxel model in a
 // shaft of light with slow god-rays behind it, and its tarot card flips in beside it with a rarity
-// fanfare. Params: { item: {id, q, uid} | weapon {bp, ids, ...}, onDone }. Tap / click to continue.
+// fanfare. Params: { item: {id, q, uid} | weapon {bp, ids, ...}, onDone, auto? (seconds, or true = 2.6) }.
+// Tap / click to continue.
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
 import { buildOreModel } from '../models/ore_voxel.js';
@@ -45,6 +46,7 @@ export class RevealOverlay extends Scene {
   enter(p = {}) {
     this.item = p.item || { id: 'ruby', q: 2, uid: 0 };
     this.onDone = p.onDone;
+    this.auto = p.auto ? (typeof p.auto === 'number' ? p.auto : 2.6) : 0;
     this.isWeapon = !!this.item.bp;
     const m = MATERIALS[this.item.id];
     this.rar = this.isWeapon ? (this.item.grade >= 4 ? 'legendary' : this.item.grade >= 3 ? 'epic' : this.item.grade >= 2 ? 'rare' : 'uncommon') : (m && RARITY[m.rarity] ? m.rarity : 'common');
@@ -113,6 +115,7 @@ export class RevealOverlay extends Scene {
       this.closing = Math.min(1, this.closing + dt * 3.5);
       if (this.closing >= 1) { this.game.popOverlay(this); this.onDone && this.onDone(); }
     } else if (t > 1.0 && (inp.pressed || inp.actionPressed('confirm') || inp.actionPressed('back'))) { inp.consume(); this.closing = 0.01; }
+    else if (this.auto && t > this.auto) this.closing = 0.01; // autoplay / timed reveals move on by themselves
   }
 
   draw(ui) {

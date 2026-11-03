@@ -18,6 +18,7 @@ import { buildCampMenu, buildCampsite } from './stage_vox_camp.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const pal = (a) => a.map(C);
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 
 // ---------------------------------------------------------------------------- colour stories
 const REG = [
@@ -322,13 +323,18 @@ export class Stage {
   update(dt, t) {
     this.t = t ?? this.t + dt;
     tickProps(this.group, dt, this.t, this.P);
+    let camQ = null;
+    if (this._cam && this.flames.some((f) => f.billboard)) {
+      // billboards face the camera even when the whole stage is turned (first-person pieces are placed end to end)
+      camQ = this.group.getWorldQuaternion(_q1).invert().multiply(this._cam.getWorldQuaternion(_q2));
+    }
     for (const f of this.flames) {
       f.acc += dt * (9 + f.speed);
       f.mesh.material.map.offset.x = (Math.floor(f.acc) % f.N) / f.N;
       const n = noise2(this.t * 7, f.seed);
       f.mesh.scale.set(f.sx * (0.92 + n * 0.16), f.sy * (0.88 + n * 0.24), 1);
       if (f.light) f.light.intensity = f.base * (0.75 + n * 0.5);
-      if (f.billboard && this._cam) f.mesh.quaternion.copy(this._cam.quaternion);
+      if (f.billboard && camQ) f.mesh.quaternion.copy(camQ);
     }
     if (this.pool.length && this.sources.length) {
       const fx = this.focus.x;

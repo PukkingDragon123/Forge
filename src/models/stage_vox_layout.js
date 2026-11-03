@@ -83,8 +83,8 @@ export const ACT_STYLES = [
     flowers: ['#ffffff', '#ffb4d8', '#d8b4ff', '#fff2a0'],
     sand: pal(['#3a463e', '#4e5e52', '#667a68']),
     water: '#5ae0c0', waterDeep: '#0e3a32', lava: null,
-    lamp: '#a8ffd8', lamp2: '#ffe8a0', glow: '#7affc8', crystal: '#7affc8', flame: 'green',
-    amb: '#2e4a5a', sky: '#b0e8d8', key: '#f0fff0', keyI: 0.14,
+    lamp: '#fff0c8', lamp2: '#a8ffd8', glow: '#7affc8', crystal: '#7affc8', flame: 'green',
+    amb: '#3e4268', sky: '#e8ecd8', key: '#fff4e0', keyI: 0.16,
     fog: '#0c1814', bg: '#060c0a', fogD: 0.07,
     ore: ['#7affc8', '#e8e0c8', '#ffd27a'], oreGlow: '#e8fff4', marble: true,
     wallMix: 0.12,
@@ -308,7 +308,7 @@ export function paintShell(L, A, w) {
           const b = brickAt(alongW, y);
           if (b.mortar) continue;
           const hb = h3(b.id, b.row, 13, SEED);
-          const proud = style[i] === 1 ? (noise2(alongW * 0.15, y * 0.12) > 0.55 ? 2 : noise2(alongW * 0.15, y * 0.12) > 0.4 ? 1 : 0) : hb > 0.86 ? 2 : hb > 0.6 ? 1 : 0;
+          const proud = style[i] === 1 ? (noise2(alongW * 0.15, y * 0.12) > 0.58 ? 2 : noise2(alongW * 0.15, y * 0.12) > 0.45 ? 1 : 0) : hb > 0.9 ? 2 : hb > 0.74 ? 1 : 0;
           if (proud >= nw) w.set(X, y, Z, wallColor(A, X, y, Z, alongW, style[i], top));
         }
       }
@@ -620,13 +620,13 @@ export class Piece {
     }
     // the rest streams in, nearest first, within a frame budget; far tiles of long pieces are freed
     const budget = opts.budgetMs ?? 7;
-    const focus = new THREE.Vector3();
+    const focus = new THREE.Vector3(), fwd = new THREE.Vector3();
     st.stream = {
       want() {},
       pending() { return all.some((t) => { const h = tiles.get(t.tx + ',' + t.tz); return !h || h.partial; }); },
       step() {
         const cam = st._cam;
-        if (cam) focus.copy(cam.position); else if (st.focusPos) focus.copy(st.focusPos);
+        if (cam) { cam.getWorldDirection(fwd); cam.getWorldPosition(focus).addScaledVector(fwd, opts.ahead ?? 4); st.group.updateWorldMatrix(true, false); st.group.worldToLocal(focus); } else if (st.focusPos) focus.copy(st.focusPos);
         const Rr = cam || st.focusPos ? R : 1e9; // nobody to stream around: build it all, nearest first
         const t0 = performance.now();
         const need = (t) => { const h = tiles.get(t.tx + ',' + t.tz); return !h || h.partial; };
@@ -640,6 +640,7 @@ export class Piece {
       all() { for (const t of all) ensure(t); },
     };
     if (!opts.stream && !sync) st.stream.all();
+    st.firstFrame = { ...timing, faces: st.faces || 0, tiles: tiles.size }; // what the first frame cost
     // flames (billboards), water and lava sheets, waterfalls, light shafts
     for (const f of this.flames) st.addFlame(f.x, f.y, f.z, f.scale, f.palette, false, true);
     for (const wv of this.waters) addSheet(st, wv);
@@ -653,9 +654,12 @@ export class Piece {
     st.lightSources = this.lights;
     const carry = new THREE.PointLight(new THREE.Color(A.lamp), opts.carryLight ?? 1.2, 6, 1.4);
     st.group.add(carry); st.lights.push(carry); st.carryLight = carry;
+    const camLocal = new THREE.Vector3();
     st.updaters.push((dt, t) => {
       const cam = st._cam; if (!cam) return;
-      const p = cam.position;
+      // everything here lives in the piece's own frame (pieces are placed end to end and turned)
+      st.group.updateWorldMatrix(true, false);
+      const p = st.group.worldToLocal(cam.getWorldPosition(camLocal));
       carry.position.set(p.x, p.y - 0.15, p.z);
       const near = this.lights.slice().sort((a, b) => ((a.x - p.x) ** 2 + (a.z - p.z) ** 2) - ((b.x - p.x) ** 2 + (b.z - p.z) ** 2)).slice(0, pool.length);
       pool.forEach((l, i) => { const s = near[i]; if (!s) { l.intensity = 0; return; } l.position.set(s.x, s.y, s.z); l.color.set(s.c); l.distance = s.r; l.intensity = s.i * (0.85 + 0.15 * noise2(t * 5, i)); });

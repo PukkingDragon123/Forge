@@ -196,7 +196,7 @@ function tunnel(act, seed, o) {
 }
 
 // ---------------------------------------------------------------------------- junction
-const JR = 3.1, JCZ = -3.4, STUB = 9.2;
+const JR = 3.1, JCZ = -3.4, STUB = 7.2;
 function junction(act, seed, o) {
   const A = ACT_STYLES[act], r = rngOf(seed * 11 + act * 71 + 5);
   const exits = (o.exits && o.exits.length ? o.exits : [-1, 0, 1]).filter((d, i, a) => a.indexOf(d) === i);
@@ -252,7 +252,7 @@ function junction(act, seed, o) {
   const exitsA = stubs.map((s) => ({ dir: s.dir, yaw: s.yaw, pos: V(s.mouth.x, EYE, s.mouth.z), mouth: s.mouth.clone(), look: s.deep.clone(), end: { pos: s.end.clone(), yaw: s.yaw } }));
   const anchors = { stand: V(0, EYE, JCZ + 1.4), center: V(0, 0, JCZ), enter: V(0, EYE, 0.3), look: V(0, EYE, JCZ - 3), exits: exitsA, start: V(0, 0, 0) };
   anchors.path = pathCurve([[0, EYE, 0.3], [0, EYE, -0.8], [0, EYE, JCZ + 1.4]]);
-  return finishPiece(P, 'junction', act, anchors, { stream: false });
+  return finishPiece(P, 'junction', act, anchors, { stream: true, sync: [-JR - 0.5, JR + 0.5, JCZ - JR - 0.5, 0.6] });
 }
 
 // ---------------------------------------------------------------------------- chamber
@@ -261,12 +261,12 @@ function chamber(act, seed, o) {
   const kind = o.kind || 'monster';
   const boss = kind === 'boss', elite = kind === 'elite';
   const style = act === 3 ? 2 : 0;
-  const HW = boss ? 5.6 : elite ? 4.6 : kind === 'vein' ? 3.2 : 4.0;
-  const Z0 = -1.2, Z1 = boss ? -13.6 : elite ? -11.2 : kind === 'vein' ? -8.8 : -10.2;
+  const HW = boss ? 5.2 : elite ? 4.6 : kind === 'vein' ? 3.2 : 4.0;
+  const Z0 = -1.2, Z1 = boss ? -12.6 : elite ? -11.2 : kind === 'vein' ? -8.8 : -10.2;
   const exitLen = 3.2;
   const L = new Layout(-HW - 0.4, HW + 0.4, Z1 - exitLen - 0.6, 0.6);
   const midZ = (Z0 + Z1) / 2, depth = Z0 - Z1;
-  const spring = boss ? 3.7 : elite ? 3.2 : 2.9, rise = boss ? 2.0 : 1.4;
+  const spring = boss ? 3.4 : elite ? 3.1 : 2.9, rise = boss ? 1.7 : 1.3;
   const roomCeil = (x, z) => {
     const dx = Math.abs(x) / HW, dz = Math.abs(z - midZ) / (depth / 2);
     let c = spring + rise * Math.sqrt(Math.max(0, 1 - Math.max(dx, dz * 0.8) ** 2));
@@ -280,7 +280,7 @@ function chamber(act, seed, o) {
   // pillars (left out of the space, so the shell paints them as masonry columns)
   const pillars = [];
   if (kind === 'monster' || elite) for (const sx of [-1, 1]) for (const fz of [0.3, 0.72]) pillars.push({ x: sx * HW * 0.62, z: Z0 - depth * fz, r: 0.36 });
-  if (boss) for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + Math.PI / 8; pillars.push({ x: Math.cos(a) * HW * 0.78, z: midZ + Math.sin(a) * (depth / 2) * 0.78, r: 0.42 }); }
+  if (boss) for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + Math.PI / 6; pillars.push({ x: Math.cos(a) * HW * 0.78, z: midZ + Math.sin(a) * (depth / 2) * 0.78, r: 0.42 }); }
   for (const p of pillars) {
     const xa = Math.floor((p.x - p.r) / S), xb = Math.ceil((p.x + p.r) / S), za = Math.floor((p.z - p.r) / S), zb = Math.ceil((p.z + p.r) / S);
     for (let Z = za; Z < zb; Z++) for (let X = xa; X < xb; X++) if (Math.hypot((X + 0.5) * S - p.x, (Z + 0.5) * S - p.z) < p.r) { const i = L.i(X, Z); if (i >= 0) L.inside[i] = 0; }
@@ -361,7 +361,7 @@ function chamber(act, seed, o) {
     // each herald's lair
     if (act === 0) for (let k = 0; k < 9; k++) { const a = (k / 9) * Math.PI * 2; const x = Math.cos(a) * HW * 0.93, z = midZ + Math.sin(a) * depth * 0.46; P.op(x - 1.5, x + 1.5, z - 1.5, z + 1.5, (w) => { for (let q = 0; q < 3; q++) { let px = vx(x), pz = vx(z); for (let y = 0; y < vx(5); y++) { px -= Math.cos(a) * 0.2 + Math.sin(y * 0.1 + q) * 0.4; pz -= Math.sin(a) * 0.2 + Math.cos(y * 0.1 + q) * 0.4; for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dz * dz <= 4) w.set(Math.round(px + dx), y, Math.round(pz + dz), tone(A.root, 0.3 + h3(dx, y, q, 1) * 0.3)); if (y % 7 === 0) for (let t = 1; t < 5; t++) w.set(Math.round(px + t), y + t, Math.round(pz), y % 14 ? C('#d8d0a0') : tone(A.root, 0.6)); } } }); }
     if (act === 1) for (let k = 0; k < 7; k++) { const a = (k / 7) * Math.PI * 2 + 0.3; const x = Math.cos(a) * HW * 0.5, z = midZ + Math.sin(a) * depth * 0.24; P.op(x - 1, x + 1, z - 1, z + 1, (w) => crystalCluster(w, vx(x), 0, vx(z), 50 + (k % 3) * 20, k & 1 ? A.crystal : A.crystal2, k, 6)); P.lamp(x, 1, z, k & 1 ? A.crystal : A.crystal2, 3, 1.2); }
-    if (act === 2) for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2 + 0.6; const x = Math.cos(a) * HW * 0.82, z = midZ + Math.sin(a) * depth * 0.4; P.op(x - 1.5, x + 1.5, z - 1.5, z + 1.5, (w) => ashTree(w, A, vx(x), 0, vx(z), 120, k + 3)); P.lamp(x, 3.5, z, '#ff8a2a', 3.5, 1); }
+    if (act === 2) for (let k = 0; k < 3; k++) { const a = (k / 3) * Math.PI * 2 + 0.6; const x = Math.cos(a) * HW * 0.82, z = midZ + Math.sin(a) * depth * 0.4; P.op(x - 1.5, x + 1.5, z - 1.5, z + 1.5, (w) => ashTree(w, A, vx(x), 0, vx(z), 96, k + 3)); P.lamp(x, 3.5, z, '#ff8a2a', 3.5, 1); }
     if (act === 3) for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + 0.25; const x = Math.cos(a) * HW * 0.62, z = midZ + Math.sin(a) * depth * 0.31; if (Math.hypot(x - fx, z - fz) < 1.6 || Math.abs(x) < 1.2 && z > midZ) continue; P.op(x - 1, x + 1, z - 1, z + 1, (w) => statue(w, A, vx(x), 0, vx(z), k + 5, Math.atan2(-x, -(z - midZ)) + Math.PI, k % 3)); }
     clear.push({ x: fx, z: fz, r: 1.2 }, { x: 0, z: midZ, r: 2.6 });
   }
@@ -381,7 +381,7 @@ function chamber(act, seed, o) {
   anchors.exitPath = pathCurve([[anchors.stand.x, EYE, anchors.stand.z], [0, EYE, spawnZ + 0.8], [HW * 0.3, EYE, spawnZ - 1.4], [0, EYE, Z1 + 0.4], [0, EYE, Z1 - exitLen + 0.4]]);
   anchors.pillars = pillars.map((p) => ({ pos: V(p.x, 0, p.z), r: p.r }));
   anchors.size = { hw: HW, z0: Z0, z1: Z1, ceil: spring + rise };
-  return finishPiece(P, 'chamber', act, anchors, { stream: true, sync: [-HW - 1, HW + 1, Z0 - depth * 0.8, 1] });
+  return finishPiece(P, 'chamber', act, anchors, { stream: true, sync: [-HW - 1, HW + 1, Z0 - depth * 0.5, 1] });
 }
 
 // ---------------------------------------------------------------------------- chase (intro escape)
@@ -392,14 +392,14 @@ function chase(act, seed, o) {
   const pts = [[0, 0.6], [0, -8]];
   let ang = 0, x = 0, z = -8;
   const add = (len, turn = 0) => { const steps = Math.max(1, Math.round(len / 1.2)); for (let k = 0; k < steps; k++) { ang += turn / steps; x += -Math.sin(ang) * (len / steps); z += -Math.cos(ang) * (len / steps); pts.push([x, z]); } };
-  add(6, 0.9); add(8, 0);      // turn left, straight → the gap
+  add(5, 0.9); add(6, 0);      // turn left, straight → the gap
   const gapAt = pts.length - 3;
-  add(6, -1.4); add(6, 0);     // turn right → the root curtain
+  add(5, -1.4); add(5, 0);     // turn right → the root curtain
   const rootAt = pts.length - 2;
-  add(5, 0.6);                 // into the ledge hall
-  const ledgeA = pts.length; add(10, 0); const ledgeB = pts.length - 1;
-  add(5, -0.7); add(4, 0);
-  const slideA = pts.length; add(9, 0); const slideB = pts.length - 1;
+  add(4, 0.6);                 // into the ledge hall
+  const ledgeA = pts.length; add(9, 0); const ledgeB = pts.length - 1;
+  add(4, -0.7); add(3, 0);
+  const slideA = pts.length; add(8, 0); const slideB = pts.length - 1;
   // arc-length along the polyline
   const acc = [0];
   for (let k = 1; k < pts.length; k++) acc.push(acc[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
@@ -407,21 +407,26 @@ function chase(act, seed, o) {
   const at = (k) => acc[k] / total;
   const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
   const L = new Layout(Math.min(...xs) - 4.5, Math.max(...xs) + 4.5, Math.min(...zs) - 4.5, Math.max(...zs) + 1);
-  // nearest polyline param for any point
-  const near = (px, pz) => {
-    let best = 1e9, bs = 0, bk = 0;
-    for (let k = 1; k < pts.length; k++) {
-      const [ax, az] = pts[k - 1], [bx, bz] = pts[k], dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz;
+  // distance field to the polyline, rasterised once over the layout grid (segment by segment, locally)
+  const n = L.W * L.D, dF = new Float32Array(n).fill(1e9), sF = new Float32Array(n), kF = new Int16Array(n);
+  const REACH = 3.6;
+  for (let k = 1; k < pts.length; k++) {
+    const [ax, az] = pts[k - 1], [bx, bz] = pts[k], dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz, sl = Math.sqrt(l2);
+    const X0 = Math.max(L.X0, Math.floor((Math.min(ax, bx) - REACH) / S)), X1 = Math.min(L.X1, Math.ceil((Math.max(ax, bx) + REACH) / S));
+    const Z0 = Math.max(L.Z0, Math.floor((Math.min(az, bz) - REACH) / S)), Z1 = Math.min(L.Z1, Math.ceil((Math.max(az, bz) + REACH) / S));
+    for (let Z = Z0; Z < Z1; Z++) for (let X = X0; X < X1; X++) {
+      const px = (X + 0.5) * S, pz = (Z + 0.5) * S;
       const t = clamp(((px - ax) * dx + (pz - az) * dz) / l2);
       const d = Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
-      if (d < best) { best = d; bs = acc[k - 1] + Math.sqrt(l2) * t; bk = k; }
+      const i = (Z - L.Z0) * L.W + (X - L.X0);
+      if (d < dF[i]) { dF[i] = d; sF[i] = (acc[k - 1] + sl * t) / total; kF[i] = k; }
     }
-    return { d: best, s: bs / total, k: bk };
-  };
+  }
+  const near = (px, pz) => { const i = L.i(Math.floor(px / S), Math.floor(pz / S)); return i < 0 ? { d: 1e9, s: 0, k: 1 } : { d: dF[i], s: sF[i], k: kF[i] || 1 }; };
   const sSlideA = at(slideA), sSlideB = at(slideB), sLedgeA = at(ledgeA), sLedgeB = at(ledgeB), sGap = at(gapAt), sRoot = at(rootAt);
   const floorOf = (s) => (s > sSlideA ? -4.2 * clamp((s - sSlideA) / (sSlideB - sSlideA)) ** 1.3 : 0);
-  const hwOf = (s) => (s > sLedgeA - 0.01 && s < sLedgeB + 0.01 ? 3.2 : 1.35 + (noise2(s * 30, 2) - 0.5) * 0.3);
-  L.carve(L.X0 * S, L.X1 * S, L.Z0 * S, L.Z1 * S, (px, pz) => { const n = near(px, pz); return n.d < hwOf(n.s); }, (px, pz) => floorOf(near(px, pz).s), (px, pz) => { const n = near(px, pz); const ledge = n.s > sLedgeA && n.s < sLedgeB; return floorOf(n.s) + (ledge ? 6.5 : vaultH(n.d, hwOf(n.s), n.s * total)); }, MAT.STONE, act === 3 ? 2 : 0);
+  const hwOf = (s) => (s > sLedgeA - 0.01 && s < sLedgeB + 0.01 ? 2.9 : 1.3 + (noise2(s * 30, 2) - 0.5) * 0.3);
+  L.carve(L.X0 * S, L.X1 * S, L.Z0 * S, L.Z1 * S, (px, pz) => { const n = near(px, pz); return n.d < hwOf(n.s); }, (px, pz) => floorOf(near(px, pz).s), (px, pz) => { const n = near(px, pz); const ledge = n.s > sLedgeA && n.s < sLedgeB; return floorOf(n.s) + (ledge ? 4.4 : vaultH(n.d, hwOf(n.s), n.s * total, 2.35, 0.7)); }, MAT.STONE, act === 3 ? 2 : 0);
   // the gap: a chasm across the path
   const gp = pts[gapAt], gp2 = pts[gapAt + 1];
   const gdir = [gp2[0] - gp[0], gp2[1] - gp[1]], gl = Math.hypot(...gdir);
@@ -429,7 +434,7 @@ function chase(act, seed, o) {
   // the ledge hall: a void with a narrow ledge along the left wall (landings at both ends)
   const mL = 1.8 / total;
   const leftOf = (k, px, pz) => { const [ax, az] = pts[k - 1], [bx, bz] = pts[k]; return (bx - ax) * (pz - az) - (bz - az) * (px - ax) < 0; };
-  L.edit(L.X0 * S, L.X1 * S, L.Z0 * S, L.Z1 * S, (px, pz) => { const n = near(px, pz); if (n.s < sLedgeA + mL || n.s > sLedgeB - mL) return false; return !(leftOf(n.k, px, pz) && n.d > 3.2 - 1.0); }, { floor: -6, mat: MAT.VOID });
+  L.edit(L.X0 * S, L.X1 * S, L.Z0 * S, L.Z1 * S, (px, pz) => { const n = near(px, pz); if (n.s < sLedgeA + mL || n.s > sLedgeB - mL) return false; return !(leftOf(n.k, px, pz) && n.d > 2.9 - 1.0); }, { floor: -3.4, mat: MAT.VOID });
   L.finish();
   const P = new Piece(L, A, seed);
   // path for the camera: along the polyline, out onto the ledge, a hop over the gap, the slide
@@ -439,7 +444,7 @@ function chase(act, seed, o) {
     let [px, pz] = pts[k];
     if (s2 > sLedgeA + mL * 0.6 && s2 < sLedgeB - mL * 0.6) {
       const [ax, az] = pts[Math.max(0, k - 1)], [bx, bz] = pts[Math.min(pts.length - 1, k + 1)], dl = Math.hypot(bx - ax, bz - az) || 1;
-      px += ((bz - az) / dl) * 2.7; pz += (-(bx - ax) / dl) * 2.7; // left of the direction of travel
+      px += ((bz - az) / dl) * 2.4; pz += (-(bx - ax) / dl) * 2.4; // left of the direction of travel
     }
     let y = floorOf(s2) + EYE;
     if (k === gapAt || k === gapAt + 1) y += 0.35;
@@ -450,13 +455,14 @@ function chase(act, seed, o) {
   // set-piece dressing: glowing depths in the gap, a curtain of roots, the ledge hall's far wall of falls
   P.op(gp[0] - 2.5, gp[0] + 2.5, gp[1] - 2.5, gp[1] + 2.5, (w) => { for (let k = 0; k < 40; k++) w.set(vx(gp[0] + (r() - 0.5) * 3), vx(-5) + 1, vx(gp[1] + (r() - 0.5) * 3), glowC(A.glow)); });
   P.lamp(gp[0], -3.5, gp[1], A.glow, 4, 1.4);
+  P.lights.push({ x: gp[0], y: -1, z: gp[1], c: A.glow, i: 1.6, r: 4 });
   const rp = pts[rootAt];
   P.op(rp[0] - 2, rp[0] + 2, rp[1] - 2, rp[1] + 2, (w) => { for (let k = 0; k < 26; k++) { const a = k / 25; roots(w, A, vx(rp[0] + (a - 0.5) * 2.6), vx(3.1), vx(rp[1] + (r() - 0.5) * 0.5), 52 + Math.round(r() * 14), k, k % 5 === 0 ? A.glow : null); } });
   const lk = Math.round((ledgeA + ledgeB) / 2), lm = pts[lk], la = pts[lk - 1], ldl = Math.hypot(lm[0] - la[0], lm[1] - la[1]) || 1;
   const rx = -(lm[1] - la[1]) / ldl, rz = (lm[0] - la[0]) / ldl; // right of travel
-  P.lamp(lm[0], -4, lm[1], act === 2 ? '#ff6a1a' : A.glow, 7, 1.3);
-  P.waterfall(lm[0] + rx * 3.0, 6, -5.5, lm[1] + rz * 3.0, 1.4, -rx, -rz);
-  P.shaft(lm[0], 6.5, lm[1], 2.2, 10, '#bcd8ff', 0.3);
+  P.lamp(lm[0], -2.6, lm[1], act === 2 ? '#ff6a1a' : A.glow, 6, 1.3);
+  P.waterfall(lm[0] + rx * 2.75, 4.3, -3.3, lm[1] + rz * 2.75, 0.8, -rx, -rz);
+  P.shaft(lm[0] + rx * 0.8, 4.4, lm[1] + rz * 0.8, 1.6, 7.6, '#bcd8ff', 0.3);
   decorate(P, act, r, L.X0 * S, L.X1 * S, L.Z0 * S, L.Z1 * S, { torches: 5.2, clear: [{ x: gp[0], z: gp[1], r: 1.4 }, { x: rp[0], z: rp[1], r: 1.2 }], banners: 2, roots: 0.6 });
   const end = pts[pts.length - 1];
   const anchors = { path, beats, start: V(0, 0, 0), enter: V(0, EYE, 0.3), look: V(0, EYE, -5), end: { pos: V(end[0], floorOf(1), end[1]), yaw: ang }, length: total };

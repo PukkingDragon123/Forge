@@ -199,11 +199,28 @@ export class CombatScene extends Scene {
     const burrow = (A.spawns || []).find((x) => x && x.from === 'floor');
     const maxD = burrow ? Math.max(2.2, Math.hypot(burrow.pos.x - stand.x, burrow.pos.z - stand.z)) : 6.5;
     const dist = clamp(0.95 + this.mh * 0.6 + this.mw * 0.22 + (this.boss ? 0.6 : 0), 1.45, maxD);
-    if (this.boss && A.boss) this.monHome = A.boss.clone();
+    if (this.boss && A.boss) {
+      // toward the boss mark, but only as far as its size needs (a 2 m gorgon should not be a speck)
+      const toB = A.boss.clone().sub(stand); toB.y = 0;
+      const want = clamp(1.4 + this.mh * 0.85 + this.mw * 0.2, 2.6, toB.length());
+      this.monHome = stand.clone().addScaledVector(toB.normalize(), want);
+    }
     else if (this.fromChest && A.chest) this.monHome = A.chest.clone().addScaledVector(fwd, -0.35);
     else this.monHome = stand.clone().addScaledVector(fwd, dist);
     this.monHome.y = this.floorY + (this.mon.fly || 0);
     this.frozen = false;
+    // a key light from your side and (for big ones) a cool rim behind, so the foe always reads
+    const key = new THREE.PointLight(0xffe2c4, this.boss ? 4 : 2.4, Math.max(4, this.mh * 3.2), 1.6);
+    key.position.copy(this.monHome).addScaledVector(fwd, -Math.min(1.6, 0.6 + this.mh * 0.4)).addScaledVector(this.left, 0.6);
+    key.position.y = this.floorY + Math.max(0.9, this.mh * 0.85);
+    scene.add(key);
+    this.foeKey = key;
+    if (this.boss || this.mh > 1.6) {
+      const rim = new THREE.PointLight(0x9ad0ff, this.boss ? 5 : 3, Math.max(5, this.mh * 3), 1.4);
+      rim.position.copy(this.monHome).addScaledVector(fwd, Math.max(1, this.mw * 0.8)).addScaledVector(this.left, -0.8);
+      rim.position.y = this.floorY + this.mh * 1.05;
+      scene.add(rim);
+    }
 
     if (this.fromChest && A.chest && this.mid !== 'mimic') {
       try {
@@ -649,8 +666,9 @@ export class CombatScene extends Scene {
     // lunge at the camera, then back
     const g = mon.group.position;
     const gap = g.distanceTo(this.stand.clone().setY(g.y));
-    const reach = (mon.reach ?? 0.35) + 0.75;
-    const lunge = clamp(gap - reach, 0, this.boss ? 0.6 : 1.1);
+    // lunge at you, but never so close it fills the whole view
+    const reach = Math.max((mon.reach ?? 0.35) + 0.75, 1.25 + this.mw * 0.3);
+    const lunge = clamp(gap - reach, 0, this.boss ? 0.6 : 0.8);
     if (lunge > 0.03) {
       const to = this.monHome.clone().addScaledVector(this.fwd, -lunge);
       this.tw.to(g, { x: to.x, z: to.z }, 0.13, { ease: 'outQuad' });
@@ -721,7 +739,7 @@ export class CombatScene extends Scene {
       }
       case 'phit': return this.onHeroHit(e);
       case 'pmiss': { this.endTele('miss'); this.sfx('dodge'); this.kick.x = 0.08; return; }
-      case 'pheal': { ui.float(`+${e.amount}`, 34, 22, { color: COLORS.heal, vy: -14, life: 0.8 }); return; }
+      case 'pheal': { ui.float(`+${e.amount}`, 62, 30, { color: COLORS.heal, vy: -14, life: 0.8 }); return; }
       case 'mheal': { const p = this.screen(this.hitWorld()); ui.float(`+${fmt(e.amount)}`, p.x, p.y - 20, { color: COLORS.heal, vy: -16 }); this.sfx('heal', { vol: 0.5 }); return; }
       case 'status': {
         if (e.st === 'stone') { this.stoneHit(e); return; }
@@ -826,10 +844,10 @@ export class CombatScene extends Scene {
 
   onHeroHit(e) {
     const ui = this.game.ui;
-    if (e.dot || e.self) { ui.float(`-${e.dmg}`, 36 + rnd.float(-4, 4), 24, { color: e.dot === 'fire' ? COLORS.fire : e.dot ? COLORS.poison : COLORS.curse, vy: -12, life: 0.7 }); return; }
+    if (e.dot || e.self) { ui.float(`-${e.dmg}`, 62 + rnd.float(-4, 4), 30, { color: e.dot === 'fire' ? COLORS.fire : e.dot ? COLORS.poison : COLORS.curse, vy: -12, life: 0.7 }); return; }
     if (!e.blocked) this.endTele('hit');
     this.heartKick = 1;
-    ui.float(`-${e.dmg}`, 40, 26, { big: true, scale: e.dmg >= 15 ? 3 : 2, top: '#ffd0c0', bottom: '#e03a3a', vy: -16 });
+    ui.float(`-${e.dmg}`, 72, 34, { big: true, scale: e.dmg >= 15 ? 3 : 2, top: '#ffd0c0', bottom: '#e03a3a', vy: -16 });
     if (e.blocked) return;
     this.armsPlay('hurt');
     this.kick.z = 0.12; this.kick.y = -0.06; this.kick.rx = -0.3;
@@ -1046,7 +1064,9 @@ export class CombatScene extends Scene {
     const pts = statueCracks(this.mon, n);
     this.cracks = pts.map((w, i) => ({ w, i, hit: false, t: 0, seed: i * 3.7 + 1 }));
     this.mine = { t: 0, dur: (this.boss ? 5.5 : 4.2) + n * 0.15, hits: 0, autoT: 0.35 };
-    this.rig.moveTo(this.stand.clone().lerp(this.monHome.clone().setY(this.stand.y), 0.25).toArray(), this.monCenter().toArray(), 56, 0.5, 'inOutCubic');
+    // step in toward the statue (less for the big ones, so all their cracks stay in view)
+    const near = clamp(0.3 - this.mh * 0.07, 0.04, 0.25);
+    this.rig.moveTo(this.stand.clone().lerp(this.monHome.clone().setY(this.stand.y), near).toArray(), this.monCenter().toArray(), this.mh > 2 ? 60 : 56, 0.5, 'inOutCubic');
     this.letterTarget = 0.35;
     this.petPlay('dig');
     this.sfx('vein_glint', { vol: 0.6 });
@@ -1162,7 +1182,7 @@ export class CombatScene extends Scene {
       const rare = m && RARITY[m.rarity] && RARITY[m.rarity].order >= 2;
       if (rare && game.scenes.reveal) {
         let done = false;
-        try { game.pushOverlay('reveal', { item: it, onDone: () => { done = true; } }); } catch (e) { done = true; }
+        try { game.pushOverlay('reveal', { item: it, auto: this.auto, onDone: () => { done = true; } }); } catch (e) { done = true; }
         yield () => done;
       }
       const a = -Math.PI / 2 + (i - (items.length - 1) / 2) * 0.5 + rnd.float(-0.15, 0.15);
@@ -1268,7 +1288,7 @@ export class CombatScene extends Scene {
     this.slowmo(0.3, 1.0);
     this.armsPlay('hurt');
     this.poseT.y = -0.4;
-    this.petPlay('whine');
+    this.petPlay('yelp');
     this.sfx('defeat_sting');
     this.game.audio && this.game.audio.stopMusic && this.game.audio.stopMusic(1.5);
     const down = this.stand.clone().setY(this.floorY + 0.28).addScaledVector(this.fwd, 0.25);
