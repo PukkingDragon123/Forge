@@ -681,7 +681,9 @@ SCRIPTS.intro = (c) => {
   // stew, the totem, the scary old chest
   const bowl = buildBowl(); bowl.visible = false; c.add(bowl, 'camp');
   let totem = null;
-  try { totem = buildMedusaTotem(); totem.visible = false; c.add(totem, 'camp'); } catch (e) { totem = null; }
+  try { totem = buildMedusaTotem(); totem.visible = false; totem.scale.setScalar(1.35); c.add(totem, 'camp'); } catch (e) { totem = null; }
+  let totemHeld = false;
+  c.tick(() => { if (totem && totemHeld) { totem.position.copy(handOf(hero)).add(V(0, 0.08, 0)); totem.rotation.set(0, c.t * 0.7, 0); } }, true);
   const chest = flat(C.chest);
   const chestGlow = c.add(glowSprite('#7affc0', 1.0, 0), 'camp');
   chestGlow.position.copy(chest).setY(0.45);
@@ -694,6 +696,8 @@ SCRIPTS.intro = (c) => {
   const crackOpen = (k) => (stageCrack ? stageCrack(k) : myCrack.open(k));
   const crackPts = myCrack ? myCrack.pts : [rise.clone().addScaledVector(sideV, -1.2), rise, rise.clone().addScaledVector(sideV, 1.2)];
   const crackLight = c.light('camp', 'point', '#5affb0', 0, rise.clone().setY(0.3), { dist: 8, decay: 1.15, fl: 0.18, sp: 6 });
+  const dirC = flat(rise).sub(F); if (dirC.lengthSq() < 1e-4) dirC.copy(aud); dirC.normalize(); // fire → crack
+  const perpC = V(dirC.z, 0, -dirC.x);
   const beams = [-1, -0.3, 0.45, 1].map((k, i) => { const b = c.add(beam(4.2, 0.03, 0.35 + (i % 2) * 0.12, '#7affc0', 0, 1.6), 'camp'); aimBeam(b, rise.clone().addScaledVector(sideV, k * 1.2).setY(-0.1), rise.clone().addScaledVector(sideV, k * 1.7).setY(4.0)); return b; });
   const med = c.medusa('camp', rise.clone(), faceTo(rise, hs));
   med.group.visible = false;
@@ -775,7 +779,7 @@ SCRIPTS.intro = (c) => {
         enter: (c) => {
           c.lightTo(chestLight, 0, 0.6);
           c.act(hero, ['present', 'point'], { loop: true });
-          if (totem) { hero.hold(totem, 'right'); totem.visible = true; }
+          if (totem) { totemHeld = true; totem.visible = true; }
           c.sfx('sparkle', { vol: 0.5 }); c.sfx('medusa_whisper', { vol: 0.5 });
           for (const f of friends) f.setExpression && f.setExpression('surprised');
         } },
@@ -807,8 +811,9 @@ SCRIPTS.intro = (c) => {
             if (pip) c.act(pip, ['yelp', 'happy'], {});
             c.slowmo(0.35, 0.9, 0.08, 0.4); c.shake(0.15);
             if (totem) {
+              totemHeld = false;
               const p0 = totem.getWorldPosition(V());
-              c.setOf('camp').add(totem); totem.position.copy(p0); totem.rotation.set(0, 0, 0);
+              totem.position.copy(p0); totem.rotation.set(0, 0, 0);
               const land = hs.clone().lerp(F, 0.45).setY(0.03);
               flight = c.tween(1.0, (k) => { totem.position.lerpVectors(p0, land, k); totem.position.y += Math.sin(k * Math.PI) * 0.55; totem.rotation.x = k * 7; totem.rotation.z = k * 3; }, 'linear', () => {
                 c.sfx('statue_break'); c.shake(0.3); c.haptic(40);
@@ -826,7 +831,7 @@ SCRIPTS.intro = (c) => {
         ] },
       // 9. silence… then the floor splits
       { dur: 5.0,
-        cam: { pos: [at(F, aud, 3.6, 1.8, -0.4), at(F, aud, 3.3, 1.6, -0.2)], look: [rise.clone().setY(0.3), rise.clone().setY(0.4)], fov: [40, 42] },
+        cam: { pos: [F.clone().addScaledVector(dirC, -1.5).addScaledVector(perpC, 0.6).setY(1.95), F.clone().addScaledVector(dirC, -1.3).addScaledVector(perpC, 0.5).setY(1.85)], look: [rise.clone().setY(0.15), rise.clone().setY(0.3)], fov: [42, 44] },
         enter: (c) => {
           c.later(0.5, () => { c.sfx('rumble', { vol: 0.7 }); c.shake(0.25); });
           c.dustFall(F.x - 3, F.x + 3, F.z - 3, F.z + 2, 4.4, 26);
@@ -843,7 +848,7 @@ SCRIPTS.intro = (c) => {
         } },
       // 10. a figure crawls out — Medusa
       { dur: 6.0,
-        cam: { pos: [at(rise, aud, 2.6, 0.3, 0.7), at(rise, aud, 2.4, 0.35, 0.5)], look: [rise.clone().setY(0.4), rise.clone().setY(1.9)], fov: [38, 44], roll: [0.05, -0.03] },
+        cam: { pos: [rise.clone().addScaledVector(dirC, -2.3).addScaledVector(perpC, 0.7).setY(0.45), rise.clone().addScaledVector(dirC, -2.1).addScaledVector(perpC, 0.55).setY(0.5)], look: [rise.clone().setY(0.4), rise.clone().setY(1.9)], fov: [38, 44], roll: [0.05, -0.03] },
         enter: (c) => {
           med.group.visible = true; c.freeze(med, false);
           med.setEyes && med.setEyes(0);
@@ -884,7 +889,7 @@ SCRIPTS.intro = (c) => {
         } },
       // 14. the weapon crumbles
       { dur: 2.2,
-        cam: tool ? { pos: [tool.position.clone().addScaledVector(aud, 0.9).add(V(0, 0.55, 0)), tool.position.clone().addScaledVector(aud, 0.75).add(V(0, 0.45, 0))], look: [tool.position.clone().setY(0.35), tool.position.clone().setY(0.3)], fov: 30 }
+        cam: tool ? { pos: [tool.position.clone().addScaledVector(aud, 1.35).add(V(0, 0.95, 0)), tool.position.clone().addScaledVector(aud, 1.2).add(V(0, 0.85, 0))], look: [tool.position.clone().setY(0.25), tool.position.clone().setY(0.2)], fov: 32 }
           : { pos: [at(hs, hcam, 1.4, 0.8)], look: [headOf(hero)], fov: 34 },
         at: [[1.0, (c) => {
           c.sfx('stone_shatter'); c.shake(0.2);
@@ -943,7 +948,7 @@ SCRIPTS.intro = (c) => {
         } },
       // 17. run
       { dur: 3.6,
-        cam: { pos: (c, k) => hero.group.position.clone().addScaledVector(flat(hero.group.position).sub(flat(C.exitTunnel)).normalize(), 2.4 - k * 0.6).add(V(0, 1.1, 0)).addScaledVector(sideV, 0.6), look: (c) => hero.group.position.clone().add(V(0, 0.55, 0)), fov: 42, smooth: 5 },
+        cam: { pos: (c, k) => hero.group.position.clone().addScaledVector(flat(hero.group.position).sub(flat(C.exitTunnel)).normalize(), 1.9 - k * 0.4).add(V(0, 1.35, 0)).addScaledVector(sideV, 0.5), look: (c) => hero.group.position.clone().add(V(0, 0.5, 0)), fov: 44, smooth: 5 },
         enter: (c) => {
           const runA = c.act(hero, ['carryRun', 'run'], { loop: true }) || 'run';
           c.walk(hero, C.exitTunnel, 1.5, { anim: runA, then: false });
