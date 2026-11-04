@@ -443,7 +443,7 @@ function makeRoom(n) {
   for (const o of pl.obs) if (o.kind === 'shroom' || o.kind === 'crystal') lamps.push({ x: (o.b.x0 + o.b.x1) / 2, y: 0.9, z: (o.b.z0 + o.b.z1) / 2 + 0.2, c: (A.gills || [A.glow])[(seed + o.ix) % (A.gills || [1]).length], r: 2.4, i: 0.85 });
   for (const s of pl.special) lamps.push({ x: (s.b.x0 + s.b.x1) / 2, y: 1, z: (s.b.z0 + s.b.z1) / 2 + 0.3, c: s.kind === 'bench' ? '#ffd27a' : A.glow, r: 3, i: 1 });
   for (const v of pl.veins) lamps.push({ x: (v.b.x0 + v.b.x1) / 2, y: 0.8, z: (v.b.z0 + v.b.z1) / 2 + 0.3, c: A.oreGlow || '#fff0b0', r: 1.8, i: 0.7 });
-  if (type === 'boss') for (const [x, z] of [[-6, -4], [6, -4], [0, -5.5]]) lamps.push({ x, y: 1.6, z, c: A.gills ? A.gills[(x + 6) % 4 | 0] : A.glow, r: 4, i: 0.7 }); // pools of cap-light at the edges, a dim centre
+  if (type === 'boss') for (const [x, z] of [[-6, -4], [6, -4], [0, -5.5]]) lamps.push({ x, y: 1.6, z, c: A.gills ? A.gills[((x + 6) % 4 | 0) % A.gills.length] : A.glow, r: 4, i: 0.7 }); // pools of cap-light at the edges, a dim centre
   const moody = type === 'boss';
   const rig = makeLightRig({ amb: A.amb, ambI: moody ? 0.46 : 0.64, sky: A.sky, skyI: moody ? 0.12 : 0.24, key: A.key, keyI: moody ? 0.18 : 0.26, keyDir: [-0.35, 1, 0.45], lamps: lamps.map((l) => ({ ...l, i: l.i * 1.7, r: l.r * 1.15 })), bands: 12 });
   const rigBack = makeLightRig({ amb: A.amb, ambI: 0.55, sky: A.sky, skyI: 0.25, key: A.key, keyI: 0.15, keyDir: [-0.35, 1, 0.45], lamps: bd.lamps, bands: 18 });

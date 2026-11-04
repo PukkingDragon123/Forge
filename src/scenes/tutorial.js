@@ -15,6 +15,7 @@ import { buildMonster } from '../models/monsters.js';
 import { buildPet } from '../models/pet.js';
 import * as Loadout from '../systems/loadout.js';
 import * as RunMod from '../systems/run.js';
+import { makeItem } from '../systems/items.js';
 import * as Flow from './flow.js';
 import { drawActionHud, makeHudState, hudToast } from '../ui/hud_action.js';
 import { drawFloat } from './dialogue.js';
@@ -113,6 +114,10 @@ export class TutorialScene extends Scene {
     aw.on('skillCast', () => { this.flags.cast++; });
     aw.on('playerDead', () => this.later(1.2, () => { if (has(this.player, 'revive')) this.player.revive(this.player.maxHp); this.say('morel', 'Up you get, beardy!'); }));
     this.timers = [];
+    // skippable once you've been here before (finished it, or left halfway and came back)
+    const seen0 = save.data.seen || {};
+    this.canSkip = !!(seen0.tutorial || seen0.v5tutorial || seen0.tutorialStarted);
+    if (save.data.seen && !seen0.tutorialStarted) { save.data.seen.tutorialStarted = true; save.write(); }
     if (game.audio) { game.audio.music('tutorial'); this.amb = game.audio.loop && game.audio.loop('cave', 0.35); }
     // dev: ?scene=tutorial&beat=N starts at a later beat
     const beat = +(params.beat || 0) | 0;
@@ -340,9 +345,22 @@ export class TutorialScene extends Scene {
     const ov = Flow.openMine ? Flow.openMine(game, { kind: 'statue', def: MONSTERS.shroomling, monster: 'shroomling', stage: 0, at: { x: s.x, y: 0.7, z: s.z }, cam: this.cam, scene: this, onDone: done }) : null;
     if (!ov && !game.overlays.some((o) => o.name === 'minezoom')) done();
   }
+  /** Morel tops up the bag so Spore Burst can always be made (an experiment at the cauldron can eat the sacs). */
+  topUpSporeBurst() {
+    const run = this.run;
+    if (this.findSkillGem('spore_burst') || !run || !run.bag) return false;
+    const need = { spore_sac: 2, glowcap: 1 }, have = {};
+    for (const it of run.bag.all ? run.bag.all() : run.bag.items || []) have[it.id] = (have[it.id] || 0) + 1;
+    let gave = false;
+    for (const id in need) for (let k = have[id] || 0; k < need[id]; k++) {
+      try { const it = makeItem(id, 2); if (run.addItem ? run.addItem(it) : run.bag.add(it)) gave = true; } catch (e) { /* bag full */ }
+    }
+    return gave;
+  }
   openBench() {
     if (this.step !== 4 || this.busy) return;
     const game = this.game, run = this.run;
+    if (this.topUpSporeBurst()) this.say('morel', 'Here, take my spares!', 2.2);
     if (has(this.player, 'lockInput')) this.player.lockInput(true);
     this.busy = { kind: 'craft', t: 0 };
     const close = () => {
@@ -388,6 +406,10 @@ export class TutorialScene extends Scene {
   }
 
   // ------------------------------------------------------------------ the outro: Morel's sacrifice
+  /** Where Morel stands now (NPC or bare model). */
+  morelAt() { const m = this.morel; if (m && m.walkTo) return V(m.x, 0, m.z); const g = this.mg(); return g ? g.position.clone().setY(0) : V(this.player.x - 1.2, 0, this.player.z); }
+  /** A camera beat (the HadesCam glides in and holds until the next one or a release). */
+  shotAt(x, z, o) { if (has(this.cam, 'zoomTo')) { try { this.cam.zoomTo({ x, y: o.y ?? 0.5, z }, o); } catch (e) { /* camera optional */ } } }
   outro() {
     const P = this.player, game = this.game;
     this.outroT = 0;
@@ -396,11 +418,17 @@ export class TutorialScene extends Scene {
     game.audio && game.audio.play('hiss', { vol: 1 });
     game.audio && game.audio.play('snake_rattle', { vol: 0.9 });
     this.aw.shake(0.4);
-    this.snakeRush = { from: this.snakeX, to: P.x - 3.4, t: 0, dur: 1.4 };
+    const sx = P.x - 3.4;
+    this.snakeRush = { from: this.snakeX, to: sx, t: 0, dur: 1.4 };
     playFirst(this.snake, ['intro', 'attack', 'idle'], {});
+    // the threat first: the snake bursting in, Morel jumping between it and you
+    this.shotAt((sx + P.x) / 2 - 0.4, P.z * 0.5, { fov: 28, dist: 8, dur: 0.7, y: 0.4 });
     this.moveMorel(V(P.x - 1.2, 0, P.z + 0.3), 0.6, 'run', () => { this.faceMorelTo(P.x - 6, P.z); this.mplay(['scared', 'idle'], { loop: true }); });
     this.later(1.6, () => {
-      if (has(this.room, 'openHole')) this.room.openHole(1);
+      // the floor gives way behind you: a hole to the next level
+      this.holeK = 0;
+      game.audio && game.audio.play('rumble', { vol: 0.7 });
+      this.aw.shake(0.3);
       this.talk([
         { who: 'morel', at: this.morel, text: 'Go! Down the hole! NOW!', with: this.player, mood: 'shout', replies: [{ text: 'Not without you!' }, { text: 'Come with me!' }], replyAt: this.player },
         { who: 'morel', at: this.morel, text: 'Find your friends, beardy.', auto: 1.6 },
@@ -410,21 +438,34 @@ export class TutorialScene extends Scene {
   shove() {
     const P = this.player, game = this.game;
     if (has(P, 'lockInput')) P.lockInput(true);
+    const m0 = this.morelAt(), hole = this.holeAt;
     this.mplay(['attack', 'cheer', 'idle'], {});
     game.audio && game.audio.play('trip', { vol: 0.7 });
-    // Durgan stumbles toward the hole and drops
-    this.fall = { from: V(P.x, 0, P.z), to: this.holeAt.clone(), t: 0, dur: 1.0 };
-    this.later(0.5, () => {
-      // the snake's gaze: Morel turns to stone
+    // Durgan stumbles toward the hole and drops; the camera holds Morel and the hole in one shot
+    this.fall = { from: V(P.x, 0, P.z), to: hole.clone(), t: 0, dur: 1.0 };
+    const span = Math.hypot(hole.x - m0.x, hole.z - m0.z);
+    this.shotAt((m0.x + hole.x) / 2, (m0.z + hole.z) / 2, { fov: 30, dist: Math.min(12, 5.5 + span * 0.6), dur: 0.6 });
+    this.later(1.15, () => { game.audio && game.audio.play('fall_whoosh', { vol: 0.8 }); this.aw.fx.dust(hole.x, hole.z, 14, { speed: [0.6, 2] }); });
+    // then back to Morel: he turns to face the snake, and its gaze finds him
+    this.later(1.8, () => {
+      const m = this.morelAt(), s = this.snakeX;
+      this.shotAt(m.x + (s - m.x) * 0.32, m.z * 0.6 + 0.1, { fov: 24, dist: 5.8, dur: 0.8, y: 0.45 });
+      this.faceMorelTo(s, 0.3);
+      this.mplay(['scared', 'idle'], { loop: true });
+      playFirst(this.snake, ['special', 'roar', 'idle'], {});
+      game.audio && game.audio.play('hiss', { vol: 0.8 });
+    });
+    this.later(2.7, () => {
       game.audio && game.audio.play('gaze', { vol: 0.9 });
       game.renderer && game.renderer.doFlash && game.renderer.doFlash(0.45, [0.48, 1, 0.75]);
-      playFirst(this.snake, ['special', 'roar', 'idle'], {});
       this.stoneT = 0;
-      if (this.morel && this.morel.petrify) this.morel.petrify(1.1);
+      if (this.morel && this.morel.petrify) this.morel.petrify(1.4);
       game.audio && game.audio.play('petrify', { vol: 0.8 });
+      this.aw.shake(0.25);
+      this.say('morel', 'Heh… stone suits me.', 2.4);
     });
-    this.later(2.6, () => { this.fadeOut = true; game.audio && game.audio.play('fall_whoosh', { vol: 0.8 }); });
-    this.later(3.6, () => this.finish());
+    this.later(5.1, () => { this.fadeOut = true; });
+    this.later(6.0, () => this.finish());
   }
   finish() {
     if (this.finished) return;
@@ -481,6 +522,8 @@ export class TutorialScene extends Scene {
       if (this.snake.update) this.snake.update(dt);
       if (!this.snakeRush && (this.hissT = (this.hissT || 6) - dt) <= 0) { this.hissT = 7 + Math.random() * 5; this.game.audio && this.game.audio.play('hiss', { vol: 0.4 }); }
     }
+    // the hole opens (a quick pop with a lip)
+    if (this.holeK !== undefined && this.holeK < 1) { this.holeK = Math.min(1, this.holeK + dt * 2.2); if (has(this.room, 'openHole')) this.room.openHole(Math.max(0.02, ease.outBack(this.holeK))); }
     // Durgan's fall into the hole
     if (this.fall) {
       const f = this.fall; f.t += dt;
@@ -536,9 +579,8 @@ export class TutorialScene extends Scene {
     // the control hint for this beat
     if (this.hint && !this.talking && this.outroT < 0 && !overlay) this.drawHint(ui);
     // skip (only once you've seen it)
-    const seen = save.data.seen && (save.data.seen.tutorial || save.data.seen.v5tutorial);
-    if (seen && !this.finished) {
-      const label = 'Skip tutorial >>', w = ui.measure(label) + 16, c = tagCanvas(w), x = ui.w - c.width - 12, y = 12;
+    if (this.canSkip && !this.finished) {
+      const label = 'Skip tutorial >>', w = ui.measure(label) + 16, c = tagCanvas(w), x = ui.w - c.width - 12, y = ui.touch ? 40 : 12; // touch: under the pause medallion
       const h = ui.hit('tut-skip', x, y, c.width, c.height + 4, { sound: false });
       ctx.globalAlpha = h.hover ? 1 : 0.6; ui.img(c, x, y); ui.text(label, x + 10, y + 11, { color: '#3a2214' }); ctx.globalAlpha = 1;
       if (h.clicked) this.finish();

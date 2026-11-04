@@ -2,7 +2,7 @@
 // It opens like a film: the camera glides in from the dungeon gate while the FORGLITE logo is forged
 // letter by letter — hammer blows, sparks, white-hot letters cooling to gold — and settles on the
 // crew resting by the fire (Durgan stirs the stew, Pip snores). Only Durgan, the warrior, can set out
-// at first; Bran, Elio and Clover are locked (alive and greyed before the story, stone statues after
+// at first; Bran, Elio and Clover are locked (a padlock over them before the story, stone statues after
 // it) until they are freed in the dungeon. Tap a forger: the camera pushes in on them and a card
 // shows who they are; Choose starts the run. Settings, the codex and the recipe book are objects in
 // the camp (the lantern, Elio's books, the old map crate).
@@ -25,6 +25,7 @@ import { MATERIALS } from '../data/materials.js';
 import { SYNERGIES } from '../systems/forge.js';
 import { logo } from '../art/sprites.js';
 import { COLORS } from '../ui/font.js';
+import { icon } from '../ui/icons.js';
 import { save } from '../core/save.js';
 import { clamp, ease } from '../core/math.js';
 import { fx as rnd } from '../core/rng.js';
@@ -178,6 +179,7 @@ export class TitleScene extends Scene {
     o.done = true;
     this.rig.moveTo(this.home.pos, this.home.look, this.home.fov, o.t < o.dur - 0.5 ? 0.8 : 0.3, 'inOutCubic');
     this.state = 'menu';
+    this.menuT = this.time;
     this.logoSettle = 0;
     if (save.data.seen) { save.data.seen.title = true; save.write(); }
   }
@@ -213,8 +215,15 @@ export class TitleScene extends Scene {
     const out = inward.multiplyScalar(0.65).addScaledVector(camDir, 0.35).normalize();
     const right = V(out.z, 0, -out.x);
     const zc = A.cams && A.cams.zoom && A.cams.zoom[id];
-    const endPos = zc ? v3(zc.pos) : head.clone().addScaledVector(out, 1.55).add(V(0, 0.2, 0)).addScaledVector(right, -0.15);
     const endLook = zc ? v3(zc.look) : head.clone().add(V(0, -0.12, 0)).addScaledVector(right, 0.42);
+    let endPos = zc ? v3(zc.pos) : head.clone().addScaledVector(out, 1.55).add(V(0, 0.2, 0)).addScaledVector(right, -0.15);
+    if (zc) {
+      // the stage's close-up is framed for someone seated: a forger who stands up to greet you needs a
+      // little more headroom (horns and hats were cut off), and everyone a touch more air around them
+      endLook.y += locked ? 0.04 : 0.16;
+      endPos = endLook.clone().add(endPos.clone().sub(endLook).multiplyScalar(locked ? 1.3 : 1.22));
+      endPos.y += locked ? 0.05 : 0.1;
+    }
     const startPos = this.rig.pos.clone(), startLook = this.rig.look.clone();
     const mid = startPos.clone().lerp(endPos, 0.5).lerp(V(...this.home.pos), 0.55).add(V(0, 0.3, 0)).addScaledVector(right, -0.4);
     this.zoom = {
@@ -360,6 +369,19 @@ export class TitleScene extends Scene {
     ui.text(text, bx + 10, by + 11, { color });
     ui.ctx.globalAlpha = 1;
   }
+  /** A bobbing gold chevron with a name over the playable forger (fades in after the opening). */
+  marker(ui, x, y, name) {
+    const a = clamp((this.time - (this.menuT || 0) - 0.6) * 2);
+    if (a <= 0) return;
+    const ctx = ui.ctx, b = Math.round(Math.sin(this.time * 3.2) * 3);
+    ctx.globalAlpha = a;
+    ui.text(name, Math.round(x), Math.round(y - 24 + b), { align: 'center', font: 'large', color: '#ffd27a', outline: '#140c10' });
+    // a chunky pixel chevron pointing down at them
+    const cx = Math.round(x), cy = Math.round(y - 6 + b);
+    for (let i = 0; i < 7; i++) { const w = (7 - i) * 4 - 2; ui.rect(cx - w / 2, cy + i * 2, w, 2, '#140c10'); }
+    for (let i = 0; i < 5; i++) { const w = (7 - i) * 4 - 8; ui.rect(cx - w / 2, cy + i * 2 + 1, w, 2, i ? '#ffb63d' : '#fff0b0'); }
+    ctx.globalAlpha = 1;
+  }
   rectOf(v, r = 0.3, up = 0.3) {
     const c = this.project(v.clone().add(V(0, up, 0)));
     const e = this.project(v.clone().add(V(r, up, 0)));
@@ -380,9 +402,12 @@ export class TitleScene extends Scene {
         const hgt = Math.max(44, feet.y - top.y + 30), wdt = Math.max(40, hgt * 0.8);
         const hit = ui.hit('char-' + id, top.x - wdt / 2, top.y - 22, wdt, hgt + 6, { cursor: 'hand', sound: false });
         const locked = !this.unlocked[id];
-        if (hit.hover && this.focus !== id && !ui.touch) this.tag(ui, top.x, top.y - 44, locked ? `${CHARACTERS[id].name} · locked` : CHARACTERS[id].name, locked ? '#5a5060' : CHARACTERS[id].color);
-        // a little padlock over the locked ones
-        if (locked && this.focus !== id) { const bob = Math.round(Math.sin(this.time * 2 + id.length) * 1.5); ui.icon('lock', Math.round(top.x - 5), Math.round(top.y - 26 + bob), { alpha: 0.85 }); }
+        const bob = Math.round(Math.sin(this.time * 2 + id.length) * 1.5);
+        if (hit.hover && this.focus !== id && !ui.touch) this.tag(ui, top.x, top.y - 50, locked ? `${CHARACTERS[id].name} · locked` : CHARACTERS[id].name, locked ? '#5a5060' : CHARACTERS[id].color);
+        // a padlock over the locked ones
+        if (locked && this.focus !== id) { const lk = icon('lock'); if (lk) ui.img(lk.canvas, Math.round(top.x), Math.round(top.y - 22 + bob), { alpha: hit.hover ? 1 : 0.8, scale: 2, center: true }); }
+        // the one who can set out: a gold marker that pulses until you've picked someone
+        else if (!locked && this.focus !== id && !hit.hover && !this.picked) this.marker(ui, top.x, top.y - 26, CHARACTERS[id].name);
         if (hit.clicked) this.pick(id);
       }
     }
@@ -411,7 +436,7 @@ export class TitleScene extends Scene {
     if (!this.panel && !this.picked && this.time > 1.2) {
       const a = clamp((this.time - 1.2) * 1.2) * (0.75 + 0.25 * Math.sin(this.time * 2.4));
       ui.ctx.globalAlpha = a;
-      ui.text(ui.touch ? 'tap Durgan to set out' : 'pick Durgan to set out', ui.w / 2, ui.h - 22, { align: 'center', color: '#f4e6c8', outline: '#140c10' });
+      ui.text(ui.touch ? 'Tap Durgan to set out' : 'Pick Durgan to set out', ui.w / 2, ui.h - 26, { align: 'center', font: 'large', color: '#f4e6c8', outline: '#140c10' });
       ui.ctx.globalAlpha = 1;
     }
     if (this.panel === 'codex') this.drawCodex(ui);
@@ -497,13 +522,13 @@ export class TitleScene extends Scene {
     }
   }
   drawFade(ui) {
-    const inK = clamp(1 - this.time / 0.9);
+    const inK = clamp(1 - this.time / 0.55); // the boot veil already fades: keep this one short
     const a = Math.max(this.fade, ease.inOutSine(inK));
     if (a > 0.003) ui.rect(0, 0, ui.w, ui.h, '#040306', a);
   }
   speech(ui, x, y, text, alpha) {
     const w = ui.measure(text) + 14, h = 18;
-    const bx = Math.round(clamp(x - w / 2, 4, ui.w - w - 4)), by = Math.round(y - h - 6);
+    const bx = Math.round(clamp(x - w / 2, 4, ui.w - w - 4)), by = Math.round(clamp(y - h - 6, 10, ui.h - h - 12));
     ui.ctx.globalAlpha = alpha;
     ui.rect(bx + 1, by, w - 2, h, '#f6ecd8'); ui.rect(bx, by + 1, w, h - 2, '#f6ecd8');
     ui.rect(bx + 1, by + h - 1, w - 2, 1, '#c8b494');
@@ -654,7 +679,19 @@ const ingName = (id) => (MATERIALS[id] ? MATERIALS[id].name : String(id).replace
 /** [{ name, ings:[ordered ids], known }] from the crafting system (falls back to the old weapon recipes). */
 function recipeBook() {
   const book = fnOf(CRAFT, 'recipeBook', 'knownRecipes', 'listRecipes');
-  if (book) { try { const b = book(save.data); if (Array.isArray(b)) return b.map((r) => ({ name: r.name || (r.out && MATERIALS[r.out] ? MATERIALS[r.out].name : r.id), ings: r.ings || [], known: r.known !== false })); } catch (e) { /* fall back */ } }
+  if (book) {
+    try {
+      // crafting.recipeBook(run) → [{ id, recipe: { out, ings }, known, out: material }] (no run here: the persistent book)
+      const b = book(null);
+      if (Array.isArray(b)) {
+        return b.map((r) => {
+          const rec = r.recipe || r;
+          const out = r.out && typeof r.out === 'object' ? r.out : MATERIALS[rec.out];
+          return { name: r.name || (out && out.name) || String(r.id).replace(/_/g, ' '), ings: rec.ings || [], known: r.known !== false };
+        }).sort((a, b) => b.known - a.known);
+      }
+    } catch (e) { /* fall back */ }
+  }
   const mod = CRAFT, rk = ['RECIPES', 'CRAFT_RECIPES'].find((k) => mod[k] && typeof mod[k] === 'object');
   const R = rk ? mod[rk] : null;
   const known = (save.data.discovered && save.data.discovered.recipes) || [];

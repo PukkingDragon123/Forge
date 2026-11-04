@@ -82,8 +82,16 @@ export class Game {
       this.scene.enter(params);
     };
     if (kind === 'none' || !this.scene) { make(); return; }
-    if (this.trans) return; // ignore double transitions
-    this.trans = { kind, t: 0, dur: opts.dur || 0.45, phase: 'out', make, color: opts.color || '#07060b', cx: opts.cx, cy: opts.cy };
+    // a second go() while the previous scene is still being swapped is ignored; once the new scene is
+    // up (the 'in' half), it wins: the cover closes again from where it is (a skipped intro must not
+    // strand the player in a finished cutscene)
+    let t0 = 0;
+    const dur = opts.dur || 0.45;
+    if (this.trans) {
+      if (this.trans.phase !== 'in') return;
+      t0 = (1 - Math.min(1, this.trans.t / this.trans.dur)) * dur;
+    }
+    this.trans = { kind, t: t0, dur, phase: 'out', make, color: opts.color || '#07060b', cx: opts.cx, cy: opts.cy };
   }
   pushOverlay(name, params = {}) {
     const Cls = this.scenes[name];
@@ -145,7 +153,7 @@ export class Game {
     for (const o of this.overlays) { ui.block(2); o.draw(ui); }
     ui.unblock();
     // touch: a pause medallion in the corner wherever a run is in progress
-    const pausable = this.run && this.scene && !['title', 'gameover', 'victory', 'descend'].includes(this.scene.name) && !this.overlays.length && !this.trans;
+    const pausable = this.run && this.scene && !['title', 'gameover', 'victory', 'descend', 'cutscene'].includes(this.scene.name) && !this.overlays.length && !this.trans;
     if (pausable && this.input.touch) {
       ui.touchButton('pause', ui.w - 17, 17, 12, { style: 'iron' });
       ui.rect(ui.w - 21, 12, 3, 10, '#f4e6c8'); ui.rect(ui.w - 15, 12, 3, 10, '#f4e6c8');

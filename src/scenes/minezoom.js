@@ -270,7 +270,10 @@ export class MineZoomOverlay extends Scene {
       ctx.strokeRect(px + 2, py + 2, T - 4, T - 4);
     }
     ctx.restore();
-    if (hx >= 0 && inp.pressed && !this.leaving && !ui.overUI()) this.strike(hx, hy);
+    // the rock face is a UI region of its own: overlays sit on a full-screen input block, so a bare
+    // "pressed and not over UI" test never fires here (clicks and taps on the rock did nothing)
+    const boardHit = ui.hit('mine-board', B.x + sx, B.y + sy, B.w * T, B.h * T, { sound: false, cursor: 'hand' });
+    if (hx >= 0 && boardHit.pressed && !this.leaving) this.strike(hx, hy);
 
     // ---- strength (strikes) bar
     const sw = 10;

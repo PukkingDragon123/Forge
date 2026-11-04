@@ -278,7 +278,7 @@ export class Cine {
     this.waiting = true;
     // played as an overlay (a boss intro over the dungeon): keep the fight below frozen while you answer
     const freeze = !(this.game.scene && this.game.scene.cine === this);
-    this.askOv = this.game.pushOverlay('dialogue', { lines, cam: null, camera: this.camera, bars: false, sound: false, freeze, onDone: (r) => { this.waiting = false; this.askOv = null; if (then) then(r); } });
+    this.askOv = this.game.pushOverlay('dialogue', { lines, cam: null, camera: this.camera, bars: false, margin: BAR, sound: false, freeze, onDone: (r) => { this.waiting = false; this.askOv = null; if (then) then(r); } });
   }
   /** The hero's current weapon as a mesh (the forged one if there is a run, else their trade tool). */
   heroWeapon(who) {

@@ -3,7 +3,7 @@
 import { Scene } from '../core/game.js';
 import { CutsceneScene, Cine } from './cutscene.js';
 import { ribbonTitle, dim } from './common.js';
-import { REGIONS } from '../data/regions.js';
+import { REGIONS, STAGES } from '../data/regions.js';
 import { CHARACTERS } from '../data/characters.js';
 import { MATERIALS } from '../data/materials.js';
 import { save } from '../core/save.js';
@@ -64,7 +64,8 @@ export class GameOverScene extends HeldCinematic {
     ui.text('Turned to stone…', ui.w / 2, y + 10, { align: 'center', color: ink });
     const st = run ? run.stats : {};
     const stage = run ? (run.stage ?? run.act ?? 0) : 0;
-    const R = REGIONS[Math.min(stage, REGIONS.length - 1)];
+    const SL = STAGES && STAGES.length ? STAGES : REGIONS; // v5 stage names (the v4 acts as a fallback)
+    const R = SL[Math.min(stage, SL.length - 1)];
     const lines = [
       ['Reached', R ? R.name : '-'],
       ['Foes turned to stone', st.kills || 0], ['Statues mined', st.statues || st.mined || 0], ['Rooms cleared', st.rooms || 0],

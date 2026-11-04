@@ -83,24 +83,39 @@ const inView = (p, w, h, m = 24) => !!p && !p.behind && p.x > m && p.x < w - m &
 
 // ------------------------------------------------------------------ the floating line
 const wordCache = new Map();
-/** Lay out a line into positioned words (font 'large', wrapped at maxW). */
+/** Lay out a line into positioned words (font 'large', wrapped at maxW, lines balanced and centred). */
 function layoutWords(ui, text, maxW, font) {
   const key = text + '|' + maxW + '|' + font;
   let L = wordCache.get(key);
   if (L) return L;
   const space = ui.measure(' ', font) || 4;
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines = [[]];
-  let x = 0, start = 0;
-  for (const w of words) {
-    const ww = ui.measure(w, font);
-    if (x > 0 && x + ww > maxW) { lines.push([]); x = 0; }
-    lines[lines.length - 1].push({ w, x, width: ww, start, end: start + w.length });
-    x += ww + space;
-    start += w.length + 1;
+  const words = text.split(/\s+/).filter(Boolean).map((w) => ({ w, width: ui.measure(w, font) }));
+  const wrap = (lim) => {
+    const out = [[]];
+    let x = 0, start = 0;
+    for (const { w, width } of words) {
+      if (x > 0 && x + width > lim) { out.push([]); x = 0; }
+      out[out.length - 1].push({ w, x, width, start, end: start + w.length });
+      x += width + space;
+      start += w.length + 1;
+    }
+    return out;
+  };
+  let lines = wrap(maxW);
+  // balance: the narrowest width that still needs no more lines (no lonely last word)
+  if (lines.length > 1) {
+    const longest = Math.max(...words.map((q) => q.width));
+    for (let lim = Math.max(longest, Math.ceil(maxW / lines.length)); lim < maxW; lim += 6) {
+      const t = wrap(lim);
+      if (t.length <= lines.length) { lines = t; break; }
+    }
   }
+  const lw = (ln) => (ln.length ? ln[ln.length - 1].x + ln[ln.length - 1].width : 0);
+  const width = Math.max(...lines.map(lw));
+  // centre each line under the speaker
+  for (const ln of lines) { const off = Math.round((width - lw(ln)) / 2); for (const wd of ln) wd.x += off; }
   const lh = font === 'large' ? 15 : 11;
-  L = { lines, lh, width: Math.max(...lines.map((ln) => (ln.length ? ln[ln.length - 1].x + ln[ln.length - 1].width : 0))), height: lines.length * lh };
+  L = { lines, lh, width, height: lines.length * lh };
   wordCache.set(key, L);
   if (wordCache.size > 200) wordCache.delete(wordCache.keys().next().value);
   return L;
@@ -130,7 +145,7 @@ export function drawFloat(ui, x, y, text, o = {}) {
   let ty = by;
   if (o.name) {
     ctx.globalAlpha = alpha;
-    ui.text(o.name, bx, ty, { font: 'small', color: o.color || '#f4e6c8', outline: '#08060c' });
+    ui.text(o.name, bx + Math.round(W / 2), ty, { font: 'small', align: 'center', color: o.color || '#f4e6c8', outline: '#08060c' });
     ctx.globalAlpha = 1;
     ty += 12;
   }
@@ -164,12 +179,12 @@ export function drawFloat(ui, x, y, text, o = {}) {
  * Your replies: stacked wooden tags floating near (x, y). Returns the index clicked/tapped (or -1).
  * sel: highlighted index; t: seconds since they appeared (they slide in one after another).
  */
-export function drawReplyTags(ui, x, y, replies, sel, t, idPrefix = 'dlg') {
+export function drawReplyTags(ui, x, y, replies, sel, t, idPrefix = 'dlg', margin = 0) {
   let picked = -1;
   const touch = ui.touch;
-  const gap = touch ? 26 : 21;
+  const gap = touch ? 32 : 22;
   const n = replies.length;
-  const top = Math.round(clamp(y - (n * gap) / 2, 40, ui.h - n * gap - 44));
+  const top = Math.round(clamp(y - (n * gap) / 2, 40 + margin, ui.h - n * gap - 12 - Math.max(32, margin)));
   for (let i = 0; i < n; i++) {
     const r = replies[i];
     const k = ease.outBack(clamp((t - i * 0.07) / 0.28));
@@ -179,7 +194,8 @@ export function drawReplyTags(ui, x, y, replies, sel, t, idPrefix = 'dlg') {
     const c = tagCanvas(Math.max(70, w));
     const left = Math.round(clamp(x, 8, ui.w - c.width - 8));
     const yy = top + i * gap;
-    const hit = ui.hit(`${idPrefix}-r${i}`, left - 2, yy - 2, c.width + 4, c.height + (touch ? 8 : 4), { sound: false, cursor: 'hand' });
+    // fingers get the whole row (tag height + the gap below it)
+    const hit = ui.hit(`${idPrefix}-r${i}`, left - (touch ? 10 : 2), yy - (touch ? 3 : 2), c.width + (touch ? 20 : 4), touch ? gap : c.height + 4, { sound: false, cursor: 'hand' });
     const hot = hit.hover || sel === i;
     const slide = Math.round((1 - k) * 18) - (hot ? 4 : 0);
     if (hot) {
@@ -239,21 +255,39 @@ export class DialogueOverlay extends Scene {
     if (L.beat) { try { L.beat(this); } catch (e) { /* a beat must never break the talk */ } }
     if (L.card && this.game.audio) this.game.audio.play('stinger', { vol: 0.6 });
     // lean the camera in on the speaker (framing the listener too)
-    const withAt = L.with || this.p.with;
-    if (this.cam && !L.noZoom && (L.at || withAt)) {
-      const a = anchorPos(L.at), b = withAt && withAt !== L.at ? anchorPos(withAt) : null;
-      const focus = a && b ? a.clone().lerp(b, 0.42) : a || b;
-      if (focus) {
-        focus.y -= 0.35;
-        // two people: pull back enough to keep both in frame
-        const sep = a && b ? Math.hypot(a.x - b.x, a.z - b.z) : 0;
-        const dist = (L.zoom && L.zoom.dist) || this.p.dist || 5.5 + sep * 0.9;
-        const fov = (L.zoom && L.zoom.fov) || this.p.fov || Math.min(34, 24 + sep * 2.2);
-        try { this.cam.zoomTo(focus, { fov, dist, dur: this.i === 0 ? 0.7 : 0.45 }); } catch (e) { /* camera optional */ }
-        this.zoomed = true;
-      }
+    const shot = this.framing(L);
+    if (shot) {
+      try { this.cam.zoomTo(shot.focus, { fov: shot.fov, dist: shot.dist, dur: this.i === 0 ? 0.7 : 0.45 }); } catch (e) { /* camera optional */ }
+      this.zoomed = true;
     }
     if (!this.text) { this.shown = 0; this.lineDone = true; this.replyT = L.replies && L.replies.length ? 0 : -1; }
+  }
+  /** The two-shot for a line: { focus, dist, fov } from where the speaker and listener are NOW (or null). */
+  framing(L) {
+    const withAt = L.with || this.p.with;
+    if (!this.cam || L.noZoom || !(L.at || withAt)) return null;
+    const a = anchorPos(L.at), b = withAt && withAt !== L.at ? anchorPos(withAt) : null;
+    const focus = a && b ? a.clone().lerp(b, 0.45) : a || b ? (a || b).clone() : null;
+    if (!focus) return null;
+    // look at chest height, not the heads: the bodies stay in frame and the words float above them
+    focus.y = Math.min(focus.y - 0.35, b ? 0.7 : 0.9);
+    // two people: pull back enough to keep both in frame (one standing in front of the other needs more)
+    const sep = a && b ? Math.hypot(a.x - b.x, a.z - b.z) : 0;
+    const dz = a && b ? Math.abs(a.z - b.z) : 0;
+    // a real lean-in (the gameplay camera sits ~10 m back at fov 32): close enough to read faces
+    const dist = (L.zoom && L.zoom.dist) || this.p.dist || Math.min(9.5, 4.4 + sep * 0.65 + dz * 0.35);
+    const fov = (L.zoom && L.zoom.fov) || this.p.fov || Math.min(30, 22 + sep * 1.8);
+    return { focus, dist, fov };
+  }
+  /** People keep moving while they talk (Morel runs ahead, a dash carries on): the shot follows them. */
+  track() {
+    const c = this.cam, L = this.line;
+    if (!c || !L || !this.zoomed || this.closing) return;
+    const shot = this.framing(L);
+    if (!shot) return;
+    const hold = c.cine && c.cine.to ? c.cine.to : c.cineHold;
+    if (!hold || !hold.focus) return;
+    hold.focus.copy(shot.focus); // the camera eases toward it (HadesCam smooths a held focus)
   }
   close() {
     if (this.closing) return;
@@ -297,6 +331,7 @@ export class DialogueOverlay extends Scene {
   update(dt, rdt = dt) {
     if (this.freezesBelow && this.cam && this.cam.update) this.cam.update(rdt);
     this.barsK += (this.barsTo - this.barsK) * (1 - Math.exp(-rdt * 9));
+    this.track();
     if (this.closing) {
       this.closing += rdt;
       if (this.closing > 0.35 && !this.done) {
@@ -354,8 +389,10 @@ export class DialogueOverlay extends Scene {
   draw(ui) {
     const W = ui.w, H = ui.h, ctx = ui.ctx;
     // letterbox
-    const bh = Math.round(BAR * clamp(this.barsK));
-    if (bh > 0) { ui.rect(0, 0, W, bh, '#030206'); ui.rect(0, H - bh, W, bh, '#030206'); }
+    const bh0 = Math.round(BAR * clamp(this.barsK));
+    if (bh0 > 0) { ui.rect(0, 0, W, bh0, '#030206'); ui.rect(0, H - bh0, W, bh0, '#030206'); }
+    // a host that draws its own letterbox (a cutscene) says how tall it is: keep everything inside it
+    const bh = Math.max(bh0, this.p.margin || 0);
     const L = this.line;
     const cam = this.camera();
     const fade = this.closing ? clamp(1 - this.closing / 0.3) : 1;
@@ -378,7 +415,7 @@ export class DialogueOverlay extends Scene {
       const p = ap ? project(cam, ap, W, H) : null;
       const x = p && !p.behind ? p.x : W / 2, y = p && !p.behind ? p.y : H - bh - 46;
       const inK = clamp(this.t / 0.18);
-      drawFloat(ui, x, y + Math.round((1 - inK) * 6), this.text, {
+      this.lineRect = drawFloat(ui, x, y + Math.round((1 - inK) * 6), this.text, {
         name: v.name, color: v.color, alpha: inK * fade, shown: this.shown, now: this.t, revealT: (i) => (this.revealAt[i] ?? -1),
         top: bh + 4, bottom: bh + 4, maxW: L.maxW || 270, tail: !!p,
       });
@@ -403,8 +440,14 @@ export class DialogueOverlay extends Scene {
       // your hero off-frame (a close-up on the speaker): the tags sit low and centred instead
       const on = inView(p, W, H, 30 + bh * 0.5);
       const x = on ? Math.min(W - 230, p.x + 34) : W / 2 - 90;
-      const y = on ? p.y + 30 : H - bh - 70;
-      const picked = drawReplyTags(ui, x, y, L.replies, this.sel, this.replyT);
+      let y = on ? p.y + 30 : H - bh - 70;
+      // never on top of the line being answered: slide below it (or above, if there's no room)
+      const fr = this.text ? this.lineRect : null, n = L.replies.length, gh = (ui.touch ? 32 : 22) * n, tw = 220;
+      if (fr && x < fr.x + fr.w + 8 && x + tw > fr.x - 8 && y - gh / 2 < fr.y + fr.h + 8 && y + gh / 2 > fr.y - 8) {
+        const below = fr.y + fr.h + 12 + gh / 2;
+        y = below + gh / 2 < H - bh - 12 ? below : fr.y - 12 - gh / 2;
+      }
+      const picked = drawReplyTags(ui, x, y, L.replies, this.sel, this.replyT, 'dlg', bh);
       if (picked >= 0) this.pick(picked);
     } else if (L && !this.closing && this.game.input.pressed && !this.game.input.consumed) {
       this.game.input.consume();

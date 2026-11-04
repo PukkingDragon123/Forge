@@ -773,7 +773,9 @@ export class DungeonScene extends Scene {
     const game = this.game, ctx = ui.ctx;
     const touch = ui.touch;
     if (game.overlays.length) {
-      if (this.fade > 0.01) { ctx.globalAlpha = clamp(this.fade); ctx.fillStyle = '#05040a'; ctx.fillRect(0, 0, ui.w, ui.h); ctx.globalAlpha = 1; }
+      // an overlay with a world of its own (the boss intro, a rescue) replaces the picture: our entry
+      // fade is frozen at black underneath it and would black the whole cinematic out
+      if (this.fade > 0.01 && !game.overlays.some((o) => o.world)) { ctx.globalAlpha = clamp(this.fade); ctx.fillStyle = '#05040a'; ctx.fillRect(0, 0, ui.w, ui.h); ctx.globalAlpha = 1; }
       return;
     }
     // damage numbers, impacts and (touch) the action controls
