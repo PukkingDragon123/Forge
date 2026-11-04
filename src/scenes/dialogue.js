@@ -78,6 +78,9 @@ function project(camera, v, w, h) {
   return { x: (p.x * 0.5 + 0.5) * w, y: (-p.y * 0.5 + 0.5) * h, behind: p.z > 1 || p.z < -1 };
 }
 
+/** A projected point that's really in view (not behind the camera, not off an edge or under the bars). */
+const inView = (p, w, h, m = 24) => !!p && !p.behind && p.x > m && p.x < w - m && p.y > m && p.y < h - m;
+
 // ------------------------------------------------------------------ the floating line
 const wordCache = new Map();
 /** Lay out a line into positioned words (font 'large', wrapped at maxW). */
@@ -389,15 +392,18 @@ export class DialogueOverlay extends Scene {
     if (this.replyFor) {
       const r = this.replyFor, ap = anchorPos(r.at), p = ap ? project(cam, ap, W, H) : null;
       const k = clamp(r.t / 0.15) * clamp((r.dur - r.t) / 0.25) * fade;
-      drawFloat(ui, p ? p.x : W / 2, p ? p.y : H - bh - 60, r.text, { name: voiceOf('durgan').name, color: voiceOf('durgan').color, alpha: k, top: bh + 4, bottom: bh + 4, maxW: 220 });
+      const on = inView(p, W, H, 30 + bh * 0.5);
+      drawFloat(ui, on ? p.x : W / 2, on ? p.y : H - bh - 60, r.text, { name: voiceOf('durgan').name, color: voiceOf('durgan').color, alpha: k, top: bh + 4, bottom: bh + 4, maxW: 220 });
     }
     // reply tags
     if (L && L.replies && L.replies.length && this.lineDone && this.replyT >= 0 && !this.picking && !this.closing) {
       const at = L.replyAt || this.p.replyAt || this.lastPlayerAt;
       const ap = at ? anchorPos(at) : null;
       const p = ap ? project(cam, ap, W, H) : null;
-      const x = p && !p.behind ? Math.min(W - 230, p.x + 34) : W / 2 - 90;
-      const y = p && !p.behind ? p.y + 30 : H - bh - 70;
+      // your hero off-frame (a close-up on the speaker): the tags sit low and centred instead
+      const on = inView(p, W, H, 30 + bh * 0.5);
+      const x = on ? Math.min(W - 230, p.x + 34) : W / 2 - 90;
+      const y = on ? p.y + 30 : H - bh - 70;
       const picked = drawReplyTags(ui, x, y, L.replies, this.sel, this.replyT);
       if (picked >= 0) this.pick(picked);
     } else if (L && !this.closing && this.game.input.pressed && !this.game.input.consumed) {

@@ -184,8 +184,14 @@ export class Cine {
   }
   /** A top-down room from room_vox (the dungeon rooms the game itself uses). */
   roomSet(name, stage = 0, room = {}, opts = {}) {
-    const st = buildRoom(stage, room, opts);
-    if (typeof st.finishCore === 'function') st.finishCore(); // floor, walls and props before the first shot
+    let st;
+    try { st = buildRoom(stage, room, opts); if (typeof st.finishCore === 'function') st.finishCore(); } // floor, walls and props before the first shot
+    catch (e) {
+      // a room the builder can't make yet must not take the cinematic down with it: stage 0's look instead
+      console.warn('[cutscene] room', stage, room.type, 'failed:', e && e.message);
+      if (!stage) throw e;
+      st = buildRoom(0, room, opts); if (typeof st.finishCore === 'function') st.finishCore();
+    }
     const group = st.group;
     this.scene.add(group);
     st.setCamera && st.setCamera(this.camera);
