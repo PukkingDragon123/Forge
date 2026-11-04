@@ -559,6 +559,10 @@ export const SFX = {
   root_snare: { vol: 0.9, verb: 0.2, fn: (s) => { creak(s, { f: 140, f2: 90, dur: 0.5, vol: 0.1 }); s.noise({ dur: 0.4, a: 0.05, vol: 0.12, filter: LP(800, 300) }); crackle(s, 8, { spread: 0.4, vol: 0.08 }); return 0.55; } },
   gem_shards: { vol: 0.9, verb: 0.3, fn: (s) => { for (let i = 0; i < 5; i++) clink(s, { t: i * 0.035, f: 2200 + i * 260, ratio: 2.76, index: 2, dur: 0.25, vol: 0.05 }); whoosh(s, { dur: 0.2, f: 1500, f2: 5000, vol: 0.1 }); return 0.4; } },
   mushroom_turret: { vol: 0.85, verb: 0.2, fn: (s) => { s.tone({ f: 200, f2: 520, sweep: 0.1, dur: 0.15, vol: 0.14 }); s.noise({ t: 0.12, dur: 0.3, a: 0.02, vol: 0.08, filter: BP(1000, 500, 1) }); return 0.4; } },
+  // P's names for the same skills
+  stone_spike: { vol: 1, verb: 0.25, fn: (s) => { thud(s, { f: 170, f2: 70, dur: 0.12, vol: 0.28 }); crackle(s, 4, { spread: 0.06, vol: 0.1 }); return 0.25; } },
+  turret_plant: { vol: 0.85, verb: 0.2, fn: (s) => { thud(s, { f: 150, f2: 80, dur: 0.12, vol: 0.2 }); s.tone({ t: 0.06, f: 200, f2: 520, sweep: 0.1, dur: 0.15, vol: 0.12 }); s.noise({ t: 0.16, dur: 0.25, a: 0.02, vol: 0.06, filter: BP(1000, 500, 1) }); return 0.4; } },
+  spore_shot: { vol: 0.75, verb: 0.15, fn: (s) => { s.tone({ f: 520, f2: 260, dur: 0.07, vol: 0.1 }); s.noise({ dur: 0.12, a: 0.005, vol: 0.07, filter: BP(1500, 900, 1.2) }); return 0.14; } },
   // mining tools
   chisel_tap: { vol: 0.85, verb: 0.15, fn: (s) => { clink(s, { f: 2600, ratio: 2.4, index: 3, dur: 0.2, vol: 0.1 }); return 0.22; } },
   bomb_fuse: { vol: 0.8, verb: 0.1, fn: (s) => { crackle(s, 30, { spread: 0.9, vol: 0.08 }); s.noise({ dur: 0.9, a: 0.05, vol: 0.05, filter: HP(4000) }); return 0.9; } },
