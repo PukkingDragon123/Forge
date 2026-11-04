@@ -60,13 +60,17 @@ await page.evaluate(() => {
       const fl = s.floor, room = s.curRoom, built = s.built;
       if (s.holeOpen && built && built.anchors && built.anchors.hole) { const h = built.anchors.hole; if (Math.hypot(h.x - p.x, h.z - p.z) > 0.6) move(h.x - p.x, h.z - p.z); else { stop(); tap('KeyF'); } return; }
       if (!B.target || B.target.room !== room.id) {
-        const dirs = ['n', 'e', 's', 'w'].filter((d) => room.doors && room.doors[d] != null && built && built.doors && built.doors[d] && (!built.doors[d].isOpen || built.doors[d].isOpen()));
         const roomOf = (id) => (fl.rooms.get ? fl.rooms.get(id) : fl.rooms[id]);
+        const dirs = ['n', 'e', 's', 'w'].filter((d) => {
+          if (!room.doors || room.doors[d] == null || !built || !built.doors || !built.doors[d]) return false;
+          if (room.hidden && room.hidden[d]) { const nb = roomOf(room.doors[d]); if (!nb || !(nb.found || nb.visited)) return false; }
+          return !built.doors[d].isOpen || built.doors[d].isOpen();
+        });
         const fresh = dirs.filter((d) => { const nr = roomOf(room.doors[d]); return nr && !nr.visited; });
         const pick = (fresh.length ? fresh : dirs)[Math.floor(Math.random() * (fresh.length || dirs.length))];
         B.target = pick ? { room: room.id, dir: pick } : null;
       }
-      if (B.target) { const d = built.doors[B.target.dir]; const tx = d.mouth ? d.mouth.x : d.x, tz = d.mouth ? d.mouth.z : d.z; move(tx - p.x + (d.x - tx) * 2, tz - p.z + (d.z - tz) * 2); }
+      if (B.target) { const d = built.doors[B.target.dir]; const o = d.out || { x: 0, z: 0 }; move(d.x + o.x * 0.8 - p.x, d.z + o.z * 0.8 - p.z); }
     } catch (e) { (window.__bot.err || (window.__bot.err = [])).push(String(e && e.message)); }
   }, 50);
 });
