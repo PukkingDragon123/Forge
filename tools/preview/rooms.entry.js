@@ -29,6 +29,14 @@ class RoomPreview extends Scene {
     cam.position.set(fx, Math.sin(pitch) * dist, fz + Math.cos(pitch) * dist);
     cam.lookAt(fx, 0, fz);
     if (p.grid) scene.add(gridOverlay(room.grid));
+    // &px=&pz= : a stand-in hero (red post) the camera follows; props between it and the camera fade
+    if (p.px !== undefined) {
+      const hero = { x: +p.px, z: +(p.pz || 0) };
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.0, 10), new THREE.MeshBasicMaterial({ color: 0xff3040 }));
+      m.position.set(hero.x, 0.5, hero.z); scene.add(m);
+      room.setPlayer(hero);
+      cam.position.set(hero.x, Math.sin(pitch) * dist, hero.z + Math.cos(pitch) * dist); cam.lookAt(hero.x, 0, hero.z);
+    }
     this.room = room; this.cam = cam;
     this.world = { scene, camera: cam, post: { bloom: 0.8, threshold: 0.78, vignette: 0.32, saturation: 1.12, outline: 0.5 } };
     this.info = { ms: Math.round(ms), core: Math.round(room.timing.firstFrame || 0), plan: Math.round(room.timing.plan) };
