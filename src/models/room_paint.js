@@ -19,9 +19,9 @@ const shadeHex = (hex, f, add = 0) => { const [r, g, b] = hexToRgb(hex); return 
 // ---------------------------------------------------------------------------- stage styles
 const SHROOM = {
   ...ACT_STYLES[0], id: 'shroom',
-  brick: pal(['#1c2628', '#283836', '#384c46', '#4c6258', '#667c6c', '#8a9e86']), mortar: C('#121a1a'),
+  brick: pal(['#202c2c', '#2e403c', '#40564e', '#566e62', '#728a76', '#98ae92']), mortar: C('#141e1c'),
   rock: pal(['#18201f', '#24302c', '#32423a', '#46574a', '#606f5c']),
-  flag: pal(['#1e2a28', '#2a3a34', '#3a4c42', '#4e6252', '#6a7c66']), joint: C('#121a18'),
+  flag: pal(['#24322e', '#32443c', '#44584c', '#5a705e', '#788c74']), joint: C('#141c1a'),
   dirt: pal(['#2a2420', '#3c3226', '#524430', '#6c5a3e']),
   moss: pal(['#1c4a30', '#2a6e36', '#40963c', '#6cc046', '#acea64']),
   leaf: pal(['#18482f', '#266c38', '#3a9442', '#66c052', '#a6ea74']),
@@ -29,7 +29,7 @@ const SHROOM = {
   flowers: ['#ff8ad0', '#ffd45e', '#9ae8ff', '#ffffff'],
   water: '#4ad8c8', waterDeep: '#0e3a36',
   lamp: '#ffb05a', lamp2: '#7affd8', glow: '#7affd8', crystal: '#9ae8ff',
-  amb: '#3c3e7c', sky: '#86c0d0', key: '#ffe8c8', keyI: 0.16,
+  amb: '#4a4a8e', sky: '#9ad0d8', key: '#ffe8c8', keyI: 0.16,
   fog: '#0c1c1c', bg: '#071012', fogD: 0.02,
   ore: ['#e08a4a', '#d8d8e8', '#ffd27a'], oreGlow: '#fff0b0', marble: false, wallMix: 0.3,
   caps: [pal(['#5a1e3e', '#8e2e5a', '#c8487a', '#f07aa4', '#ffb4cc']), pal(['#5a2a12', '#9a4a1a', '#d8762a', '#f8a84a', '#ffd88a']), pal(['#12404a', '#1e6a6e', '#2e9a92', '#5ad0b8', '#a8f4dc']), pal(['#2e1e5a', '#48308e', '#6a4ac0', '#9a7ae4', '#cab4ff'])],
@@ -63,32 +63,83 @@ function pitNear(grid, tx, tz, x, z) {
   return (x - x0 < 0.12 && grid.get(tx - 1, tz) === 3) || (x0 + t - x < 0.12 && grid.get(tx + 1, tz) === 3)
     || (z - z0 < 0.12 && grid.get(tx, tz - 1) === 3) || (z0 + t - z < 0.12 && grid.get(tx, tz + 1) === 3);
 }
-/** Floor slab (4 voxels) with flagstones, moss and dirt, holes for pits, a glowing mycelium web. */
+// irregular flagstones: rows of 18 voxels (0.72 m), slabs 14–30 voxels long with jittered joints
+const RH = 18, SL = 22;
+const jit = (row, k) => Math.round((h3(row, k, 7, 3) - 0.5) * 10);
+/** Slab under voxel column (X, Z): { id, lx, lz, len, joint, sink, gone }. */
+function slabAt(X, Z) {
+  const row = Math.floor(Z / RH), lz = Z - row * RH, u = X + (row & 1) * 11 + (row % 3) * 5;
+  let k = Math.floor(u / SL), bk = k * SL + jit(row, k);
+  if (u < bk) { k--; bk = k * SL + jit(row, k); }
+  const bk1 = (k + 1) * SL + jit(row, k + 1), lx = u - bk, len = bk1 - bk;
+  const hh = h3(row, k, 11, 5);
+  return { id: row * 977 + k, row, k, lx, lz, len, joint: lx === 0 || lz === 0, sink: hh < 0.16, gone: hh > 0.965 };
+}
+/** Floor top colour for the rooms: chiselled slabs with bevels, moss in the joints, dirt where slabs are gone. */
+function roomFloorTop(A, X, Z, sl, nw, stage) {
+  const qx = X >> 1, qz = Z >> 1; // fine detail in 2×2-voxel pixels: crisp from the camera, far fewer faces
+  if (sl.gone) return noise2(qx * 0.4, qz * 0.4) > 0.45 ? tone(A.moss, 0.25 + Math.round(noise2(qx * 1.2, qz * 1.2) * 3) / 3 * 0.45) : tone(A.dirt, 0.3 + h3(qx, qz, 2, 2) * 0.4);
+  if (sl.joint) return noise2(X * 0.1 + 5, Z * 0.1) > 0.35 ? tone(A.moss, 0.22 + h3(qx, qz, 1, 1) * 0.3) : A.joint;
+  const base = 0.28 + h3(sl.id, 1, 2, 3) * 0.34;
+  let v = base;
+  if (sl.lx === 1 || sl.lz === 1) v += 0.14;                 // lit chamfer (light from the north-west)
+  else if (sl.lx === sl.len - 1 || sl.lz === RH - 1) v -= 0.12; // shadowed chamfer
+  if (h3(qx, qz, 4, 1) > 0.97) v += 0.08;
+  let c = tone(A.flag, v);
+  // cracks, moss creeping over the stones, dirt
+  if (Math.abs(noise2(X * 0.09 + sl.id, Z * 0.09) - 0.5) < 0.012) c = A.joint;
+  const mn = noise2(qx * 0.14 + 5, qz * 0.14);
+  if ((nw < 8 && mn > 0.4) || mn > 0.74) c = tone(A.moss, 0.2 + Math.round(noise2(qx * 0.7, qz * 0.7) * 3) / 3 * 0.5);
+  else if (noise2(qx * 0.1 + 9, qz * 0.1) > 0.76) c = tone(A.dirt, 0.35 + Math.round(h3(qx >> 1, qz >> 1, 7, 2) * 2) / 2 * 0.3);
+  if (stage === 2 && Math.abs(noise2(X * 0.03 + 4, Z * 0.03) - 0.5) < 0.006) c = glowC(h3(X, Z, 1, 1) > 0.5 ? '#ff6a1a' : '#ffb04a');
+  if (stage === 3 && !sl.joint && noise2(X * 0.06 + sl.k, Z * 0.2) > 0.82) c = mixC(c, C(A.glow), 0.2); // marble veins
+  return c;
+}
+const GROVE_SLAB = { id: 0, lx: 5, lz: 5, len: 20, joint: false, sink: false, gone: false };
+/** Boss grove floor: soft mossy earth threaded with glowing mycelium and old flagstones half buried. */
+function groveTop(A, X, Z) {
+  const qx = X >> 1, qz = Z >> 1; // 2×2-voxel pixels, broad calm patches: crisp from the camera, few faces
+  const n = noise2(qx * 0.06, qz * 0.06), m = noise2(qx * 0.05 + 7, qz * 0.05);
+  if (Math.abs(m - 0.5) < 0.009) return h3(qx >> 2, qz >> 2, 1, 1) > 0.6 ? glowC('#9affe0') : C('#c8f0d8');
+  if (n > 0.68) { const sl = slabAt(X, Z); return sl.joint ? A.joint : tone(A.flag, 0.3 + h3(sl.id, 1, 2, 3) * 0.3); }
+  if (n < 0.3) return tone(A.dirt, n < 0.2 ? 0.3 : 0.45);
+  return tone(A.moss, 0.2 + Math.round(noise2(qx * 0.12, qz * 0.12) * 3) / 3 * 0.45);
+}
+/** Floor slab (3 voxels) with flagstones, moss and dirt, holes for pits, a glowing mycelium web, blades of grass. */
 export function paintFloor(w, ctx) {
   const { A, grid, HW, HD, stage } = ctx;
-  const t = grid.tile;
+  const ring = ctx.ornament;
   cols(w, -HW, HW, -HD, HD, (X, Z, x, z) => {
     const [tx, tz] = grid.toTile(x, z);
     const v = grid.get(tx, tz);
     if (v === 3) return;
     // distance to the room edge (voxels) feeds the moss creeping in from the walls
     const nw = Math.min(HW - Math.abs(x), HD - Math.abs(z)) / S;
-    const mat = ctx.matAt ? ctx.matAt(x, z) : MAT.STONE;
-    for (let y = -3; y <= -1; y++) {
-      let c = floorColor(A, X, y, Z, -1 - y, mat, nw);
-      if (y === -1) {
-        if (stage === 0) {
-          // mycelium threads: faint pale filaments wandering between the stones, glowing here and there
-          const m = noise2(X * 0.045 + 13, Z * 0.045), on = noise2(X * 0.02, Z * 0.02 + 5);
-          if (Math.abs(m - 0.5) < 0.007 && on > 0.62) c = h3(X, Z, 1, 4) > 0.82 ? glowC('#9affe0') : mixC(c, C('#d8f0d8'), 0.5);
-        }
-        // soft shade where the floor meets the walls
-        if (nw < 14) c = mixC(c, A.rock[0], (1 - nw / 14) * 0.45);
-      }
-      w.set(X, y, Z, c);
+    const sl = ctx.grove ? GROVE_SLAB : slabAt(X, Z);
+    const top = sl.sink || sl.gone ? -2 : -1;
+    let c = ctx.grove ? groveTop(A, X, Z) : roomFloorTop(A, X, Z, sl, nw, stage);
+    if (stage === 0) {
+      // mycelium threads: faint pale filaments wandering between the stones, glowing here and there
+      const m = noise2(X * 0.045 + 13, Z * 0.045), on = noise2(X * 0.02, Z * 0.02 + 5);
+      if (Math.abs(m - 0.5) < 0.007 && on > 0.62) c = h3(X, Z, 1, 4) > 0.82 ? glowC('#9affe0') : mixC(c, C('#d8f0d8'), 0.5);
     }
+    // a carved ring in the middle of some rooms, with glowing runes
+    if (ring) {
+      const d = Math.hypot(x - ring.x, (z - ring.z) * 1.0);
+      if (Math.abs(d - ring.r) < 0.09) c = tone(A.brick, 0.75);
+      else if (Math.abs(d - ring.r + 0.2) < 0.05 && Math.floor(Math.atan2(z - ring.z, x - ring.x) * 9) % 3 === 0) c = glowC(A.glow);
+      else if (d < ring.r - 0.3 && d > ring.r - 0.4) c = tone(A.brick, 0.62);
+    }
+    // soft shade where the floor meets the walls
+    if (nw < 14) c = mixC(c, A.rock[0], Math.ceil((1 - nw / 14) * 4) / 4 * 0.45);
+    for (let y = -3; y < top; y++) w.set(X, y, Z, sl.joint ? A.joint : A.flag[0]);
+    w.set(X, top, Z, c);
+    // blades of grass in the mossy spots, a few pebbles
+    const hb = h3(X, Z, 9, 9);
+    if (hb > 0.972 && (sl.gone || noise2(X * 0.07 + 5, Z * 0.07) > 0.62 || nw < 6)) { w.set(X, top + 1, Z, tone(A.moss, 0.55 + h3(X, Z, 1, 2) * 0.35)); if (hb > 0.985) w.set(X, top + 2, Z, tone(A.moss, 0.8)); }
+    else if (hb < 0.006) w.set(X, top + 1, Z, tone(A.rock, 0.45));
     // pit rims: darker broken flagstones along an edge shared with a pit tile
-    if (pitNear(grid, tx, tz, x, z)) w.set(X, -1, Z, tone(A.rock, 0.12 + h3(X, Z, 3, 3) * 0.1));
+    if (pitNear(grid, tx, tz, x, z)) w.set(X, top, Z, tone(A.rock, 0.12 + h3(X, Z, 3, 3) * 0.1));
   });
   // pit walls going down into the dark, with roots and a few glowing caps clinging on
   for (const p of ctx.pitEdges || []) {
@@ -106,6 +157,24 @@ export function paintFloor(w, ctx) {
 }
 
 // ---------------------------------------------------------------------------- walls
+/** Room wall face colour: flat per-brick tones and mortar lines (merge into big quads), moss and raw rock in 2×2 pixels. */
+function roomWall(A, X, y, Z, along, yFloor = -1) {
+  const qa = along >> 1, qy = y >> 1;
+  const yr = y - yFloor;
+  const rockZone = noise2(qa * 0.07 + 3.1, qy * 0.09 + X * 0.001) > 1 - A.wallMix;
+  let c;
+  if (rockZone) c = tone(A.rock, 0.3 + (Math.floor((y + noise2(qa * 0.1, qy * 0.04) * 10) / 16) % 3) * 0.12 + Math.round(noise2(qa * 0.24, qy * 0.3) * 2) / 2 * 0.2);
+  else {
+    const row = Math.floor(y / 7), off = (row & 1) * 6 + (row % 3 === 2 ? 3 : 0), uu = along + off;
+    const mortar = ((y % 7) + 7) % 7 === 0 || ((uu % 13) + 13) % 13 === 0;
+    if (mortar) c = A.mortar;
+    else { const id = Math.floor(uu / 13), hb = h3(id, row, 3, 17); c = tone(A.brick, 0.28 + hb * 0.42 + (((y % 7) + 7) % 7 === 6 ? 0.1 : 0) - (yr < 10 ? 0.1 : 0)); }
+  }
+  const mossy = noise2(qa * 0.14 + 11, qy * 0.18) > (yr < 18 ? 0.5 : 0.7);
+  if (mossy && (yr < 22 || noise2(qa * 0.1, qy * 0.1 + 4) > 0.62)) c = tone(A.moss, 0.2 + Math.round(noise2(qa * 0.6, qy * 0.6) * 3) / 3 * 0.5);
+  return c;
+}
+
 const ARCH = (u, hw, h) => { const a = Math.abs(u) / hw; return a >= 1 ? -1 : h - hw * 0.55 * (1 - Math.sqrt(Math.max(0, 1 - a * a))); };
 /** Wall height profile (metres) along each side. */
 export function wallHeights(ctx) {
@@ -124,8 +193,8 @@ export function paintWalls(w, ctx) {
   const DW = 1.0; // doorway half-width (m) — 4 tiles
   const open = (d) => doors[d] && doors[d] !== false;
   const yv = (m) => Math.round(m / S);
-  const cap = (X, y, Z, along) => (h3(Math.floor(along / 9), 0, 3, 7) > 0.5 ? tone(A.brick, 0.62 + h3(X, Z, y, 2) * 0.12) : tone(A.brick, 0.5 + h3(X, Z, y, 3) * 0.1));
-  const mossTop = (X, Z, y, c) => (noise2(X * 0.08 + 2, Z * 0.08) > 0.38 ? tone(A.moss, 0.3 + noise2(X * 0.4, Z * 0.4) * 0.55 + (h3(X, y, Z, 5) > 0.8 ? 0.15 : 0)) : c);
+  const cap = (X, y, Z, along) => (h3(Math.floor(along / 9), 0, 3, 7) > 0.5 ? tone(A.brick, 0.68) : tone(A.brick, 0.55));
+  const mossTop = (X, Z, y, c) => (noise2(X * 0.08 + 2, Z * 0.08) > 0.38 ? tone(A.moss, 0.3 + Math.round(noise2((X >> 1) * 0.8, (Z >> 1) * 0.8) * 3) / 3 * 0.55) : c);
   // ---- north wall (the face the camera looks at): bricks, an arched doorway, a deep passage behind it
   if (touches(w, -HW - WT, HW + WT, -HD - 1.6, -HD)) {
     const top = yv(H.north);
@@ -133,7 +202,7 @@ export function paintWalls(w, ctx) {
     cols(w, -HW - WT, HW + WT, -HD - WT - 0.3, -HD, (X, Z, x, z) => {
       const u = x, inDoor = open('n') && Math.abs(u) < DW + 0.25;
       const archTop = inDoor ? ARCH(u, DW, 2.0) : -1;
-      const jag = Math.round(noise2(X * 0.05, 9) * 3 + noise2(X * 0.21, 3) * 2);
+      const jag = Math.round(noise2(X * 0.03, 9) * 2.5) * 2;
       const yTop = top + jag;
       const front = Z >= ZF - 2 || inDoor;
       for (let y = -4; y <= yTop; y++) {
@@ -142,7 +211,7 @@ export function paintWalls(w, ctx) {
         if (!front && y < yTop - 2) { w.set(X, y, Z, A.mortar); continue; } // hidden inside the wall
         let c;
         if (y >= yTop - 1) c = mossTop(X, Z, y, cap(X, y, Z, X));
-        else c = wallColor(A, X, y, Z, X, 0, -1);
+        else c = roomWall(A, X, y, Z, X, -1);
         // voussoirs: lighter stones framing the arch
         if (archTop > 0 && Math.abs(u) >= DW - 0.04 && Math.abs(u) < DW + 0.25 && m < archTop + 0.25) c = tone(A.brick, 0.66 + h3(Math.floor(y / 6), X > 0 ? 1 : 0, 2, 3) * 0.14);
         if (archTop > 0 && Math.abs(u) < DW && m >= archTop && m < archTop + 0.25) c = (Math.abs(u) < 0.14 ? (ctx.doors.n === 'boss' ? glowC('#ff5ab4') : tone(A.brick, 0.86)) : tone(A.brick, 0.62 + h3(Math.floor(X / 5), 1, 3, 3) * 0.16));
@@ -153,7 +222,7 @@ export function paintWalls(w, ctx) {
     if (open('n')) cols(w, -DW - 0.3, DW + 0.3, -HD - 1.8, -HD - WT - 0.3, (X, Z, x, z) => {
       const d = (-HD - WT - 0.3 - z) / 1.5;
       if (Math.abs(x) < DW) { for (let y = -4; y <= -1; y++) w.set(X, y, Z, mixC(floorColor(A, X, y, Z, -1 - y, MAT.STONE, 3), C('#05080a'), Math.min(0.9, d * 0.8))); }
-      else for (let y = -4; y < yv(2.2); y++) w.set(X, y, Z, mixC(wallColor(A, X, y, Z, Z, 0, -1), C('#05080a'), Math.min(0.9, d * 0.7)));
+      else for (let y = -4; y < yv(2.2); y++) w.set(X, y, Z, mixC(roomWall(A, X, y, Z, Z, -1), C('#05080a'), Math.min(0.9, d * 0.7)));
     });
   }
   // ---- side walls (east, west): height falls toward the camera; doorways get a raised stone gatehouse
@@ -165,13 +234,13 @@ export function paintWalls(w, ctx) {
       const inDoor = open(key) && Math.abs(z) < DW + 0.3;
       const hM = H.side(z) + (inDoor ? 0.75 : 0);
       const archTop = inDoor ? ARCH(z, DW, Math.max(1.5, H.side(0) + 0.1)) : -1;
-      const yTop = yv(hM) + Math.round(noise2(Z * 0.06, side * 5) * 2);
+      const yTop = yv(hM) + Math.round(noise2(Z * 0.04, side * 5) * 1.5) * 2;
       const shell = Math.abs(X - XI) <= 2 || inDoor || Z >= ZS - 2;
       for (let y = -4; y <= yTop; y++) {
         const m = (y + 0.5) * S;
         if (archTop > 0 && m < archTop && Math.abs(z) < DW) continue;
         if (!shell && y < yTop - 2) { w.set(X, y, Z, A.mortar); continue; }
-        let c = y >= yTop - 1 ? mossTop(X, Z, y, cap(X, y, Z, Z)) : wallColor(A, X, y, Z, Z, 0, -1);
+        let c = y >= yTop - 1 ? mossTop(X, Z, y, cap(X, y, Z, Z)) : roomWall(A, X, y, Z, Z, -1);
         if (inDoor && Math.abs(z) >= DW - 0.04) c = y >= yTop - 2 ? tone(A.brick, 0.8) : tone(A.brick, 0.6 + h3(Math.floor(y / 6), Z > 0 ? 1 : 0, 5, 2) * 0.16);
         w.set(X, y, Z, c);
       }
@@ -189,7 +258,7 @@ export function paintWalls(w, ctx) {
       if (open('s') && Math.abs(x) < DW) return;
       const yTop = yv(H.south) + (Math.abs(x) % 2.5 < 0.18 ? 3 : 0) + Math.round(noise2(X * 0.1, 4) * 1.5);
       const shell = Z >= ZO - 2 || (open('s') && Math.abs(x) < DW + 0.12);
-      for (let y = -4; y <= yTop; y++) w.set(X, y, Z, y >= yTop - 1 ? mossTop(X, Z, y, cap(X, y, Z, X)) : shell ? wallColor(A, X, y, Z, X, 0, -1) : A.mortar);
+      for (let y = -4; y <= yTop; y++) w.set(X, y, Z, y >= yTop - 1 ? mossTop(X, Z, y, cap(X, y, Z, X)) : shell ? roomWall(A, X, y, Z, X, -1) : A.mortar);
     });
     if (open('s')) cols(w, -DW, DW, HD, HD + 1.8, (X, Z, x, z) => {
       const step = Math.floor((z - HD) / 0.3), yTop = -1 - step * 3;
@@ -199,11 +268,12 @@ export function paintWalls(w, ctx) {
   // ---- the platform's edge seen below the south parapet: a cliff of rock and roots dropping into the dark
   if (touches(w, -HW - WT - 1, HW + WT + 1, HD + WT, HD + WT + 0.4)) cols(w, -HW - WT - 0.6, HW + WT + 0.6, HD + WT, HD + WT + 0.16, (X, Z, x) => {
     if (open('s') && Math.abs(x) < DW + 0.1) return;
-    const depth = 30 + Math.round(noise2(X * 0.05, 2) * 14);
+    const depth = 24 + Math.round(noise2(X * 0.05, 2) * 10);
     for (let y = -depth; y < -4; y++) {
-      let c = tone(A.rock, 0.1 + ((y + depth) / depth) * 0.25 + h3(X, y, Z, 3) * 0.06);
-      if (noise2(X * 0.25, y * 0.12) > 0.74) c = tone(A.root, 0.25 + h3(X, y, 1, 2) * 0.2);
-      if (noise2(X * 0.1 + 3, y * 0.1) > 0.7) c = tone(A.moss, 0.2 + h3(X, y, 2, 2) * 0.25);
+      const qx = X >> 1, qy = y >> 1;
+      let c = tone(A.rock, 0.1 + Math.round(((y + depth) / depth) * 4) / 4 * 0.25);
+      if (noise2(qx * 0.5, qy * 0.24) > 0.74) c = tone(A.root, 0.3);
+      if (noise2(qx * 0.2 + 3, qy * 0.2) > 0.7) c = tone(A.moss, 0.28);
       w.set(X, y, Z, c);
     }
   });
@@ -217,7 +287,7 @@ export function paintWalls(w, ctx) {
       const yTop = yv(hTop) + (edge ? 0 : 2);
       for (let y = -6; y <= yTop; y++) {
         const ring = ((y + 60) % 14) < 2;
-        let c = ring ? tone(A.brick, 0.75) : wallColor(A, X, y, Z, Math.abs(x - cx) > Math.abs(z - cz) ? Z : X, 0, -1);
+        let c = ring ? tone(A.brick, 0.75) : roomWall(A, X, y, Z, Math.abs(x - cx) > Math.abs(z - cz) ? Z : X, -1);
         if (y >= yTop - 1) c = mossTop(X, Z, y, tone(A.brick, 0.7));
         w.set(X, y, Z, c);
       }
@@ -232,11 +302,11 @@ export function rockObstacle(w, A, b, seed) {
   const cx = (b.x0 + b.x1) / 2 / S, cz = (b.z0 + b.z1) / 2 / S, rx = (b.x1 - b.x0) / 2 / S * 0.98, rz = (b.z1 - b.z0) / 2 / S * 0.98;
   const ry = Math.min(rx, rz) * (0.75 + h3(seed, 1, 2, 3) * 0.5);
   ell(w, cx, -1, cz, rx, ry + 1, rz, (px, py, pz, d) => {
-    const top = py > -1 + ry * 0.55 - noise2(px * 0.2, pz * 0.2) * 3;
+    const top = py > -1 + ry * 0.72 - noise2(px * 0.2, pz * 0.2) * 3;
     if (d > 0.92 && h3(px, py, pz, seed) > 0.6) return undefined; // chipped silhouette
     const strata = ((py + Math.round(noise2(px * 0.1, pz * 0.1) * 4)) >> 2) & 1;
     let c = tone(A.rock, 0.22 + (py + 1) / (ry + 1) * 0.42 + strata * 0.06 + h3(px, py, pz, seed + 1) * 0.07);
-    if (top && noise2(px * 0.15 + seed, pz * 0.15) > 0.3) c = tone(A.moss, 0.3 + noise2(px * 0.5, pz * 0.5) * 0.55);
+    if (top && noise2(px * 0.15 + seed, pz * 0.15) > 0.42) c = tone(A.moss, 0.3 + noise2(px * 0.5, pz * 0.5) * 0.55);
     if (h3(px, py, pz, seed + 7) > 0.997) c = glowC(A.oreGlow || '#fff0b0');
     return c;
   });
@@ -417,9 +487,10 @@ export function oreNuggets(w, A, b, seed, kind = 'ore') {
     const px = cx + Math.cos(a) * rx * Math.cos(el) * 0.92, pz = cz + Math.sin(a) * rz * Math.cos(el) * 0.92, py = -1 + (ry + 1) * Math.sin(el) * 0.95;
     const rr = 1.8 + h3(k, seed, 3, 3) * 2.2, col = cols3[k % cols3.length];
     ell(w, px, py, pz, rr, rr * 0.9, rr, (qx, qy, qz, d) => {
-      const facet = (qx - px) - (qy - py) + (qz - pz) * 0.5 > 0;
-      if (h3(qx, qy, qz, k + seed) > 0.8) return glowC('#ffffff');
-      return facet ? glowC(shadeHex(col, 1.1, 20)) : C(shadeHex(col, 0.7));
+      const lit = (qx - px) * -0.6 + (qy - py) * 0.8 + (qz - pz) * 0.4;
+      if (h3(qx, qy, qz, k + seed) > 0.93) return glowC('#ffffff');               // glints
+      if (lit > rr * 0.55) return glowC(shadeHex(col, 1.05, 10));                 // the bright top facet catches the light
+      return lit > 0 ? C(shadeHex(col, 0.95)) : C(shadeHex(col, 0.6));
     });
   }
 }
@@ -438,6 +509,15 @@ export function wallFootDressing(w, ctx, spots) {
   for (const s of spots) {
     if (!touches(w, s.x - 0.6, s.x + 0.6, s.z - 0.6, s.z + 0.6, 2)) continue;
     const X = Math.round(s.x / S), Z = Math.round(s.z / S), k = s.k;
+    if (stage === 0) {
+      // the mushroom dungeon: clusters of caps of every size crowd the wall foot
+      if (k < 0.2) fern(w, A, X, 0, Z, 6 + Math.round(s.k2 * 6), X + Z, s.k2 > 0.6 ? 2 : 0);
+      else if (k < 0.3) tufts(w, A, X, 0, Z, 7, X + Z, 14);
+      else if (k < 0.88) { const n = 2 + Math.floor(s.k2 * 4); for (let q = 0; q < n; q++) { const big = q === 0 && s.k2 > 0.45; const hh = big ? 9 + Math.round(h3(q, X, Z, 3) * 8) : 4 + Math.round(h3(q, X, Z, 3) * 7); const mx = X + Math.round((h3(q, X, 1, 1) - 0.5) * 14), mz = Z + Math.round((h3(q, Z, 2, 1) - 0.5) * 10); if (big) bigMushroom(w, A, mx, 0, mz, hh, 6 + Math.round(s.k2 * 5), X + q, X * 3 + q); else smallMushroom(w, A, mx, 0, mz, hh, X + q, X + q); } }
+      else if (k < 0.95) rubble(w, A, X, 0, Z, 5, X ^ Z, 4);
+      else PR.bones(w, X, 0, Z, X ^ Z, s.k2 > 0.5);
+      continue;
+    }
     if (stage === 1 && k < 0.4) crystalCluster(w, X, 0, Z, 8 + Math.round(s.k2 * 12), s.k2 > 0.5 ? A.crystal : (A.crystal2 || A.crystal), X ^ Z, 3);
     else if (stage === 2 && k < 0.35) { for (let q = 0; q < 14; q++) w.set(X + Math.round(Math.sin(q * 0.8) * 2), -1, Z + q - 7, glowC(q % 3 ? '#ff6a1a' : '#ffc85a')); }
     else if (k < 0.42) fern(w, A, X, 0, Z, 6 + Math.round(s.k2 * 6), X + Z, stage === 3 ? 3 : s.k2 > 0.6 ? 2 : 0);

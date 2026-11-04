@@ -21,14 +21,17 @@ varying vec2 vU;
 void main() {
   float u = vU.x, v = vU.y;
   if (u > uHead || u < uHead - uTail) discard;
-  float t = clamp((u - (uHead - uTail)) / max(1e-3, uTail), 0.0, 1.0);
-  float edge = smoothstep(0.0, 0.75, v) * (1.0 - smoothstep(0.93, 1.0, v));
-  float a = t * t * edge * uFade;
-  // chunky pixel steps
-  a = floor(a * 6.0 + 0.5) / 6.0;
+  float t = clamp((u - (uHead - uTail)) / max(1e-3, uTail), 0.0, 1.0); // 0 = tail end, 1 = head
+  // a crescent: full width at the head, only the outer rim at the tail
+  if (v < 1.0 - (0.22 + 0.78 * t)) discard;
+  float body = t * sqrt(t);
+  float inner = smoothstep(1.0 - (0.22 + 0.78 * t), 1.0, v);
+  float rim = smoothstep(0.78, 0.95, v) * (1.0 - smoothstep(0.97, 1.0, v));
+  float a = body * (inner * inner * 0.7 + rim) * uFade;
+  a = floor(a * 6.0 + 0.5) / 6.0; // chunky pixel steps
   if (a <= 0.0) discard;
-  vec3 c = mix(uColor, uCore, smoothstep(0.6, 0.96, v) * t);
-  gl_FragColor = vec4(c * a * 1.7, 1.0);
+  vec3 c = mix(uColor, uCore, rim * (0.4 + 0.6 * t));
+  gl_FragColor = vec4(c * a * 1.55, 1.0);
 }`;
 const GROUND_VS = /* glsl */ `
 varying vec2 vP;
@@ -43,8 +46,8 @@ void main() {
   float border = uShape < 0.5 ? smoothstep(0.86, 0.99, (d) / uR) : 0.0;
   float fill = step(k, uProg);
   float rim = smoothstep(uProg - 0.06, uProg, k) * fill;
-  float a = 0.16 + 0.22 * fill + 0.55 * rim + 0.6 * border;
-  a *= 0.85 + 0.15 * sin(uTime * 30.0);
+  float a = 0.07 + 0.16 * fill + 0.5 * rim + 0.7 * border;
+  a *= 0.88 + 0.12 * sin(uTime * 30.0);
   a = floor(a * 5.0 + 0.5) / 5.0;
   gl_FragColor = vec4(uColor, a * uAlpha);
 }`;
@@ -53,8 +56,12 @@ uniform vec3 uColor; uniform float uAlpha; uniform float uR; uniform float uInne
 varying vec2 vP;
 void main() {
   float d = length(vP) / uR;
-  float a = (1.0 - smoothstep(0.55, 1.0, d)) * (uInner > 0.0 ? smoothstep(uInner - 0.08, uInner, d) : 1.0);
-  a = floor(a * 4.0 + 0.5) / 4.0 * uAlpha;
+  if (d > 1.0 || (uInner > 0.0 && d < uInner)) discard;
+  // a faint fill that thins toward the middle and a bright rim (reads as an area, not a pancake)
+  float rim = smoothstep(0.8, 0.96, d) * (1.0 - smoothstep(0.96, 1.0, d));
+  float fill = 0.16 + 0.14 * d;
+  float a = (fill + rim * 0.9) * uAlpha;
+  a = floor(a * 10.0 + 0.5) / 10.0;
   if (a <= 0.01) discard;
   gl_FragColor = vec4(uColor * a, 1.0);
 }`;
@@ -144,7 +151,8 @@ export class FX {
   // ---------------------------------------------------------------- slash arcs
   /** A sweeping crescent. angle = facing (rad), arc = width (rad), dir = +1 sweeps clockwise from the left. */
   slash(x, z, angle, arc = 2.4, r = 1.6, o = {}) {
-    const dir = o.dir ?? 1, w = o.width ?? 0.55;
+    const dir = o.dir ?? 1, w = (o.width ?? 0.55) * 0.85;
+    r *= o.visual ?? 0.82; // drawn a little inside the hit reach so it hugs the hero
     const a0 = angle + (dir > 0 ? arc / 2 : -arc / 2), a1 = angle - (dir > 0 ? arc / 2 : -arc / 2);
     const geo = arcGeo(Math.max(0.05, r - w), r, a0, a1, Math.max(8, Math.round(arc * 9)));
     const mat = new THREE.ShaderMaterial({
@@ -277,11 +285,11 @@ export class FX {
   /** Dash after-image: a tinted capsule ghost that fades. */
   ghost(x, z, facing, color = '#ffd27a', o = {}) {
     const geo = new THREE.CapsuleGeometry(o.r ?? 0.24, o.h ?? 0.42, 3, 8).translate(0, (o.h ?? 0.42) / 2 + (o.r ?? 0.24), 0);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.45 });
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.35), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.22 });
     const m = fxify(new THREE.Mesh(geo, mat), 6);
-    m.position.set(x, 0, z); m.rotation.y = facing; m.scale.set(1, 1, 0.7);
+    m.position.set(x, 0.02, z); m.rotation.y = facing; m.scale.set(0.85, 1, 0.55);
     this.root.add(m);
-    this.items.push({ mesh: m, t: 0, life: o.life ?? 0.22, update: (k) => { mat.opacity = 0.45 * (1 - k); m.scale.setScalar(1 + k * 0.15); } });
+    this.items.push({ mesh: m, t: 0, life: o.life ?? 0.18, update: (k) => { mat.opacity = 0.22 * (1 - k) * (1 - k); m.scale.set(0.85 - k * 0.2, 1 - k * 0.25, 0.55); } });
   }
   /** Generic timed mesh (skills build their own and hand them here). update(k, it). */
   timed(mesh, life, update, layerFx = false) {
@@ -360,8 +368,12 @@ export class FX {
       } else if (n.style === 'hurt') {
         const img = bigText(n.text, { scale: 2, top: '#ffb0a0', bottom: '#ff3a2a' });
         ctx.drawImage(img, Math.round(x - img.width / 2), Math.round(y - img.height / 2));
+      } else if (n.style === 'hit' || n.style === 'heal') {
+        const pop = k < 0.08 ? 1.3 - k * 3.75 : 1;
+        const img = bigText(n.text, { scale: 2, top: n.style === 'heal' ? '#d8ffe0' : '#ffffff', bottom: n.style === 'heal' ? '#4adf6a' : '#e8d8c0' });
+        ctx.save(); ctx.translate(x, y); const s = Math.round(pop * 4) / 4; ctx.scale(s, s); ctx.drawImage(img, Math.round(-img.width / 2), Math.round(-img.height / 2)); ctx.restore();
       } else {
-        const color = n.color || (n.style === 'heal' ? '#7aff9a' : n.style === 'status' ? '#c8f0ff' : n.style === 'loot' ? '#ffe08a' : '#ffffff');
+        const color = n.color || (n.style === 'status' ? '#c8f0ff' : n.style === 'loot' ? '#ffe08a' : '#ffffff');
         drawText(ctx, n.text, x, y - 4, { align: 'center', color, outline: '#140c10', font: n.style === 'status' ? 'small' : 'body' });
       }
       ctx.globalAlpha = 1;

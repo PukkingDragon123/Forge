@@ -6,7 +6,7 @@
 // touch READ/USE button) reads a recipe page, eats forage or drinks a potion. Pauses the fight.
 // Params: { onClose, title, loot: [items to lay on the cloth] }.
 import { Scene } from '../core/game.js';
-import { itemSprite, weaponSprite } from '../art/sprites.js';
+import { itemArt, iconArt } from './dungeon/itemart.js';
 import { matOf, cellsOf } from '../systems/items.js';
 import { RARITY, MATERIALS, QUALITY } from '../data/materials.js';
 import * as Loadout from '../systems/loadout.js';
@@ -154,8 +154,8 @@ export class BagOverlay extends Scene {
       const r = RARITY[m.rarity] || RARITY.common;
       const passive = m.passive || m.adj || m.procs || m.bagPassive;
       if (r.order >= 2 || passive) for (const [cx, cy] of cells) ui.rect(L.gx + cx * CELL + 3, L.gy + cy * CELL + 3, CELL - 6, CELL - 6, passive ? '#ffd27a' : r.color, passive ? 0.12 + Math.sin(this.t * 3) * 0.04 : 0.1);
-      ctx.globalAlpha = 0.35; ui.img(itemSprite(it.id, CELL, it.rot), px + 2, py + 3); ctx.globalAlpha = 1;
-      ui.img(itemSprite(it.id, CELL, it.rot), px, py);
+      ctx.globalAlpha = 0.35; ui.img(itemArt(it, CELL, it.rot), px + 2, py + 3); ctx.globalAlpha = 1;
+      ui.img(itemArt(it, CELL, it.rot), px, py);
       if (linkUids.has(it.uid)) { const [cx, cy] = center(it); ui.icon('sparkle', cx + 6, cy - 14, { alpha: 0.6 + Math.sin(this.t * 6) * 0.3 }); }
       for (const [cx, cy] of cells) {
         const h = ui.hit('bagcell' + it.uid + '_' + cx + '_' + cy, L.gx + cx * CELL, L.gy + cy * CELL, CELL, CELL, { cursor: 'hand', sound: false });
@@ -181,8 +181,8 @@ export class BagOverlay extends Scene {
     const tp = this.trayPositions(L, bag.overflow.filter((it) => !(this.drag && this.drag.item === it)));
     for (const [it, r] of tp) {
       const bob = Math.round(Math.sin(this.t * 2 + r.x * 0.1) * 1);
-      ctx.globalAlpha = 0.35; ui.img(itemSprite(it.id, CELL, it.rot), r.x + 2, r.y + 4); ctx.globalAlpha = 1;
-      ui.img(itemSprite(it.id, CELL, it.rot), r.x, r.y + bob);
+      ctx.globalAlpha = 0.35; ui.img(itemArt(it, CELL, it.rot), r.x + 2, r.y + 4); ctx.globalAlpha = 1;
+      ui.img(itemArt(it, CELL, it.rot), r.x, r.y + bob);
       const h = ui.hit('tray' + it.uid, r.x, r.y, r.w, r.h, { cursor: 'hand', sound: false });
       if (h.hover) hoverItem = it;
       if (h.pressed && !this.drag) this.pick(it, 'tray');
@@ -240,7 +240,7 @@ export class BagOverlay extends Scene {
       ctx.fillStyle = can ? '#9affb0' : '#a08a5a'; ctx.fillRect(x, y, s, 1); ctx.fillRect(x, y, 1, s);
       if (can) { ctx.globalAlpha = 0.25 + Math.sin(this.t * 6) * 0.15; ctx.fillStyle = '#9affb0'; ctx.fillRect(x, y, s, s); ctx.globalAlpha = 1; }
       if (item && !(d && d.item === item)) {
-        const spr = itemSprite(item.id, Math.floor(s / Math.max(1, ...cellsOf({ ...item, rot: 0 }).map((c) => Math.max(c[0], c[1]) + 1))), 0);
+        const spr = iconArt(item, s >= 48 ? 64 : 32);
         if (spr) { const k = Math.min(1, (s - 6) / Math.max(spr.width, spr.height)); ctx.drawImage(spr, Math.round(x + s / 2 - spr.width * k / 2), Math.round(y + s / 2 - spr.height * k / 2), Math.round(spr.width * k), Math.round(spr.height * k)); }
       } else if (!item) ui.text(kind === 'hand' ? 'fists' : '—', x + s / 2, y + s / 2 - 4, { align: 'center', font: 'small', color: '#6a5a50' });
       ui.text(label, x + s / 2, y + s + 3, { align: 'center', font: 'small', color: '#cbb89a', outline: DARK });
@@ -325,8 +325,8 @@ export class BagOverlay extends Scene {
         ui.rect(L.gx + X * CELL + 2, L.gy + Y * CELL + 2, CELL - 4, CELL - 4, ok ? '#9affb0' : '#ff6a5a', 0.25);
       }
     }
-    ctx.globalAlpha = 0.4; ui.img(itemSprite(d.item.id, CELL, d.item.rot), ox + 6, oy + 10); ctx.globalAlpha = 1;
-    ui.img(itemSprite(d.item.id, CELL, d.item.rot), ox, oy - 4, { alpha: 0.95 });
+    ctx.globalAlpha = 0.4; ui.img(itemArt(d.item, CELL, d.item.rot), ox + 6, oy + 10); ctx.globalAlpha = 1;
+    ui.img(itemArt(d.item, CELL, d.item.rot), ox, oy - 4, { alpha: 0.95 });
     ui.dragging = true;
     if (!inp.released) return;
     const c = L.cloth, S = this.slots || {};

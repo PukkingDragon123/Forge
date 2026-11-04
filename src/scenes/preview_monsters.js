@@ -1,6 +1,6 @@
 // Monster lineup preview: ?set=0..3 (acts) | set=bosses | set=snakes | id=<monster,…> ; &state=windup|attack|multi|die|hurt|stun|intro|roar|special ;
 // &phase=2 ; &zoom=2 ; &yaw=-0.3 ; &stone=0..1 ; &seq=1 (petrify → cracks → shatter) ; &fp=3 (first-person camera at 0.95 m, 3 m away)
-// &top=14 (the v5 Hades camera: 52° down, FOV 32, 14 m away)
+// &top=14 (the v5 Hades camera: 52° down, FOV 32, 14 m away) ; &states=talk,wave,… (one per monster)
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
 import { CameraRig } from '../gfx/camera.js';
@@ -67,6 +67,7 @@ export class PreviewMonsters extends Scene {
     this.rig.sway = 0;
     this.world = { scene, camera: this.rig.camera, post: {} };
     this.state = q.get('state');
+    this.states = q.get('states') ? q.get('states').split(',') : null; // per-monster states (index-matched)
     this.phase = +(q.get('phase') || 1);
     if (this.phase > 1) this.mons.forEach((m) => m.setPhase(this.phase));
     this.timer = 0.4;
@@ -91,6 +92,7 @@ export class PreviewMonsters extends Scene {
   }
   update(dt) {
     this.timer -= dt;
+    if (this.states && !this._statesSet) { this._statesSet = true; this.mons.forEach((m, i) => { const st = this.states[i % this.states.length]; if (st === 'stone') m.setStone(1); else if (st && st !== 'idle') m.play(st, { hits: 4 }); }); }
     if (this.state && this.timer <= 0) {
       for (const m of this.mons) m.play(this.state, { hits: 4 });
       this.timer = ['windup', 'stun', 'die', 'disguise', 'idle'].includes(this.state) ? 1e9 : 1.6;

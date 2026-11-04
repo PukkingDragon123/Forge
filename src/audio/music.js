@@ -410,16 +410,18 @@ const DEFS = {
     ],
   },
   // act 0, the Mossy Undercroft: drips, a hushed marimba, roots and ruins
+  // stage 1, the Overgrown Mycelium: bouncy, curious dorian with marimba, bubbles and soft drums
   delve0: {
-    bpm: 74, vol: 0.85, bpc: 2, key: 62, scale: DORIAN,
-    chords: [C(50, 3, 7, 10), C(48, 4, 7, 14), C(46, 4, 7, 11), C(45, 3, 7)],
+    bpm: 92, vol: 0.85, bpc: 2, key: 62, scale: DORIAN, swing: 0.12,
+    chords: [C(50, 3, 7, 10), C(48, 4, 7, 14), C(46, 4, 7, 11), C(45, 3, 7, 10)],
     layers: [
-      { kind: 'pad', inst: 'pad', oct: 0, vol: 0.045, wave: 'triangle', cut: 650 },
-      { kind: 'bass', inst: 'sub', pat: 'x...............', oct: -12, dur: 3, vol: 0.16 },
-      { kind: 'arp', inst: 'marimba', pat: 'x...x.x...x.....', order: 'random', oct: 12, span: 2, vol: 0.08 },
-      { kind: 'sparkle', inst: 'bell', density: 0.07, grid: 2, oct: 24, vol: 0.03, ratio: 3.5, from: 1 },
-      { kind: 'lead', inst: 'whistle', density: 0.12, grid: 4, oct: 12, vol: 0.045, from: 2 },
-      { kind: 'drum', inst: 'heart', pat: 'x...............', vol: 0.18, from: 1 },
+      { kind: 'pad', inst: 'pad', oct: 0, vol: 0.04, wave: 'triangle', cut: 700 },
+      { kind: 'bass', inst: 'pluck', pat: 'x.....x...x.....', oct: -12, dur: 0.9, vol: 0.16, bright: 0.25 },
+      { kind: 'arp', inst: 'marimba', pat: 'x..x..x.x..x.x..', order: 'random', oct: 12, span: 2, vol: 0.09 },
+      { kind: 'sparkle', inst: 'bubble', density: 0.14, grid: 2, oct: 24, vol: 0.05, from: 1 },
+      { kind: 'drum', inst: 'softkick', pat: 'x.......x.......', vol: 0.45, from: 1 },
+      { kind: 'drum', inst: 'shaker', pat: '..x...x...x...x.', vol: 0.5, from: 1 },
+      { kind: 'lead', inst: 'whistle', density: 0.16, grid: 2, oct: 12, vol: 0.05, from: 2 },
     ],
   },
   // act 1, the Crystal Cistern: glassy, watery lydian
@@ -471,6 +473,49 @@ const DEFS = {
       { kind: 'bass', inst: 'distbass', pat: 'x.xx.xx.x.xx.xx.', oct: -12, vol: 0.1, cut: 1200 },
       { kind: 'arp', inst: 'pluck', pat: 'xxxxxxxxxxxxxxxx', order: 'up', oct: 12, span: 1, dur: 0.3, vol: 0.06, bright: 0.85 },
       { kind: 'stab', inst: 'brass', pat: 'x.....x.........', oct: 12, vol: 0.05, dur: 0.3, from: 1 },
+    ],
+  },
+  // the title: a warm swell, brass and choir over a plucked forge rhythm
+  title: {
+    bpm: 76, vol: 0.9, bpc: 2, key: 57, scale: MAJOR, swing: 0.1,
+    chords: [C(45, 4, 7, 11), C(41, 4, 7, 14), C(38, 3, 7, 10), C(43, 4, 7, 9)],
+    layers: [
+      { kind: 'pad', inst: 'choir', oct: 12, vol: 0.05 },
+      { kind: 'bass', inst: 'sub', pat: 'x.......x.......', oct: -12, dur: 2.5, vol: 0.16 },
+      { kind: 'arp', inst: 'pluck', pat: 'x.x.x.x.x.x.x.x.', order: 'updown', oct: 12, span: 2, dur: 1.2, vol: 0.12, bright: 0.5 },
+      { kind: 'stab', inst: 'brass', pat: 'x...............', oct: 0, vol: 0.05, dur: 1.6, from: 1 },
+      { kind: 'drum', inst: 'anvil', pat: '....x.......x...', vol: 0.25, from: 1 },
+      { kind: 'lead', inst: 'whistle', density: 0.2, grid: 2, oct: 12, vol: 0.06, from: 2 },
+      { kind: 'drum', inst: 'brush', pat: 'x...x...x...x.x.', vol: 0.35, from: 2 },
+    ],
+  },
+  // the tutorial chase: quick and urgent, but with Morel's bounce
+  tutorial: {
+    bpm: 132, vol: 0.85, bpc: 1, key: 50, scale: DORIAN,
+    chords: [C(38, 3, 7), C(41, 4, 7), C(36, 4, 7), C(43, 3, 7)],
+    layers: [
+      { kind: 'drum', inst: 'kick', pat: 'x.....x...x.....', vol: 0.55 },
+      { kind: 'drum', inst: 'hat', pat: '..x...x...x...x.', vol: 0.35 },
+      { kind: 'drum', inst: 'snare', pat: '....x.......x...', vol: 0.45, from: 1 },
+      { kind: 'bass', inst: 'bass', pat: 'x..x..x.x..x..x.', oct: -12, vol: 0.18 },
+      { kind: 'arp', inst: 'marimba', pat: 'x.xx.x.xx.x.xx.x', order: 'up', oct: 12, span: 2, vol: 0.08 },
+      { kind: 'sparkle', inst: 'bubble', density: 0.12, grid: 2, oct: 24, vol: 0.05, from: 1 },
+      { kind: 'lead', inst: 'whistle', density: 0.22, grid: 2, oct: 12, vol: 0.05, from: 2 },
+    ],
+  },
+  // the Grand Puffcap: a fat, bouncing boss waltz-stomp with bubbling spores
+  puffcap: {
+    bpm: 118, vol: 0.85, bpc: 1, key: 45, scale: MINOR,
+    chords: [C(33, 3, 7), C(34, 4, 7), C(33, 3, 7), C(31, 4, 7, 10)],
+    layers: [
+      { kind: 'drum', inst: 'kick', pat: 'x..x..x.x..x..x.', vol: 0.8 },
+      { kind: 'drum', inst: 'lowtom', pat: '..x.....x.x.....', vol: 0.5, fill: 'x.x.x.x.xxxxxxxx' },
+      { kind: 'drum', inst: 'snare', pat: '....x.......x...', vol: 0.6 },
+      { kind: 'drum', inst: 'hat', pat: 'x.x.x.x.x.x.x.x.', vol: 0.35 },
+      { kind: 'bass', inst: 'distbass', pat: 'x..x..x.x..x..xx', oct: 0, vol: 0.11, cut: 1100 },
+      { kind: 'stab', inst: 'brass', pat: 'x.....x.........', oct: 12, vol: 0.055, dur: 0.35 },
+      { kind: 'sparkle', inst: 'bubble', density: 0.3, grid: 1, oct: 24, vol: 0.05 },
+      { kind: 'lead', inst: 'lead', wave: 'square', density: 0.3, grid: 2, oct: 12, vol: 0.04, from: 2 },
     ],
   },
   // the gorgon herself: heavy hijaz, choir and taiko-like toms

@@ -129,7 +129,7 @@ export class Player extends Entity {
     if (this.model.height) this.height = this.model.height;
     // a warm key light that keeps the hero readable, and a soft team ring under the feet
     this.light = new THREE.PointLight(0xffd8a8, 1.3, 5, 1.8);
-    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.32, depthWrite: false }));
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.44, 0.49, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffe2a8, transparent: true, opacity: 0.2, depthWrite: false }));
     this.ring.renderOrder = 3;
     world.scene.add(this.light, this.ring);
     // hp: run → opts → character data
@@ -174,6 +174,7 @@ export class Player extends Entity {
       this.maxHp = loadout.maxHp;
       this.hp = Math.min(this.maxHp, this.hp + Math.max(0, grow));
     }
+    if (this.model && this.model.setWeaponType) this.model.setWeaponType(type === 'pickaxe' || type === 'fists' ? 'axe' : type);
     this.equipMesh();
   }
   equipMesh() {
@@ -386,8 +387,16 @@ export class Player extends Entity {
     if (t) { const d = Math.hypot(t.x - this.x, t.z - this.z) - (t.radius + this.radius + 0.25); lunge = Math.max(0, Math.min(lunge, d)); }
     const lt = Math.max(0.05, this.atk.wind + this.atk.active);
     this.lungeV = { x: aim.x * (lunge / lt), z: aim.z * (lunge / lt), t: lt };
-    const animSpeed = 1.6 * sp * (move.heavy ? 0.9 : 1.15);
-    tryPlay(this.model, move.anim, { speed: animSpeed, weapon: this.weapon && this.weapon.bp });
+    // play the art so its impact frame lands exactly on the hit: speed = impact / windup (clamped),
+    // then the windup becomes impact / speed
+    let animSpeed = 1.6 * sp * (move.heavy ? 0.9 : 1.15);
+    const mdl = this.model;
+    const name = mdl && mdl.resolveAnim ? move.anim.find((n) => mdl.animDuration && mdl.animDuration(n) > 0) : null;
+    if (name && mdl.impactTime) {
+      const imp = mdl.impactTime(name, 1);
+      if (imp > 0) { animSpeed = Math.max(1.1, Math.min(2.6, imp / this.atk.wind)); this.atk.wind = imp / animSpeed; }
+      tryPlay(mdl, [name], { speed: animSpeed });
+    } else tryPlay(mdl, move.anim, { speed: animSpeed, weapon: this.weapon && (this.weapon.type || this.weapon.bp) });
     this.comboT = 0;
     if (!dash) this.combo = (this.combo + 1) % m.combo.length; else this.combo = 0;
     const au = this.world.game && this.world.game.audio; au && au.play(move.sound || 'swing', { vol: 0.55, pitch: (move.heavy ? 0.85 : 1) + Math.random() * 0.12 });
@@ -417,7 +426,7 @@ export class Player extends Entity {
     // FX
     if (move.shape === 'line') w.fx.thrust(x + dir.x * 0.3, z + dir.z * 0.3, ang, move.len, { color: col, width: move.heavy ? 0.5 : 0.32 });
     else if (move.shape === 'circle' && !move.quake) w.fx.slash(x, z, ang, Math.PI * 1.95, move.r, { color: col, core: this.moves.core, width: 0.7, dir: 1, sweep: 0.08 });
-    else if (move.shape !== 'circle') w.fx.slash(x, z, ang, move.arc, move.r, { color: col, core: this.moves.core, width: (move.fx && move.fx.width) || 0.55, dir: (move.fx && move.fx.dir) || 1, sweep: move.heavy ? 0.07 : 0.06, tilt: move.fx && move.fx.chop ? -0.25 : 0 });
+    else if (move.shape !== 'circle') w.fx.slash(x, z, ang, move.arc, move.r, { color: col, core: this.moves.core, width: ((move.fx && move.fx.width) || 0.55) * 0.85, dir: (move.fx && move.fx.dir) || 1, sweep: move.heavy ? 0.07 : 0.06, tilt: move.fx && move.fx.chop ? -0.25 : 0 });
     if (move.quake) {
       const qx = x + dir.x * (move.shape === 'circle' ? 0 : move.r * 0.6), qz = z + dir.z * (move.shape === 'circle' ? 0 : move.r * 0.6);
       w.fx.ring(qx, qz, move.quake, '#ffe8b0', { life: 0.3 });
@@ -438,17 +447,20 @@ export class Player extends Entity {
     const w = this.world, aim = this.resolveAim(true);
     this.aimX = aim.x; this.aimZ = aim.z; this.facing = angOf(aim.x, aim.z);
     this.atk = null;
-    tryPlay(this.model, sp.anim || ['cast'], { speed: 1.6 });
+    tryPlay(this.model, ['special'].concat(sp.anim || ['cast']), { speed: 1.6 });
     const au = w.game && w.game.audio; au && au.play(sp.sound || 'special', { vol: 0.75 });
     const col = this.moves.color;
     if (sp.kind === 'spin') {
-      this.enterState('special', sp.hits * sp.gap + 0.12, { moveMul: 0.5 });
-      w.every(sp.gap, sp.hits, (i) => {
+      const m = this.model, times = m && m.impactTimes ? m.impactTimes('special', 1.6) : [];
+      const at = times.length ? times : Array.from({ length: sp.hits }, (_, i) => 0.05 + i * sp.gap);
+      this.enterState('special', at[at.length - 1] + 0.14, { moveMul: 0.5 });
+      at.forEach((t, i) => w.after(t, () => {
         if (this.dead) return;
-        w.areaDamage({ shape: 'circle', x: this.x, z: this.z, r: sp.r }, this.hitOf(sp.mul, { kb: sp.kb, heavy: i === sp.hits - 1 }));
-        w.fx.slash(this.x, this.z, this.facing + i * 2.4, Math.PI * 1.95, sp.r, { color: col, core: this.moves.core, width: 0.85, dir: 1, sweep: sp.gap * 0.8 });
+        w.areaDamage({ shape: 'circle', x: this.x, z: this.z, r: sp.r }, this.hitOf(sp.mul, { kb: sp.kb, heavy: i === at.length - 1 }));
+        w.fx.slash(this.x, this.z, this.facing + i * 2.4, Math.PI * 1.95, sp.r, { color: col, core: this.moves.core, width: 0.85, dir: 1, sweep: 0.1 });
         w.fx.dust(this.x, this.z, 6, { speed: [1, 2.5] });
-      });
+        if (i > 0) au && au.play('whirl', { vol: 0.4, pitch: 1.1 });
+      }));
     } else if (sp.kind === 'leap') {
       const p = this.aimPoint(sp.range);
       const [tx, tz] = w.grid.circleFree(p.x, p.z, this.radius) ? [p.x, p.z] : w.grid.freeNear(p.x, p.z, this.radius);
@@ -474,6 +486,7 @@ export class Player extends Entity {
       w.fx.thrust(this.x, this.z, this.facing, sp.len + 0.8, { color: col, width: 0.6, sweep: sp.dur });
     } else if (sp.kind === 'throw' || sp.kind === 'fan') {
       const n = sp.n || 1;
+      if (sp.kind === 'throw' && this.weaponMesh) { this.weaponMesh.visible = false; w.after(0.7, () => { if (this.weaponMesh) this.weaponMesh.visible = true; }); }
       this.enterState('special', 0.2, { moveMul: 0.4 });
       for (let i = 0; i < n; i++) {
         const a = this.facing + (n === 1 ? 0 : (i / (n - 1) - 0.5) * sp.spread);
@@ -654,8 +667,8 @@ export class Player extends Entity {
     const o = this.obj;
     if (!o) return;
     o.position.set(this.x, this.y, this.z);
-    o.rotation.y = this.facing;
     const m = this.model;
+    if (m && m.setFacing) m.setFacing(this.facing, { instant: true }); else o.rotation.y = this.facing;
     if (m && m.play && this.state === 'move' && !this.dead) {
       const spd = Math.hypot(this.vx, this.vz);
       if (spd > 0.6) tryPlay(m, ['run', 'walk'], { speed: 0.9 + (spd / FEEL.speed) * 0.6, restart: false });
@@ -666,7 +679,7 @@ export class Player extends Entity {
     o.visible = !(this.invuln > 0 && this.state !== 'dash' && this.state !== 'leap' && Math.floor(this.age * 20) % 3 === 0 && this.age > 0.5);
     this.light.position.set(this.x, 2.2 + this.y, this.z + 0.6);
     this.ring.position.set(this.x, 0.03, this.z);
-    this.ring.material.opacity = this.dead ? 0 : 0.28 + (this.invuln > 0 ? 0.25 : 0);
+    this.ring.material.opacity = this.dead ? 0 : 0.16 + (this.invuln > 0 ? 0.2 : 0);
   }
   drawControls(ui) { drawControls(ui, this); }
   dispose() { this.light.parent && this.light.parent.remove(this.light); this.ring.parent && this.ring.parent.remove(this.ring); this.ring.geometry.dispose(); this.ring.material.dispose(); }

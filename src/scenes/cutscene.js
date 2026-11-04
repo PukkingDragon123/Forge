@@ -185,6 +185,7 @@ export class Cine {
   /** A top-down room from room_vox (the dungeon rooms the game itself uses). */
   roomSet(name, stage = 0, room = {}, opts = {}) {
     const st = buildRoom(stage, room, opts);
+    if (typeof st.finishCore === 'function') st.finishCore(); // floor, walls and props before the first shot
     const group = st.group;
     this.scene.add(group);
     st.setCamera && st.setCamera(this.camera);

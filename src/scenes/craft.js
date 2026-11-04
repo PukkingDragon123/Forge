@@ -9,6 +9,7 @@ import { Scene } from '../core/game.js';
 import * as Crafting from '../systems/crafting.js';
 import { MATERIALS, RARITY } from '../data/materials.js';
 import { materialSprite } from '../art/sprites.js';
+import { iconArt } from './dungeon/itemart.js';
 import { benchCanvas, moldCanvas, bookCanvas, BOOK, BENCH_H } from '../art/forge_art.js';
 import { tag } from '../ui/frames.js';
 import { clamp, ease } from '../core/math.js';
@@ -144,7 +145,7 @@ export class CraftOverlay extends Scene {
       const h = ui.hit('slot' + i, p.x, p.y, S, S, { sound: false });
       if (it) {
         const bob = this.anim ? Math.round(Math.sin(this.anim.t * 30 + i) * 2) : 0;
-        ui.img(materialSprite(it.id, 32), p.x + 6, p.y + 6 + bob);
+        ui.img(iconArt(it, 32), p.x + 6, p.y + 6 + bob);
         if (h.hover) ui.tooltip(shortTip(it));
         if (h.clicked) this.remove(i);
       }
@@ -190,13 +191,13 @@ export class CraftOverlay extends Scene {
       ctx.fillStyle = h.hover ? '#5a4030' : '#2e2018'; ctx.fillRect(x, y, cw - 4, cw - 4);
       const r = RARITY[m && m.rarity] || RARITY.common;
       ctx.fillStyle = r.color; ctx.globalAlpha = 0.5; ctx.fillRect(x, y + cw - 6, cw - 4, 2); ctx.globalAlpha = 1;
-      ui.img(materialSprite(it.id, 32), x + 2, y + 2 - (h.hover ? 1 : 0), { alpha: used ? 1 : 0.45 });
+      ui.img(iconArt(it, 32), x + 2, y + 2 - (h.hover ? 1 : 0), { alpha: used ? 1 : 0.45 });
       if (h.hover) ui.tooltip(shortTip(it));
       if (h.clicked) this.add(it);
       if (h.pressed && !this.drag) this.drag = { item: it, x0: inp.x, y0: inp.y };
     });
     if (this.drag) {
-      if (inp.down) ui.img(materialSprite(this.drag.item.id, 32), inp.x - 16, inp.y - 16 - (ui.touch ? 24 : 0), { alpha: 0.85 });
+      if (inp.down) ui.img(iconArt(this.drag.item, 32), inp.x - 16, inp.y - 16 - (ui.touch ? 24 : 0), { alpha: 0.85 });
       else this.drag = null;
     }
 

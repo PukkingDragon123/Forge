@@ -82,8 +82,10 @@ export function telegraph(world, o) {
   const M = manager(world);
   if (typeof world.telegraph === 'function' && !world._noEngineTelegraph) {
     try {
-      const h = world.telegraph({ ...o, color: o.color || '#ff3a2a' });
-      if (h) return { cancel: () => { try { h.cancel ? h.cancel() : h.remove && h.remove(); } catch (e) { /* engine handle */ } } };
+      const eo = { ...o, color: o.color || '#ff3a2a' };
+      if (o.shape === 'ring') eo.r0 = (o.inner ?? 0.6) * (o.r || 1);
+      const h = world.telegraph(eo);
+      if (h) return { cancel: () => { try { if (h.cancel) h.cancel(); else { h.done = true; if (h.mesh) h.mesh.visible = false; } } catch (e) { /* engine handle */ } } };
     } catch (e) { /* fall through to the built-in decal */ }
   }
   const T = makeDecal(world, o);
@@ -222,8 +224,10 @@ export function updateEnemyFx(world, dt) {
 // ------------------------------------------------------------------ small fx helpers (engine fx when present)
 export function puff(world, x, z, col = '#cfe8a0', n = 12) {
   const fx = world.fx;
-  if (fx && typeof fx.dust === 'function') try { fx.dust(x, z, { color: col, n }); } catch (e) { /* engine fx */ }
-  if (fx && typeof fx.spark === 'function') try { fx.spark(x, 0.4, z, col, Math.round(n / 2)); } catch (e) { /* engine fx */ }
+  if (!fx) return;
+  const shade = (h, k) => { const c = new THREE.Color(h); c.multiplyScalar(k); return '#' + c.getHexString(); };
+  if (typeof fx.dust === 'function') try { fx.dust(x, z, n, { color: [col, shade(col, 0.8), shade(col, 1.15)], spread: 0.35 }); } catch (e) { /* engine fx */ }
+  if (typeof fx.spark === 'function' && n > 6) try { fx.spark(x, 0.3, z, col, Math.round(n / 3), { speed: [1, 3], up: 0.9, gravity: -4 }); } catch (e) { /* engine fx */ }
 }
 export function ringFx(world, x, z, r, col) {
   const fx = world.fx;

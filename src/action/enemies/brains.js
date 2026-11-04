@@ -105,9 +105,9 @@ class Hopper extends Brain {
       const k = clamp(this.t / 0.32, 0, 1);
       const nx = this.from.x + (this.tgt.x - this.from.x) * k, nz = this.from.z + (this.tgt.z - this.from.z) * k;
       e.move(nx - e.x, nz - e.z); e.stop();
-      e.lift = Math.sin(k * Math.PI) * 0.8;
+      e.y = Math.sin(k * Math.PI) * 0.8;
       if (k >= 1) {
-        e.lift = 0;
+        e.y = 0;
         puff(this.w, e.x, e.z, '#c8b898', 10);
         if (inCircle(p, this.tgt.x, this.tgt.z, 1.05)) e.hitPlayer({ kb: 1.2 });
         if (c.trail === 'fire') hazard(this.w, { x: e.x, z: e.z, r: 0.9, life: 2.4, dmg: Math.round(e.dmg * 0.35), color: '#ff7a2a', status: { burn: 1 }, source: e });
@@ -220,11 +220,10 @@ class Charger extends Brain {
 // ------------------------------------------------------------------ BURROWER: swim through the floor, burst up under you
 class Burrower extends Brain {
   constructor(e, cfg) { super(e, cfg); this.state = 'up'; this.cd = rnd(0.8, 1.6); }
-  damageMul() { return this.state === 'under' ? 0 : 1; }
   tick(dt) {
     const e = this.e, p = this.p, c = this.cfg;
     if (this.state === 'up') {
-      e.lift = 0;
+      e.y = 0;
       const d = e.distTo(p);
       if (d > 1.6) e.steer(p, e.speed * 0.5); else e.face(p);
       if (d < 1.9 && this.t > 0.4 && !this.swiped) { this.swiped = true; this.dir = e.dirTo(p); e.faceDir(this.dir); e.tele({ shape: 'cone', x: e.x, z: e.z, r: 1.9, angle: 2, dir: this.dir, dur: 0.5, color: RED }); e.mon.play('windup'); this.set('swipe'); }
@@ -234,8 +233,8 @@ class Burrower extends Brain {
       if (this.t >= 0.5) { e.mon.play('attack'); if (inCone(p, e.x, e.z, this.dir, 2, 1.9)) e.hitPlayer({ kb: 1 }); this.recover = 0.5; this.set('recovering'); }
     } else if (this.state === 'recovering') { e.stop(); if (this.t >= 0.5) this.set('sink'); }
     else if (this.state === 'sink') {
-      e.stop(); e.lift = -this.t / 0.4 * e.height;
-      if (this.t >= 0.4) { this.set('under'); e.invuln = 99; e.model.visible = false; this.swiped = false; sfx(this.w, 'burrow', { vol: 0.4 }); }
+      e.stop(); e.y = -this.t / 0.4 * e.height;
+      if (this.t >= 0.4) { this.set('under'); e.untargetable = true; e.solid = false; e.g.visible = false; this.swiped = false; sfx(this.w, 'burrow', { vol: 0.4 }); }
     } else if (this.state === 'under') {
       // a travelling mound of dirt
       e.steer(p, e.speed * 1.3, { noFace: false });
@@ -249,19 +248,19 @@ class Burrower extends Brain {
       e.stop(); e.move(this.tgt.x - e.x, this.tgt.z - e.z);
       if (Math.random() < dt * 20) puff(this.w, e.x, e.z, '#8a6a4a', 2);
       if (this.t >= 0.65) {
-        e.model.visible = true; e.invuln = 0; e.face(p, true);
+        e.g.visible = true; e.untargetable = false; e.solid = true; e.face(p, true);
         e.mon.play('attack'); puff(this.w, e.x, e.z, '#a08a6a', 18); this.w.shake && this.w.shake(0.25);
         if (inCircle(p, e.x, e.z, 1.15)) e.hitPlayer({ kb: 1.6, mul: 1.2 });
         sfx(this.w, 'dirt_burst', { vol: 0.6 });
         this.set('pop');
       }
     } else if (this.state === 'pop') {
-      e.lift = -(1 - Math.min(1, this.t / 0.25)) * e.height * 0.8;
-      if (this.t >= 0.25) { e.lift = 0; this.cd = this.cfg.cd || 2.4; this.set('up'); }
+      e.y = -(1 - Math.min(1, this.t / 0.25)) * e.height * 0.8;
+      if (this.t >= 0.25) { e.y = 0; this.cd = this.cfg.cd || 2.4; this.set('up'); }
     }
   }
   interrupt(hit, force) { if (this.state === 'swipe' && (force || this.e.poiseMax <= 0)) { this.e.clearTele(); this.set('recovering'); } }
-  onDeath() { const e = this.e; e.model.visible = true; e.lift = 0; e.invuln = 0; }
+  onDeath() { const e = this.e; e.g.visible = true; e.y = 0; e.untargetable = false; e.solid = true; }
 }
 
 // ------------------------------------------------------------------ FLYER: orbit, then dive through you
@@ -324,11 +323,10 @@ class Puffer extends Brain {
 // ------------------------------------------------------------------ SHELL: armoured bruiser; hides when beaten on, then rolls
 class Shell extends Brain {
   constructor(e, cfg) { super(e, cfg); this.hits = []; }
-  damageMul() { return this.state === 'shell' ? 0.1 : 1; }
   onHurt() {
     const now = this.w.time || 0;
     this.hits = this.hits.filter((t) => now - t < 2); this.hits.push(now);
-    if (this.hits.length >= 3 && this.state !== 'shell' && this.state !== 'roll') { this.e.clearTele(); this.hits = []; this.set('shell'); this.e.invuln = 1.5; this.e.mon.play('stun'); sfx(this.w, 'shell_clink', { vol: 0.6 }); }
+    if (this.hits.length >= 3 && this.state !== 'shell' && this.state !== 'roll') { this.e.clearTele(); this.hits = []; this.set('shell'); this.e.dmgTaken = 0.15; this.e.mon.play('stun'); sfx(this.w, 'shell_clink', { vol: 0.6 }); }
   }
   tick(dt) {
     const e = this.e, p = this.p, c = this.cfg, d = e.distTo(p), R = c.range || 1.6;
@@ -340,7 +338,7 @@ class Shell extends Brain {
       if (this.t >= 0.6) { e.mon.play('attack'); if (inCone(p, e.x, e.z, this.dir, 1.7, R + 0.5)) e.hitPlayer({ kb: 1.3 }); this.recover = 0.6; this.cd = c.cd || 2.2; this.set('recover'); }
     } else if (this.state === 'shell') {
       e.stop();
-      if (this.t >= 1.5) { this.dir = e.dirTo(p); e.faceDir(this.dir, true); e.tele({ shape: 'line', x: e.x, z: e.z, len: 7, width: e.radius * 2 + 0.2, dir: this.dir, dur: 0.45, color: RED }); this.set('aim'); }
+      if (this.t >= 1.5) { e.dmgTaken = 1; this.dir = e.dirTo(p); e.faceDir(this.dir, true); e.tele({ shape: 'line', x: e.x, z: e.z, len: 7, width: e.radius * 2 + 0.2, dir: this.dir, dur: 0.45, color: RED }); this.set('aim'); }
     } else if (this.state === 'aim') { e.stop(); if (this.t >= 0.45) { this.set('roll'); this.hit = false; this.went = 0; } }
     else if (this.state === 'roll') {
       const sp = 8;
@@ -454,9 +452,10 @@ class Puffcap extends Brain {
         if (!this.up) { this.up = true; e.mon.play('attack'); e.ghost = true; sfx(this.w, 'hop', { vol: 0.9, pitch: 0.6 }); }
         const k = clamp((t - 0.55 / sp) / 0.85, 0, 1);
         e.x = this.from.x + (this.tgt.x - this.from.x) * k; e.z = this.from.z + (this.tgt.z - this.from.z) * k;
-        e.lift = Math.sin(k * Math.PI) * 3.4; e.stop();
+        e.y = Math.sin(k * Math.PI) * 3.4; e.stop();
       } else if (!this.done) {
-        this.done = true; e.lift = 0; e.ghost = false;
+        this.done = true; e.y = 0; e.ghost = false;
+        if (this.w.resolve) this.w.resolve(e);
         if (inCircle(p, e.x, e.z, 2.4)) e.hitPlayer({ kb: 2.4, mul: 1.3 });
         if (this.phase >= 2) shockwave(this.w, { x: e.x, z: e.z, r0: 2.2, r1: 6.5, dur: 0.7, width: 0.7, dmg: Math.round(e.dmg * 0.7), source: e });
         puff(this.w, e.x, e.z, '#e8d8b8', 26); this.w.shake && this.w.shake(1.1); sfx(this.w, 'ground_slam', { vol: 1 });
@@ -488,7 +487,7 @@ class Puffcap extends Brain {
       this.acc = (this.acc || 0) + dt;
       while (this.acc >= 0.11) {
         this.acc -= 0.11; this.spin = (this.spin || 0) + 0.5;
-        for (const off of [0, Math.PI]) { const a = this.spin + off; shoot(this.w, e, { x: e.x, z: e.z, y: 1.2, dir: { x: Math.sin(a), z: Math.cos(a) }, speed: 4.2, color: '#9affc8' }); }
+        for (const off of [0, Math.PI]) { const a = this.spin + off; shoot(this.w, e, { x: e.x, z: e.z, y: 1.2, dir: { x: Math.sin(a), z: Math.cos(a) }, speed: 4.2, dmg: Math.round(e.dmg * 0.5), color: '#9affc8' }); }
       }
       if (t >= 3.0) this.after();
     }
@@ -511,13 +510,13 @@ class Puffcap extends Brain {
     e.mon.play('windup');
     e.tele({ shape: 'line', x: e.x, z: e.z, len: 14, width: e.radius * 2, dir: this.dir, dur: wind, color: RED });
   }
-  ring(n, speed, a0) { const e = this.e; for (let i = 0; i < n; i++) { const a = a0 + (i / n) * TAU; shoot(this.w, e, { x: e.x, z: e.z, y: 1.1, dir: { x: Math.sin(a), z: Math.cos(a) }, speed, color: '#9affc8', size: 0.3, status: { poison: 1 } }); } }
-  after() { const e = this.e; e.ghost = false; e.lift = 0; if (e.mon.root) e.mon.root.rotation.x = 0; this.cd = rnd(0.9, 1.6) / this.sp; this.set('move'); }
+  ring(n, speed, a0) { const e = this.e; for (let i = 0; i < n; i++) { const a = a0 + (i / n) * TAU; shoot(this.w, e, { x: e.x, z: e.z, y: 1.1, dir: { x: Math.sin(a), z: Math.cos(a) }, speed, dmg: Math.round(e.dmg * 0.6), color: '#9affc8', size: 0.3, status: { poison: 1 } }); } }
+  after() { const e = this.e; e.ghost = false; e.y = 0; this.sub = null; if (e.mon.root) e.mon.root.rotation.x = 0; this.cd = rnd(0.9, 1.6) / this.sp; this.set('move'); }
   phaseUp() {
     const e = this.e;
     e.clearTele(); this.after();
     this.phase++;
-    this.set('phase'); e.invuln = 1.6; e.ghost = false; e.lift = 0;
+    this.set('phase'); e.invuln = 1.6; e.ghost = false; e.y = 0;
     e.mon.play('roar'); e.mon.setPhase && e.mon.setPhase(this.phase);
     this.w.shake && this.w.shake(1.2);
     this.ring(18, 3.4, 0);
@@ -526,7 +525,7 @@ class Puffcap extends Brain {
     sfx(this.w, 'boss_roar', { vol: 1 });
   }
   interrupt(hit, force) { if (force) { this.e.clearTele(); this.after(); } }
-  onDeath() { const e = this.e; e.ghost = false; e.lift = 0; this.minions.forEach((m) => { if (!m.dead && m.hp > 0) m.hp = 0; }); }
+  onDeath() { const e = this.e; e.ghost = false; e.y = 0; this.minions.forEach((m) => { if (!m.dead && m.hp > 0) m.hp = 0; }); }
 }
 /** Tiny timer on the brain clock (kept in the brain so it pauses with the game). */
 function setTimeout0(brain, t, fn) { (brain._timers || (brain._timers = [])).push({ t, fn }); if (!brain._timerHook) { brain._timerHook = true; const up = brain.update.bind(brain); brain.update = (dt) => { for (const T of brain._timers) { T.t -= dt; if (T.t <= 0 && !T.done) { T.done = true; T.fn(); } } brain._timers = brain._timers.filter((T) => !T.done); up(dt); }; } }

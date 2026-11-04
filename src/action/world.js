@@ -14,6 +14,12 @@ const hexRgb = (h) => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
 
 export const STATUS_COLORS = { burn: '#ff8a3a', poison: '#8aff5a', slow: '#9ab8ff', freeze: '#9ae8ff', stun: '#ffe85a', bleed: '#ff4a5a', root: '#b8d080' };
 const DOT = { burn: 6, bleed: 4, poison: 2.2 }; // damage per second (poison per stack)
+/** Rooms bring their own grid class (C's RoomGrid): give it the collision helpers the engine needs. */
+export function adaptGrid(g) {
+  if (!g) return new Grid();
+  for (const k of ['at', 'blocks', 'blocksShot', 'circleFree', 'freeNear']) if (typeof g[k] !== 'function') g[k] = Grid.prototype[k];
+  return g;
+}
 
 // ------------------------------------------------------------------ projectiles
 const projGeo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
@@ -124,6 +130,8 @@ export class ActionWorld {
     this.hadEnemies = false;
     this.paused = false;
     this.fxScale = 1;
+    this.maxDt = 0.1;         // frame-time cap (tests on slow machines raise this with maxSteps)
+    this.maxSteps = 8;
     this.stats = { hits: 0, kills: 0, dmgDealt: 0, dmgTaken: 0 };
     if (opts.room) this.setRoom(opts.room);
   }
@@ -133,7 +141,7 @@ export class ActionWorld {
   setRoom(room) {
     if (this.room && this.room.group && this.room.group.parent === this.scene) this.scene.remove(this.room.group);
     this.room = room;
-    this.grid = room.grid || new Grid();
+    this.grid = adaptGrid(room.grid);
     if (room.group && !room.group.parent) this.scene.add(room.group);
     if (room.fog) this.scene.fog = room.fog;
     const bg = room.bgColor || room.bg || (room.background && room.background.isColor ? room.background : null);
@@ -403,7 +411,7 @@ export class ActionWorld {
 
   // ---------------------------------------------------------------- the loop
   update(dt) {
-    dt = Math.min(dt, 0.1);
+    dt = Math.min(dt, this.maxDt);
     if (this.paused) { this.syncModels(0); this.cam.update(dt); return; }
     // slow-mo envelope
     let scale = 1;
@@ -419,8 +427,8 @@ export class ActionWorld {
     if (this.player && this.player.sample) this.player.sample(dt); // read input once per rendered frame
     this.acc += simDt;
     let n = 0;
-    while (this.acc >= STEP && n < 8) { this.step(STEP); this.acc -= STEP; n++; }
-    if (n >= 8) this.acc = 0;
+    while (this.acc >= STEP && n < this.maxSteps) { this.step(STEP); this.acc -= STEP; n++; }
+    if (n >= this.maxSteps) this.acc = 0;
     this.syncModels(simDt);
     this.fx.update(simDt > 0 ? simDt : dt * 0.15, dt);
     this.cam.update(dt);

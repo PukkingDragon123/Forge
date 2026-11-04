@@ -242,12 +242,12 @@ function planDressing(pl, stage, type, doors) {
   const foot = [], floor = [], face = [], drapes = [], tops = [], torches = [], lamps = [];
   const nearDoorN = (x) => doors.n && Math.abs(x) < 1.5, nearDoorS = (x) => doors.s && Math.abs(x) < 1.5, nearDoorEW = (z, side) => doors[side] && Math.abs(z) < 1.5;
   // wall foot (inside, along the north and side walls)
-  for (let x = -HW + 0.4; x < HW - 0.3; x += 0.55 + r() * 0.7) if (!nearDoorN(x) && r() < 0.7) foot.push({ x, z: -HD + 0.22, k: r(), k2: r() });
+  for (let x = -HW + 0.4; x < HW - 0.3; x += 0.5 + r() * 0.6) if (!nearDoorN(x) && r() < 0.8) foot.push({ x, z: -HD + 0.22, k: r(), k2: r() });
   for (const side of [-1, 1]) for (let z = -HD + 0.5; z < HD - 0.4; z += 0.6 + r() * 0.8) if (!nearDoorEW(z, side < 0 ? 'w' : 'e') && r() < 0.6) foot.push({ x: side * (HW - 0.22), z, k: r(), k2: r() });
   for (let x = -HW + 0.4; x < HW - 0.3; x += 1 + r() * 1.4) if (!nearDoorS(x) && r() < 0.35) foot.push({ x, z: HD - 0.2, k: 0.5 + r() * 0.3, k2: r() });
   const free = (x, z) => { const v = grid.at(x, z); return v === 0; };
   // open floor
-  const kinds = stage === 0 ? [['spores', 0.3], ['shrooms', 0.28], ['roots', 0.16], ['pebbles', 0.12], ['puddle', 0.1], ['crack', 0.04]]
+  const kinds = stage === 0 ? [['spores', 0.22], ['shrooms', 0.4], ['roots', 0.16], ['pebbles', 0.08], ['puddle', 0.1], ['crack', 0.04]]
     : stage === 1 ? [['puddle', 0.35], ['pebbles', 0.3], ['crack', 0.15], ['shrooms', 0.2]]
       : stage === 2 ? [['crack', 0.45], ['pebbles', 0.4], ['spores', 0.15]] : [['pebbles', 0.3], ['shrooms', 0.2], ['roots', 0.2], ['puddle', 0.3]];
   const nFloor = Math.round(pl.W * pl.D / (stage === 0 ? 5 : 7));
@@ -263,7 +263,7 @@ function planDressing(pl, stage, type, doors) {
   if (pl.W > 16) for (const x of [-HW * 0.72, HW * 0.72]) torches.push({ x, y: 1.45, z: -HD + 0.08, nx: 0, nz: 1 });
   for (let x = -HW + 0.3; x < HW; x += 0.5 + r() * 1.3) if (!(doors.n && Math.abs(x) < 1.3) && r() < 0.55) drapes.push({ x, len: 10 + Math.floor(r() * 30), glow: stage === 0 && r() < 0.25 ? '#7affd8' : null });
   // wall tops: big mushrooms (stage 0/3) or crystals growing on the north wall crown and towers
-  for (let x = -HW + 1; x < HW - 0.8; x += 2.2 + r() * 2.5) if (!(doors.n && Math.abs(x) < 1.6) && r() < 0.6) tops.push({ x, z: -HD - 0.25, y: yTop, h: 10 + Math.floor(r() * 14), cap: 8 + Math.floor(r() * 8), ci: Math.floor(r() * 4) });
+  for (let x = -HW + 0.8; x < HW - 0.6; x += 1.5 + r() * 2) if (!(doors.n && Math.abs(x) < 1.6) && r() < (stage === 0 ? 0.85 : 0.5)) tops.push({ x, z: -HD - 0.25, y: yTop, h: 12 + Math.floor(r() * 18), cap: 9 + Math.floor(r() * 10), ci: Math.floor(r() * 4) });
   for (const sx of [-1, 1]) tops.push({ x: sx * (HW + 0.25), z: -HD - 0.25, y: yTop + 0.6, h: 18 + Math.floor(r() * 10), cap: 14 + Math.floor(r() * 6), ci: Math.floor(r() * 4) });
   return { foot, floor, face, drapes, tops, torches, lamps };
 }
@@ -274,8 +274,9 @@ function planBackdrop(pl, stage, type) {
   const items = [], lamps = [], u = (m) => Math.round(m / BS);
   const kind = A.backdrop;
   const stemBase = (top, deep) => Math.max(deep, top - 7); // stems vanish into the fog well before their roots
+  const sparse = pl.W > 20 ? 1.35 : 1; // big rooms already fill the screen
   // north band: tall things rising above the north wall
-  for (let x = -HW - 6; x < HW + 6; x += 3.4 + r() * 3.2) {
+  for (let x = -HW - 6; x < HW + 6; x += (3.4 + r() * 3.2) * sparse) {
     const z = -HD - 1.8 - r() * 6.5, top = 3.2 + r() * 5.5;
     if (kind === 'mushrooms' || (kind === 'ruins' && r() < 0.35)) items.push({ t: 'mush', x, z, base: stemBase(top, -9), top, cap: 1.2 + r() * 1.8, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
     else if (kind === 'crystals') items.push({ t: 'spire', x, z, base: stemBase(top, -9), top: top * 0.8, rr: 0.5 + r() * 0.5, glow: r() < 0.6, seed: Math.floor(r() * 999) });
@@ -291,13 +292,13 @@ function planBackdrop(pl, stage, type) {
   // hanging root curtains / chains high above the back
   for (let x = -HW - 3; x < HW + 3; x += 2.4 + r() * 3) if (r() < 0.55) items.push({ t: kind === 'lava' ? 'chain' : 'roots', x, z: -HD - 2.5 - r() * 5, top: 11 + r() * 3, len: 3 + r() * 4, seed: Math.floor(r() * 999) });
   // sides: deep down in the abyss near the room, rising a little further out (never over the floor)
-  for (const side of [-1, 1]) for (let z = -HD - 1; z < HD + 3; z += 2.6 + r() * 2.6) {
+  for (const side of [-1, 1]) for (let z = -HD - 1; z < HD + 3; z += (2.6 + r() * 2.6) * sparse) {
     const off = 1.6 + r() * 5.5, x = side * (HW + off), top = -2.6 + (off - 1.6) * 0.7 - (z > 0 ? 1 : 0);
     if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: stemBase(top, -12), top, cap: 0.9 + r() * 1.3, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
     else items.push({ t: 'spire', x, z, base: stemBase(top, -12), top, rr: 0.5 + r() * 0.5, glow: kind === 'crystals' && r() < 0.5, seed: Math.floor(r() * 999) });
   }
   // the abyss below the south edge: caps glowing far down
-  for (let x = -HW - 4; x < HW + 4; x += 2.6 + r() * 2.8) {
+  for (let x = -HW - 4; x < HW + 4; x += (2.6 + r() * 2.8) * sparse) {
     const z = HD + 1.5 + r() * 4.5, top = -2 - r() * 4;
     if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: stemBase(top, -14), top, cap: 1 + r() * 1.5, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
     else items.push({ t: 'spire', x, z, base: stemBase(top, -14), top, rr: 0.5 + r() * 0.5, glow: kind === 'crystals', seed: Math.floor(r() * 999) });
@@ -418,7 +419,7 @@ function makeRoom(n) {
   for (const s of pl.special) lamps.push({ x: (s.b.x0 + s.b.x1) / 2, y: 1, z: (s.b.z0 + s.b.z1) / 2 + 0.3, c: s.kind === 'bench' ? '#ffd27a' : A.glow, r: 3, i: 1 });
   for (const v of pl.veins) lamps.push({ x: (v.b.x0 + v.b.x1) / 2, y: 0.8, z: (v.b.z0 + v.b.z1) / 2 + 0.3, c: A.oreGlow || '#fff0b0', r: 1.8, i: 0.7 });
   if (type === 'boss') lamps.push({ x: 0, y: 1.2, z: 0, c: A.glow, r: 6, i: 0.8 });
-  const rig = makeLightRig({ amb: A.amb, ambI: 0.56, sky: A.sky, skyI: 0.24, key: A.key, keyI: 0.26, keyDir: [-0.35, 1, 0.45], lamps: lamps.map((l) => ({ ...l, i: l.i * 1.7, r: l.r * 1.15 })), bands: 22 });
+  const rig = makeLightRig({ amb: A.amb, ambI: 0.64, sky: A.sky, skyI: 0.24, key: A.key, keyI: 0.26, keyDir: [-0.35, 1, 0.45], lamps: lamps.map((l) => ({ ...l, i: l.i * 1.7, r: l.r * 1.15 })), bands: 12 });
   const rigBack = makeLightRig({ amb: A.amb, ambI: 0.55, sky: A.sky, skyI: 0.25, key: A.key, keyI: 0.15, keyDir: [-0.35, 1, 0.45], lamps: bd.lamps, bands: 18 });
   // ---- paint ops (voxel AABBs). core: floor, walls, obstacles; dressing; backdrop (coarse)
   const vb = (x0, x1, z0, z1, sc = S) => ({ x0: Math.floor(x0 / sc) - 2, x1: Math.ceil(x1 / sc) + 2, z0: Math.floor(z0 / sc) - 2, z1: Math.ceil(z1 / sc) + 2 });
@@ -432,7 +433,9 @@ function makeRoom(n) {
     if (grid.get(tx - 1, tz) !== 3) pitEdges.push({ x0: b.x0, x1: b.x0 + e, z0: b.z0, z1: b.z1 });
     if (grid.get(tx + 1, tz) !== 3) pitEdges.push({ x0: b.x1 - e, x1: b.x1, z0: b.z0, z1: b.z1 });
   }
-  const ctx = { A, stage, grid, HW, HD, W: pl.W, D: pl.D, doors, kind: type, pitEdges, matAt: stage === 1 ? null : null };
+  const ornR = rngOf(seed + 77);
+  const ornament = (type === 'fight' || type === 'start' || type === 'treasure') && ornR() < 0.45 && grid.at(0, 0) === 0 && grid.at(1.2, 0) === 0 && grid.at(-1.2, 0) === 0 ? { x: 0, z: 0, r: 1.3 + ornR() * 0.6 } : null;
+  const ctx = { A, stage, grid, HW, HD, W: pl.W, D: pl.D, doors, kind: type, pitEdges, ornament, grove: type === 'boss' };
   const core = [], dress = [], back = [];
   core.push({ ...vb(-HW, HW, -HD, HD), fn: (w) => RP.paintFloor(w, ctx) });
   core.push({ ...vb(-HW - 2.4, HW + 2.4, -HD - 2, HD + 2), fn: (w) => RP.paintWalls(w, ctx) });
@@ -441,10 +444,21 @@ function makeRoom(n) {
   for (const o of [...pl.obs, ...pl.special, ...pl.veins]) { const sd = seed * 31 + (k++) * 7; const pad = o.kind === 'shroom' || o.kind === 'shrine' ? 0.9 : 0.3; core.push({ ...vb(o.b.x0 - pad, o.b.x1 + pad, o.b.z0 - pad, o.b.z1 + pad), fn: (w) => (OB[o.kind] || RP.rockObstacle)(w, A, o.b, sd) }); }
   // boss-arena thicket: dense stalks & roots on every thicket tile, giant mushrooms rising out of it
   if (pl.thicket.length) {
+    // the grove's rim: low mossy mounds on every blocked tile (core), a wall of giant mushrooms on top (streamed)
+    const set = new Set(pl.thicket.map(([ix, iz]) => ix + ',' + iz));
     const tiles = pl.thicket.map(([ix, iz]) => grid.box(ix + 1, iz + 1));
     core.push({ ...vb(-HW, HW, -HD, HD), fn: (w) => { for (const b of tiles) thicketTile(w, A, b, seed); } });
-    for (let q = 0; q < 14; q++) { const b = tiles[Math.floor(rngOf(seed + q)() * tiles.length)]; const x = (b.x0 + b.x1) / 2, z = (b.z0 + b.z1) / 2; core.push({ ...vb(x - 1.4, x + 1.4, z - 1.4, z + 1.4), fn: (w) => RP.bigMushroom(w, A, Math.round(x / S), 6, Math.round(z / S), 22 + (q % 4) * 9, 18 + (q % 3) * 6, q % 4, seed + q) }); }
-    core.push({ ...vb(-2, 2, -HD + 0.2, -HD + 3), fn: (w) => RP.bossThrone(w, A, { x0: -0.9, x1: 0.9, z0: -HD + 0.6, z1: -HD + 2.2 }, seed) });
+    const rim = pl.thicket.filter(([ix, iz]) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !set.has(ix + dx + ',' + (iz + dz)) && ix + dx >= 0 && iz + dz >= 0 && ix + dx < pl.nx && iz + dz < pl.nz));
+    const gr = rngOf(seed + 3);
+    let q = 0;
+    for (const [ix, iz] of rim) {
+      if (gr() > 0.26) continue;
+      const b = grid.box(ix + 1, iz + 1), x = (b.x0 + b.x1) / 2, z = (b.z0 + b.z1) / 2, south = z > 0;
+      const h = south ? 10 + Math.floor(gr() * 8) : 22 + Math.floor(gr() * 26), cap = south ? 9 + Math.floor(gr() * 5) : 14 + Math.floor(gr() * 14), k = q++;
+      dress.push({ ...vb(x - 1.4, x + 1.4, z - 1.4, z + 1.4), fn: (w) => RP.bigMushroom(w, A, Math.round(x / S), 3, Math.round(z / S), h, cap, k, seed + k * 13) });
+    }
+    for (const [sx, sz] of [[-1, -1], [1, -1]]) { const x = sx * (HW - 1.6), z = sz * (HD - 1.5); dress.push({ ...vb(x - 2, x + 2, z - 2, z + 2), fn: (w) => RP.bigMushroom(w, A, Math.round(x / S), 3, Math.round(z / S), 54, 32, sx > 0 ? 1 : 3, seed + sx * 5) }); }
+    dress.push({ ...vb(-2.2, 2.2, -HD + 0.2, -HD + 3.4), fn: (w) => RP.bossThrone(w, A, { x0: -0.9, x1: 0.9, z0: -HD + 0.7, z1: -HD + 2.3 }, seed) });
   }
   // tutorial strip: Morel's ring of little glowing caps
   if (type === 'chase' && pl.tut.ring) {
@@ -650,6 +664,7 @@ function makeRoom(n) {
     },
   };
   timing.planned = performance.now() - t0;
+  R._debugOps = () => [...core.map((o, i) => ['core' + i, o]), ...dress.map((o, i) => ['dress' + i, o])].map(([n, o]) => { const r = bakeUnit([o], { x0: o.x0, x1: o.x1, z0: o.z0, z1: o.z1 }, S, rig, 1.6, SKIP); return [n, r ? r.faces : 0]; });
   return R;
 }
 let _sortT = 0;
@@ -667,11 +682,11 @@ function thicketTile(w, A, b, seed) {
   const X0 = Math.floor(b.x0 / S), X1 = Math.ceil(b.x1 / S), Z0 = Math.floor(b.z0 / S), Z1 = Math.ceil(b.z1 / S);
   const [xa, xb] = w.rx(X0, X1), [za, zb] = w.rz(Z0, Z1);
   for (let Z = za; Z < zb; Z++) for (let X = xa; X < xb; X++) {
-    const hTop = 6 + Math.round(noise2(X * 0.08, Z * 0.08 + seed) * 22);
-    for (let y = -1; y <= hTop; y++) {
-      const n = noise2(X * 0.18, y * 0.1 + Z * 0.18);
-      w.set(X, y, Z, y > hTop - 2 ? tone(A.moss, 0.3 + h3(X, Z, y, 1) * 0.5) : n > 0.6 ? tone(A.root, 0.25 + (y / hTop) * 0.35) : tone(A.stem || A.root, 0.25 + (y / hTop) * 0.3 + h3(X, y, Z, 2) * 0.08));
-    }
+    const qx = X >> 1, qz = Z >> 1;
+    const hTop = 3 + Math.round(noise2(qx * 0.12, qz * 0.12 + seed) * 3) * 2;
+    for (let y = -3; y < hTop; y++) w.set(X, y, Z, A.dirt[0]);
+    const root = noise2(qx * 0.32, qz * 0.32 + 3) > 0.66;
+    w.set(X, hTop, Z, root ? tone(A.root, 0.5) : tone(A.moss, 0.22 + Math.round(noise2(qx * 0.6, qz * 0.6) * 3) / 3 * 0.5));
   }
 }
 function glowShard(w, x, y, z, r, col) {

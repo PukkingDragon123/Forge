@@ -491,4 +491,80 @@ export const SFX = {
   quill: { vol: 0.7, verb: 0.08, fn: (s) => { for (let i = 0; i < 5; i++) s.noise({ t: i * 0.06 + r(0, 0.02), dur: r(0.03, 0.06), a: 0.01, vol: 0.06, filter: BP(r(3500, 5000), null, 3) }); return 0.35; } },
   kindle_hit: { vol: 0.85, verb: 0.2, fn: (s) => { s.noise({ dur: 0.18, a: 0.005, vol: 0.2, filter: BP(1800, 600, 1) }); s.tone({ f: 900, f2: 300, dur: 0.16, vol: 0.08 }); crackle(s, 5, { spread: 0.15, vol: 0.12 }); return 0.25; } },
   item_place: { vol: 0.8, verb: 0.06, fn: (s) => { thud(s, { f: 210, f2: 120, dur: 0.06, vol: 0.2 }); clink(s, { t: 0.02, f: 1700, ratio: 2.2, dur: 0.1, vol: 0.05 }); return 0.12; } },
+  // ---------------------------------------------------------------- v5: dialogue, title, tutorial
+  // a soft formant blip per syllable: s.p (pitch) sets the voice (Durgan deep, Morel squeaky)
+  voice: { vol: 0.7, verb: 0.08, fn: (s) => { const f = 210 * r(0.96, 1.04); s.tone({ type: 'triangle', f, f2: f * r(0.86, 1.08), dur: 0.055, a: 0.006, vol: 0.12, filter: BP(r(900, 1500), null, 1.6) }); s.tone({ type: 'sine', f: f * 2, dur: 0.04, vol: 0.03 }); return 0.07; } },
+  voice_whisper: { vol: 0.7, verb: 0.45, fn: (s) => { s.noise({ dur: 0.09, a: 0.02, vol: 0.09, filter: BP(r(2200, 3400), null, 3) }); s.tone({ type: 'sine', f: 330 * r(0.97, 1.03), dur: 0.08, a: 0.02, vol: 0.03 }); return 0.12; } },
+  dialogue_open: { vol: 0.7, verb: 0.2, fn: (s) => { whoosh(s, { dur: 0.22, f: 400, f2: 1600, vol: 0.08 }); chime(s, [784, 1047], { t: 0.06, gap: 0.06, vol: 0.04, dur: 0.5 }); return 0.5; } },
+  dialogue_close: { vol: 0.6, verb: 0.15, fn: (s) => { whoosh(s, { dur: 0.18, f: 1400, f2: 500, vol: 0.06 }); return 0.2; } },
+  forge_strike: {
+    vol: 1, verb: 0.35, fn: (s) => {
+      thud(s, { f: 160, f2: 55, dur: 0.16, vol: 0.45 });
+      s.fm({ f: 1180 * r(0.98, 1.02), ratio: 3.52, index: 4.5, dur: 1.4, vol: 0.12, idxDecay: 0.12 });
+      s.fm({ t: 0.004, f: 2360, ratio: 1.5, index: 1.2, dur: 0.9, vol: 0.04 });
+      crackle(s, 14, { t: 0.02, spread: 0.35, vol: 0.14 });
+      s.noise({ dur: 0.05, vol: 0.25, filter: BP(3000, null, 1) });
+      return 1.4;
+    },
+  },
+  morel_pop: { vol: 0.85, verb: 0.2, fn: (s) => { s.tone({ f: 260, f2: 720, sweep: 0.07, dur: 0.12, vol: 0.18 }); s.noise({ dur: 0.08, a: 0.005, vol: 0.12, filter: BP(1800, null, 1.2) }); s.tone({ t: 0.12, type: 'triangle', f: 990, f2: 1320, dur: 0.12, vol: 0.06 }); return 0.3; } },
+  fall_whoosh: { vol: 0.9, verb: 0.5, fn: (s) => { s.noise({ dur: 1.4, a: 0.3, vol: 0.18, filter: BP(600, 2200, 0.8) }); s.tone({ type: 'sine', f: 520, f2: 140, dur: 1.2, vol: 0.05 }); return 1.4; } },
+  fall: { vol: 0.9, verb: 0.3, fn: (s) => { whoosh(s, { dur: 0.4, f: 1800, f2: 300, vol: 0.14 }); thud(s, { t: 0.35, f: 120, f2: 45, dur: 0.25, vol: 0.5 }); return 0.7; } },
+  // ---------------------------------------------------------------- v5: the action game
+  swing: { vol: 0.8, verb: 0.08, fn: (s) => { whoosh(s, { dur: 0.15, f: 700, f2: 3200, vol: 0.2, Q: 1.4 }); return 0.17; } },
+  swing_sword: { vol: 0.85, verb: 0.08, fn: (s) => { whoosh(s, { dur: 0.14, f: 900, f2: 4200, vol: 0.22, Q: 1.8 }); s.tone({ t: 0.02, type: 'triangle', f: 2800, f2: 2200, dur: 0.06, vol: 0.025 }); return 0.17; } },
+  swing_axe: { vol: 0.9, verb: 0.08, fn: (s) => { whoosh(s, { dur: 0.18, f: 450, f2: 2400, vol: 0.26, Q: 1.2 }); s.noise({ t: 0.06, dur: 0.06, vol: 0.06, filter: LP(900) }); return 0.2; } },
+  swing_heavy: { vol: 1, verb: 0.12, fn: (s) => { whoosh(s, { dur: 0.26, f: 260, f2: 1600, vol: 0.32, Q: 1 }); s.tone({ type: 'sine', f: 120, f2: 70, dur: 0.22, vol: 0.12 }); return 0.28; } },
+  swing_dagger: { vol: 0.8, verb: 0.06, fn: (s) => { whoosh(s, { dur: 0.09, f: 1600, f2: 5200, vol: 0.18, Q: 2.2 }); return 0.1; } },
+  dash: { vol: 0.85, verb: 0.1, fn: (s) => { whoosh(s, { dur: 0.17, f: 600, f2: 2800, vol: 0.24, Q: 1 }); s.noise({ dur: 0.05, vol: 0.06, filter: LP(500) }); return 0.2; } },
+  dash_fire: { vol: 0.9, verb: 0.15, fn: (s) => { whoosh(s, { dur: 0.2, f: 500, f2: 2400, vol: 0.2 }); s.noise({ dur: 0.35, a: 0.02, vol: 0.14, filter: BP(1300, 500, 1) }); crackle(s, 6, { spread: 0.25, vol: 0.1 }); return 0.4; } },
+  dash_strike: { vol: 0.95, verb: 0.12, fn: (s) => { whoosh(s, { dur: 0.16, f: 800, f2: 3600, vol: 0.24 }); thud(s, { t: 0.1, f: 190, f2: 70, dur: 0.12, vol: 0.3 }); return 0.26; } },
+  special: { vol: 0.9, verb: 0.2, fn: (s) => { s.tone({ type: 'sawtooth', f: 220, f2: 660, sweep: 0.2, dur: 0.25, vol: 0.06, filter: LP(2400) }); whoosh(s, { t: 0.1, dur: 0.25, f: 500, f2: 3000, vol: 0.2 }); return 0.4; } },
+  whirl: { vol: 0.9, verb: 0.12, fn: (s) => { for (let i = 0; i < 2; i++) whoosh(s, { t: i * 0.16, dur: 0.18, f: 500 + i * 120, f2: 2600, vol: 0.2 }); return 0.38; } },
+  throw: { vol: 0.85, verb: 0.1, fn: (s) => { whoosh(s, { dur: 0.22, f: 1200, f2: 400, vol: 0.18, Q: 1.5 }); return 0.24; } },
+  slam: { vol: 1, verb: 0.3, fn: (s) => { s.kick({ f: 110, end: 35, dur: 0.4, vol: 0.85 }); s.noise({ dur: 0.35, a: 0.004, vol: 0.3, filter: LP(1200, 300) }); crackle(s, 8, { t: 0.02, spread: 0.3, vol: 0.12 }); return 0.5; } },
+  ground_slam: { vol: 1, verb: 0.35, fn: (s) => { s.kick({ f: 90, end: 28, dur: 0.5, vol: 0.95 }); s.noise({ dur: 0.5, a: 0.005, vol: 0.32, filter: LP(900, 200) }); crackle(s, 12, { t: 0.04, spread: 0.4, vol: 0.14 }); return 0.6; } },
+  bolt: { vol: 0.85, verb: 0.2, fn: (s) => { s.tone({ type: 'square', f: 880, f2: 1760, sweep: 0.05, dur: 0.1, vol: 0.05, filter: LP(3000) }); s.noise({ dur: 0.12, a: 0.004, vol: 0.12, filter: BP(2600, null, 2) }); return 0.16; } },
+  bigbolt: { vol: 0.95, verb: 0.3, fn: (s) => { s.tone({ type: 'sawtooth', f: 330, f2: 990, sweep: 0.12, dur: 0.25, vol: 0.07, filter: LP(2800) }); s.noise({ dur: 0.3, a: 0.01, vol: 0.18, filter: BP(1600, 3600, 1.4) }); return 0.35; } },
+  nova: { vol: 0.95, verb: 0.4, fn: (s) => { s.noise({ dur: 0.5, a: 0.01, vol: 0.18, filter: HP(3500, 7000) }); chime(s, [1568, 2093, 2637], { gap: 0.03, vol: 0.06, dur: 0.8 }); s.tone({ type: 'sine', f: 180, f2: 90, dur: 0.3, vol: 0.12 }); return 0.9; } },
+  spit: { vol: 0.85, verb: 0.1, fn: (s) => { s.noise({ dur: 0.08, a: 0.005, vol: 0.14, filter: BP(1400, null, 2) }); s.tone({ f: 700, f2: 300, dur: 0.07, vol: 0.06 }); return 0.12; } },
+  windup: { vol: 0.8, verb: 0.15, fn: (s) => { s.tone({ type: 'triangle', f: 300, f2: 700, sweep: 0.35, dur: 0.38, vol: 0.06 }); s.noise({ dur: 0.35, a: 0.3, vol: 0.05, filter: BP(900, 2400, 1) }); return 0.4; } },
+  shield_block: { vol: 0.95, verb: 0.15, fn: (s) => { clink(s, { f: 1100, ratio: 1.41, index: 3, dur: 0.35, vol: 0.14 }); thud(s, { f: 220, f2: 90, dur: 0.1, vol: 0.3 }); return 0.4; } },
+  player_hurt: { vol: 1, verb: 0.1, fn: (s) => { s.noise({ dur: 0.1, vol: 0.4, filter: LP(1800) }); s.tone({ f: 260, f2: 120, dur: 0.18, vol: 0.32 }); s.tone({ t: 0.03, type: 'square', f: 140, f2: 90, dur: 0.14, vol: 0.05, filter: LP(900) }); return 0.24; } },
+  player_die: { vol: 1, verb: 0.4, fn: (s) => { thud(s, { f: 140, f2: 40, dur: 0.6, vol: 0.5 }); for (const f of [392, 311, 233]) s.tone({ t: 0.15, type: 'triangle', f, f2: f * 0.8, dur: 1.2, vol: 0.05 }); return 1.4; } },
+  room_clear: { vol: 0.95, verb: 0.4, fn: (s) => { chime(s, [523, 659, 784, 1047], { gap: 0.07, vol: 0.08, dur: 1.0 }); s.noise({ t: 0.25, dur: 0.6, a: 0.2, vol: 0.04, filter: HP(5000) }); return 1.2; } },
+  door_open: { vol: 0.9, verb: 0.3, fn: (s) => { creak(s, { f: 95, f2: 80, dur: 0.55, vol: 0.1 }); thud(s, { t: 0.5, f: 120, f2: 60, dur: 0.15, vol: 0.25 }); return 0.7; } },
+  door_slam: { vol: 1, verb: 0.35, fn: (s) => { thud(s, { f: 110, f2: 40, dur: 0.3, vol: 0.6 }); clink(s, { t: 0.02, f: 700, ratio: 1.41, index: 2, dur: 0.4, vol: 0.06 }); crackle(s, 6, { spread: 0.25, vol: 0.08 }); return 0.5; } },
+  door_lock: { vol: 1, verb: 0.35, fn: (s) => { thud(s, { f: 110, f2: 40, dur: 0.3, vol: 0.6 }); clink(s, { t: 0.05, f: 900, ratio: 1.41, index: 2, dur: 0.3, vol: 0.06 }); return 0.45; } },
+  door_unlock: { vol: 0.9, verb: 0.3, fn: (s) => { clink(s, { f: 1300, ratio: 2.1, dur: 0.2, vol: 0.08 }); creak(s, { t: 0.1, f: 110, f2: 90, dur: 0.4, vol: 0.08 }); return 0.55; } },
+  door_through: { vol: 0.8, verb: 0.2, fn: (s) => { whoosh(s, { dur: 0.35, f: 300, f2: 1400, vol: 0.12 }); return 0.4; } },
+  wall_bonk: { vol: 0.85, verb: 0.15, fn: (s) => { thud(s, { f: 150, f2: 60, dur: 0.14, vol: 0.4 }); crackle(s, 5, { spread: 0.12, vol: 0.1 }); return 0.2; } },
+  burrow: { vol: 0.85, verb: 0.2, fn: (s) => { s.noise({ dur: 0.45, a: 0.08, vol: 0.18, filter: LP(700, 300) }); crackle(s, 8, { spread: 0.4, vol: 0.08 }); return 0.5; } },
+  dirt_burst: { vol: 0.9, verb: 0.2, fn: (s) => { thud(s, { f: 130, f2: 60, dur: 0.18, vol: 0.4 }); s.noise({ dur: 0.3, a: 0.004, vol: 0.2, filter: LP(1400, 400) }); crackle(s, 10, { spread: 0.3, vol: 0.1 }); return 0.35; } },
+  cavein: { vol: 1, verb: 0.45, fn: (s) => { s.noise({ dur: 1.0, a: 0.05, vol: 0.32, filter: LP(600, 150), brown: true }); for (let i = 0; i < 4; i++) thud(s, { t: 0.1 + i * 0.18, f: 120 - i * 10, f2: 45, dur: 0.2, vol: 0.3 }); return 1.1; } },
+  crystal_burst: { vol: 0.95, verb: 0.4, fn: (s) => { chime(s, [1760, 2349, 2794, 3520], { gap: 0.025, vol: 0.06, dur: 0.6 }); s.noise({ dur: 0.2, a: 0.004, vol: 0.12, filter: HP(4000) }); return 0.7; } },
+  fire_breath: { vol: 0.95, verb: 0.25, fn: (s) => { s.noise({ dur: 0.9, a: 0.08, vol: 0.28, filter: BP(900, 400, 0.9) }); crackle(s, 16, { spread: 0.8, vol: 0.1 }); return 1.0; } },
+  inflate: { vol: 0.85, verb: 0.2, fn: (s) => { s.tone({ type: 'sine', f: 110, f2: 330, sweep: 0.6, dur: 0.65, vol: 0.12, vib: { rate: 9, depth: 0.04 } }); s.noise({ dur: 0.6, a: 0.4, vol: 0.05, filter: BP(600, 1200, 1) }); return 0.7; } },
+  spore_pop: { vol: 0.85, verb: 0.25, fn: (s) => { s.tone({ f: 420, f2: 180, dur: 0.1, vol: 0.14 }); s.noise({ dur: 0.35, a: 0.01, vol: 0.12, filter: BP(1200, 500, 0.8) }); return 0.4; } },
+  spawn_puff: { vol: 0.8, verb: 0.25, fn: (s) => { s.noise({ dur: 0.4, a: 0.03, vol: 0.12, filter: BP(900, 400, 0.8) }); s.tone({ t: 0.05, type: 'triangle', f: 330, f2: 660, dur: 0.12, vol: 0.04 }); return 0.45; } },
+  shell_clink: { vol: 0.85, verb: 0.12, fn: (s) => { clink(s, { f: 900, ratio: 1.8, index: 2, dur: 0.18, vol: 0.12 }); thud(s, { f: 260, f2: 140, dur: 0.06, vol: 0.12 }); return 0.22; } },
+  swoop: { vol: 0.85, verb: 0.15, fn: (s) => { whoosh(s, { dur: 0.35, f: 1600, f2: 400, vol: 0.14 }); return 0.38; } },
+  // skills (by id, for whoever plays them by name)
+  spore_burst: { vol: 0.95, verb: 0.3, fn: (s) => { s.tone({ f: 300, f2: 120, dur: 0.15, vol: 0.18 }); s.noise({ dur: 0.7, a: 0.02, vol: 0.2, filter: BP(1100, 400, 0.7) }); s.noise({ t: 0.1, dur: 0.6, a: 0.2, vol: 0.05, filter: HP(5000) }); return 0.8; } },
+  stone_spikes: { vol: 1, verb: 0.25, fn: (s) => { for (let i = 0; i < 4; i++) { thud(s, { t: i * 0.06, f: 180 - i * 15, f2: 70, dur: 0.12, vol: 0.28 }); crackle(s, 3, { t: i * 0.06, spread: 0.05, vol: 0.1 }); } return 0.45; } },
+  ember_dash: { vol: 0.9, verb: 0.2, fn: (s) => { whoosh(s, { dur: 0.2, f: 500, f2: 2400, vol: 0.2 }); s.noise({ dur: 0.6, a: 0.02, vol: 0.12, filter: BP(1300, 500, 1) }); crackle(s, 10, { spread: 0.5, vol: 0.08 }); return 0.65; } },
+  whirlwind: { vol: 0.95, verb: 0.15, fn: (s) => { for (let i = 0; i < 4; i++) whoosh(s, { t: i * 0.13, dur: 0.16, f: 450 + i * 80, f2: 2600, vol: 0.18 }); return 0.6; } },
+  frost_nova: { vol: 0.95, verb: 0.45, fn: (s) => { s.noise({ dur: 0.5, a: 0.01, vol: 0.18, filter: HP(3500, 7000) }); chime(s, [1319, 1760, 2349], { gap: 0.03, vol: 0.07, dur: 0.9 }); return 0.9; } },
+  chain_spark: { vol: 0.9, verb: 0.2, fn: (s) => { for (let i = 0; i < 3; i++) { s.noise({ t: i * 0.07, dur: 0.06, vol: 0.18, filter: BP(3200, null, 2) }); s.tone({ t: i * 0.07, type: 'square', f: 1400 + i * 300, dur: 0.04, vol: 0.03 }); } return 0.3; } },
+  root_snare: { vol: 0.9, verb: 0.2, fn: (s) => { creak(s, { f: 140, f2: 90, dur: 0.5, vol: 0.1 }); s.noise({ dur: 0.4, a: 0.05, vol: 0.12, filter: LP(800, 300) }); crackle(s, 8, { spread: 0.4, vol: 0.08 }); return 0.55; } },
+  gem_shards: { vol: 0.9, verb: 0.3, fn: (s) => { for (let i = 0; i < 5; i++) clink(s, { t: i * 0.035, f: 2200 + i * 260, ratio: 2.76, index: 2, dur: 0.25, vol: 0.05 }); whoosh(s, { dur: 0.2, f: 1500, f2: 5000, vol: 0.1 }); return 0.4; } },
+  mushroom_turret: { vol: 0.85, verb: 0.2, fn: (s) => { s.tone({ f: 200, f2: 520, sweep: 0.1, dur: 0.15, vol: 0.14 }); s.noise({ t: 0.12, dur: 0.3, a: 0.02, vol: 0.08, filter: BP(1000, 500, 1) }); return 0.4; } },
+  // mining tools
+  chisel_tap: { vol: 0.85, verb: 0.15, fn: (s) => { clink(s, { f: 2600, ratio: 2.4, index: 3, dur: 0.2, vol: 0.1 }); return 0.22; } },
+  bomb_fuse: { vol: 0.8, verb: 0.1, fn: (s) => { crackle(s, 30, { spread: 0.9, vol: 0.08 }); s.noise({ dur: 0.9, a: 0.05, vol: 0.05, filter: HP(4000) }); return 0.9; } },
+  bomb_boom: { vol: 1, verb: 0.5, fn: (s) => { s.kick({ f: 80, end: 25, dur: 0.6, vol: 1 }); s.noise({ dur: 0.8, a: 0.003, vol: 0.4, filter: LP(1600, 200), brown: true }); crackle(s, 16, { t: 0.05, spread: 0.5, vol: 0.12 }); return 0.9; } },
+  lantern_reveal: { vol: 0.8, verb: 0.35, fn: (s) => { chime(s, [880, 1175, 1568], { gap: 0.08, vol: 0.05, dur: 0.9 }); return 0.9; } },
+  // the Grand Puffcap
+  puffcap_snore: { vol: 0.9, verb: 0.35, fn: (s) => { s.tone({ type: 'sawtooth', f: 70, f2: 95, dur: 0.9, a: 0.3, vol: 0.08, filter: LP(400), vib: { rate: 22, depth: 0.06 } }); s.noise({ t: 0.9, dur: 0.6, a: 0.2, vol: 0.08, filter: BP(700, 300, 0.8) }); s.tone({ t: 1.4, f: 300, f2: 520, dur: 0.1, vol: 0.05 }); return 1.6; } },
+  puffcap_roar: { vol: 1, verb: 0.5, fn: (s) => { growl(s, { f: 68, f2: 52, dur: 1.2, vol: 0.32, ff: 600, rate: 14 }); for (let i = 0; i < 6; i++) s.tone({ t: 0.2 + i * 0.12, f: r(160, 320), f2: r(400, 700), dur: 0.1, vol: 0.06 }); s.noise({ t: 0.3, dur: 0.9, a: 0.2, vol: 0.12, filter: BP(900, 400, 0.7) }); return 1.4; } },
 };

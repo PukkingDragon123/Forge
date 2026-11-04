@@ -128,9 +128,10 @@ export function drawActionHud(ui, st, p) {
   // ---- weapon, skills and bag (bottom right; on touch they sit above the action cluster)
   const touch = !!p.touch;
   const sz = 30, gap = 6;
-  const rx = touch ? ui.w - 18 - (sz + gap) * 3 - 132 : ui.w - 16 - (sz + gap) * 3;
-  const ry = touch ? ui.h - sz - 14 : ui.h - sz - 14;
-  const w = run.weapon || (p.loadout && p.loadout.weapon);
+  if (!touch) {
+  const rx = ui.w - 16 - (sz + gap) * 3;
+  const ry = ui.h - sz - 14;
+  const w = (p.loadout && p.loadout.weapon) || run.hand || null;
   // weapon slot
   frame(ctx, rx, ry, sz, sz, '#a08a5a', '#1e1820');
   ctx.fillStyle = '#16121a'; ctx.fillRect(rx, ry, sz, sz);
@@ -163,8 +164,10 @@ export function drawActionHud(ui, st, p) {
     if (h.hover) ui.tooltip(def ? { title: def.name, body: def.desc || '' } : { title: 'Empty skill slot', body: 'Craft a skill gem' });
     if (h.clicked) out.skill[i] = true;
   }
+  }
   // bag
-  const bgx = touch ? 10 : rx - 40, bgy = touch ? 10 + 14 : ry - 2;
+  const rxB = ui.w - 16 - (sz + gap) * 3, ryB = ui.h - sz - 14;
+  const bgx = touch ? 10 : rxB - 40, bgy = touch ? 10 + 14 : ryB - 2;
   const bh2 = ui.hit('hud-bag', bgx, bgy, 32, 32, { sound: false });
   ui.icon('bag', bgx, bgy - (bh2.hover ? 2 : 0), { scale: 2 });
   if (!touch) ui.keycap('TAB', bgx + 22, bgy - 4);
@@ -214,8 +217,9 @@ function safeSprite(item, size) {
 }
 function safeWeapon(w, size) {
   try {
+    if (w.look) return weaponSprite({ bp: w.look.bp || w.bp, ids: w.look.ids || ['iron'], grade: Math.max(0, (w.q ?? 2) - 1) }, 64);
+    if (w.id && MATERIALS[w.id]) return materialSprite(w.id, 32);
     if (w.bp) return weaponSprite(w, 64);
-    if (w.id && MATERIALS[w.id]) return itemSprite(w.id, 32, 0) || materialSprite(w.id, 32);
   } catch (e) { /* missing art */ }
   return null;
 }

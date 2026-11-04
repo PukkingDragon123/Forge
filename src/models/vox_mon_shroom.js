@@ -140,7 +140,6 @@ const morel = {
     m.ell('mouth', [0, 0, 0], [0.012, 0.014, 0.028], mouthM);
     // leafy moss cape on the back, a satchel with a brass buckle on the hip
     m.ell('body', [0.1, 0.17, 0], [0.06, 0.17, 0.15], cape, { k: 0.02 });
-    m.tor('body', [0.0, 0.3, 0], 0.13, 0.016, cape, { rot: [0, 0, 0.1], k: 0.01 });
     m.tor('body', [0.0, 0.17, 0], 0.15, 0.012, leather, { rot: [0.7, 0, 0], k: 0.006 });
     m.box('body', [0.0, 0.06, 0.15], [0.06, 0.05, 0.03], 0.015, leather, { k: 0.008 });
     m.sph('body', [-0.02, 0.07, 0.18], 0.014, brass, { k: 0.003 });

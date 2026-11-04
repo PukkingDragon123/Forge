@@ -14,7 +14,7 @@ export class HadesCam {
   constructor(opts = {}) {
     this.fov = opts.fov ?? 32;
     this.pitch = opts.pitch ?? (52 * Math.PI) / 180;
-    this.dist = opts.dist ?? 14;
+    this.dist = opts.dist ?? 10.5;
     this.camera = new THREE.PerspectiveCamera(this.fov, 16 / 9, 0.3, 120);
     this.focus = new THREE.Vector3();      // smoothed look point (ground)
     this.goal = new THREE.Vector3();       // where the follow wants to look

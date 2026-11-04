@@ -14,6 +14,7 @@
 //           the last line spoken by 'durgan'/'player', else lower centre)
 //     auto  seconds before the line moves on by itself; wait: fn → true once the line may close
 //     next  index or label to jump to after this line (replies can carry their own next / fn)
+//   with    (overlay-wide) the listener every line frames, unless a line says otherwise
 //   cam     a HadesCam (zoomTo/release) — used when given or found on the scene below
 //   camera  a THREE camera to project with (defaults to the world being drawn)
 //   freeze  true: the scene below stops updating while we talk (we tick the camera ourselves)
@@ -235,12 +236,17 @@ export class DialogueOverlay extends Scene {
     if (L.beat) { try { L.beat(this); } catch (e) { /* a beat must never break the talk */ } }
     if (L.card && this.game.audio) this.game.audio.play('stinger', { vol: 0.6 });
     // lean the camera in on the speaker (framing the listener too)
-    if (this.cam && !L.noZoom && (L.at || L.with)) {
-      const a = anchorPos(L.at), b = L.with ? anchorPos(L.with) : null;
-      const focus = a && b ? a.clone().lerp(b, 0.35) : a || b;
+    const withAt = L.with || this.p.with;
+    if (this.cam && !L.noZoom && (L.at || withAt)) {
+      const a = anchorPos(L.at), b = withAt && withAt !== L.at ? anchorPos(withAt) : null;
+      const focus = a && b ? a.clone().lerp(b, 0.42) : a || b;
       if (focus) {
         focus.y -= 0.35;
-        try { this.cam.zoomTo(focus, { fov: (L.zoom && L.zoom.fov) || this.p.fov || 24, dist: (L.zoom && L.zoom.dist) || this.p.dist, dur: this.i === 0 ? 0.7 : 0.45 }); } catch (e) { /* camera optional */ }
+        // two people: pull back enough to keep both in frame
+        const sep = a && b ? Math.hypot(a.x - b.x, a.z - b.z) : 0;
+        const dist = (L.zoom && L.zoom.dist) || this.p.dist || 5.5 + sep * 0.9;
+        const fov = (L.zoom && L.zoom.fov) || this.p.fov || Math.min(34, 24 + sep * 2.2);
+        try { this.cam.zoomTo(focus, { fov, dist, dur: this.i === 0 ? 0.7 : 0.45 }); } catch (e) { /* camera optional */ }
         this.zoomed = true;
       }
     }

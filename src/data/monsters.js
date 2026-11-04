@@ -553,7 +553,7 @@ const V5 = {
   cistern_naga: { ai: { brain: 'spitter', speed: 2.2, range: 5.5, cd: 2.0, shots: 3, spread: 0.35, projSpeed: 7 }, ore: ['petrite', 'sapphire', 'rime'], spawn: 'ground' },
   crystal_golem: { ai: { brain: 'charger', speed: 1.7, range: 7, cd: 2.8 }, ore: ['petrite', 'diamond', 'sapphire', 'gorgonite'], spawn: 'ground' },
   geodessa: { ai: { brain: 'spawner', speed: 1.0, range: 6, cd: 6, minion: 'shard_bat' }, ore: ['petrite', 'amethyst', 'prism', 'gorgonite'], spawn: 'ground' },
-  glasscoil: { ai: { brain: 'herald', speed: 2.2, flavor: 'crystal' }, ore: ['petrite', 'diamond', 'prism', 'gorgonite'], spawn: 'ground' },
+  glasscoil: { dmg: 8, ai: { brain: 'herald', speed: 2.2, flavor: 'crystal' }, ore: ['petrite', 'diamond', 'prism', 'gorgonite'], spawn: 'ground' },
   // stage 2 · Ember Foundry
   magma_slime: { ai: { brain: 'hopper', speed: 2.4, range: 1.8, cd: 1.6, trail: 'fire' }, ore: ['petrite', 'brimstone', 'ember'], spawn: 'ground' },
   salamander: { ai: { brain: 'spitter', speed: 2.4, range: 5.5, cd: 2.0, shots: 1, projSpeed: 8, element: 'fire' }, ore: ['petrite', 'ember', 'magmasteel'], spawn: 'ground' },
@@ -565,7 +565,7 @@ const V5 = {
   lava_wyrmling: { ai: { brain: 'charger', speed: 2.0, range: 7, cd: 2.4, element: 'fire' }, ore: ['petrite', 'magmasteel', 'ruby', 'gorgonite'], spawn: 'ground' },
   pyrrhax: { ai: { brain: 'caster', speed: 1.2, range: 7, cd: 2.6, burst: 10, element: 'fire' }, ore: ['petrite', 'magmasteel', 'ruby', 'gorgonite'], spawn: 'drop' },
   rune_guardian: { ai: { brain: 'chaser', speed: 1.5, range: 2.2, cd: 2.4, slam: true }, ore: ['petrite', 'runestone', 'gold', 'gorgonite'], spawn: 'ground' },
-  cinderfang: { ai: { brain: 'herald', speed: 2.0, flavor: 'fire' }, ore: ['petrite', 'magmasteel', 'ruby', 'gorgonite'], spawn: 'ground' },
+  cinderfang: { dmg: 8, ai: { brain: 'herald', speed: 2.0, flavor: 'fire' }, ore: ['petrite', 'magmasteel', 'ruby', 'gorgonite'], spawn: 'ground' },
   // stage 3 · Medusa's Garden
   stone_sentinel: { ai: { brain: 'caster', speed: 0.9, range: 7, cd: 3.0, burst: 6 }, ore: ['petrite', 'runestone', 'silver'], spawn: 'ground' },
   ruin_owl: { ai: { brain: 'flyer', speed: 3.4, range: 3.8, cd: 2.0 }, ore: ['petrite', 'silver', 'moonstone'], spawn: 'drop' },
@@ -576,7 +576,7 @@ const V5 = {
   basilisk: { ai: { brain: 'charger', speed: 2.0, range: 7, cd: 2.4, gaze: true }, ore: ['petrite', 'gorgonite', 'diamond'], spawn: 'ground' },
   grave_colossus: { ai: { brain: 'chaser', speed: 1.4, range: 2.4, cd: 2.6, slam: true }, ore: ['petrite', 'runestone', 'gorgonite'], spawn: 'ground' },
   warden: { ai: { brain: 'spawner', speed: 1.0, range: 6, cd: 6, minion: 'gorgon_snake' }, ore: ['petrite', 'runestone', 'gold', 'gorgonite'], spawn: 'ground' },
-  medusa: { ai: { brain: 'medusa', speed: 2.4 }, ore: ['petrite', 'gorgonite', 'soulstone', 'diamond'], spawn: 'ground' },
+  medusa: { dmg: 10, ai: { brain: 'medusa', speed: 2.4 }, ore: ['petrite', 'gorgonite', 'soulstone', 'diamond'], spawn: 'ground' },
   // anywhere
   mimic: { ai: { brain: 'hopper', speed: 3.0, range: 2.0, cd: 1.4 }, ore: ['petrite', 'gold', 'ruby'], spawn: 'ground' },
 };

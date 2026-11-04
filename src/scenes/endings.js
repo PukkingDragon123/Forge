@@ -45,7 +45,7 @@ export class GameOverScene extends HeldCinematic {
   enter(p = {}) {
     const run = this.game.run;
     this.run = run;
-    this.play('fallen', { act: p.act ?? p.region ?? (run ? run.act ?? run.region : 0), char: run ? run.char : undefined });
+    this.play('fallen', { stage: p.stage ?? p.act ?? p.region ?? (run ? run.stage ?? run.act ?? 0 : 0), char: run ? run.char : undefined });
     this.unlocked = checkUnlocks();
     this.cause = p.cause || '';
   }
@@ -63,12 +63,12 @@ export class GameOverScene extends HeldCinematic {
     const ink = '#3a2618';
     ui.text('Turned to stone…', ui.w / 2, y + 10, { align: 'center', color: ink });
     const st = run ? run.stats : {};
-    const act = run ? (run.act ?? run.region ?? 0) : 0;
-    const R = REGIONS[Math.min(act, REGIONS.length - 1)];
+    const stage = run ? (run.stage ?? run.act ?? 0) : 0;
+    const R = REGIONS[Math.min(stage, REGIONS.length - 1)];
     const lines = [
       ['Reached', R ? R.name : '-'],
-      ['Foes turned to stone', st.kills || 0], ['Statues mined', st.statues || st.mined || 0], ['Veins dug', st.veins || 0],
-      ['Stews cooked', st.stews || 0], ['Weapons forged', st.forged || 0], ['Friends freed', run && run.companions ? run.companions.length : 0],
+      ['Foes turned to stone', st.kills || 0], ['Statues mined', st.statues || st.mined || 0], ['Rooms cleared', st.rooms || 0],
+      ['Things crafted', st.crafted || st.forged || 0], ['Ore found', st.ores || 0], ['Friends freed', st.rescues || (run && run.companions ? run.companions.length : 0)],
     ];
     lines.forEach(([a, b], i) => {
       ui.text(a, x + 18, y + 30 + i * 13, { color: ink });

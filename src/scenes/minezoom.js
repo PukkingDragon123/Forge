@@ -35,13 +35,18 @@ function rockTile(pal, variant, hard) {
   const P = pal.map(hexRgb);
   for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) {
     const i = (y * T + x) * 4;
-    let k = 2 + (hash(x >> 1, y >> 1, variant) - 0.5) * 1.3 + (hard ? -0.7 : 0);
-    if (x < 2 || y < 2) k += 1.3;                     // lit top-left bevel
-    if (x > T - 3 || y > T - 3) k -= 1.4;             // shadowed bottom-right
-    if (hash(x, y, variant + 9) > 0.93) k += 0.9;     // speckles
-    if (hard && ((x + y * 2 + variant) % 11 === 0)) k -= 0.8; // strata lines
+    // a chunky stone block inside a dark mortar line, chipped at the corners
+    const edge = Math.min(x, y, T - 1 - x, T - 1 - y);
+    const corner = Math.min(x, T - 1 - x) + Math.min(y, T - 1 - y) < 5;
+    if (edge < 2 || corner) { const m = mix(P[0], [8, 6, 10], 0.55); d[i] = m[0]; d[i + 1] = m[1]; d[i + 2] = m[2]; d[i + 3] = 255; continue; }
+    const big = hash(x >> 3, y >> 3, variant + 3) - 0.5;          // large facets
+    let k = 2.2 + big * 1.4 + (hash(x >> 1, y >> 1, variant) - 0.5) * 0.9 + (hard ? -0.8 : 0);
+    if (edge < 4 && (x < T / 2 || y < T / 2) && x + y < T) k += 1.4;   // lit top-left bevel
+    if (edge < 4 && (x > T / 2 || y > T / 2) && x + y > T) k -= 1.3;   // shadowed bottom-right
+    if (hash(x, y, variant + 9) > 0.94) k += 1.0;                    // speckles
+    if (hard && ((x + y * 2 + variant) % 9 === 0)) k -= 0.9;         // strata
     const ki = Math.max(0, Math.min(P.length - 1, Math.round(k)));
-    const col = P[ki];
+    const col = hash(x >> 2, y >> 2, variant + 21) > 0.9 ? mix(P[ki], [120, 96, 70], 0.18) : P[ki];
     d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
   }
   // a seam or two
@@ -96,7 +101,9 @@ export class MineZoomOverlay extends Scene {
     this.cam3 = cam && cam.camera;
     if (this.cam3) { this.pos0 = this.cam3.position.clone(); this.q0 = this.cam3.quaternion.clone(); this.fov0 = this.cam3.fov; }
     this.target = new THREE.Vector3(at.x, at.y, at.z);
-    if (cam && typeof cam.zoomTo === 'function') { try { cam.zoomTo(this.target, { fov: 26, dist: 4.2, dur: 0.6 }); this.camDriven = true; } catch (e) { this.camDriven = false; } }
+    // the rock sits right of the board: aim the close-up a little to its left
+    const aim = { x: at.x - 1.25, y: at.y, z: at.z + 0.2 };
+    if (cam && typeof cam.zoomTo === 'function') { try { cam.zoomTo(aim, { fov: 26, dist: 4.6, dur: 0.6 }); this.camDriven = true; } catch (e) { this.camDriven = false; } }
     this.game.audio && this.game.audio.play('vein_glint', { vol: 0.6 });
   }
   exit() {
@@ -109,7 +116,7 @@ export class MineZoomOverlay extends Scene {
     const s = this.ses;
     const w = s ? s.w : 7, h = s ? s.h : 6;
     const k = ease.outBack(clamp(this.k));
-    return { x: Math.round(ui.w / 2 - (w * T) / 2), y: Math.round(ui.h / 2 - (h * T) / 2 - 18 + (1 - k) * 40), w, h };
+    return { x: Math.round(ui.w * 0.34 - (w * T) / 2), y: Math.round(ui.h / 2 - (h * T) / 2 - 18 + (1 - k) * 40), w, h };
   }
   finish(left) {
     if (this.leaving) return;

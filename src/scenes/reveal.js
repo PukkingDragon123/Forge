@@ -47,6 +47,9 @@ export class RevealOverlay extends Scene {
     this.item = p.item || { id: 'ruby', q: 2, uid: 0 };
     this.onDone = p.onDone;
     this.auto = p.auto ? (typeof p.auto === 'number' ? p.auto : 2.6) : 0;
+    // weapon items (bag weapons) reveal as their voxel weapon too
+    const wm = MATERIALS[this.item.id];
+    this.look = wm && wm.kind === 'weapon' ? { bp: (wm.look && wm.look.bp) || (wm.wpn && wm.wpn.type) || 'axe', ids: (wm.look && wm.look.ids) || ['iron'], grade: Math.max(0, (this.item.q ?? 2) - 1) } : null;
     this.isWeapon = !!this.item.bp;
     const m = MATERIALS[this.item.id];
     this.rar = this.isWeapon ? (this.item.grade >= 4 ? 'legendary' : this.item.grade >= 3 ? 'epic' : this.item.grade >= 2 ? 'rare' : 'uncommon') : (m && RARITY[m.rarity] ? m.rarity : 'common');
@@ -72,9 +75,9 @@ export class RevealOverlay extends Scene {
     this.halo = new THREE.PointLight(new THREE.Color(this.col), 3, 6, 1.4); this.halo.position.set(-0.6, 0.2, 1.2); scene.add(this.halo);
     // the find itself
     let model;
-    if (this.isWeapon) {
+    if (this.isWeapon || this.look) {
       // the forged voxel weapon itself, balanced on its centre and tilted like a raised blade
-      const w = buildWeaponMesh(this.item);
+      const w = buildWeaponMesh(this.look || this.item);
       const tip = w.userData.tip || 1;
       w.position.y = -tip / 2;
       const tilt = new THREE.Group();

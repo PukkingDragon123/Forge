@@ -34,14 +34,16 @@ export function startRun(game, charId = 'durgan', seed) {
 export function nextFloor(game) {
   const run = game.run;
   if (!run) return game.go('title', {}, { transition: 'fade' });
-  const next = (run.stage ?? 0) + 1;
-  if (next >= Math.max(1, stages().length)) return victory(game);
-  run.stage = next;
-  run.floorN = (run.floorN || 0) + 1;
-  if (run.stats) run.stats.floors = (run.stats.floors || 0) + 1;
-  if (typeof run.nextStage === 'function') run.nextStage(next);
-  if (next > (save.data.stats.bestRegion || 0)) { save.data.stats.bestRegion = next; save.write(); }
-  game.go('dungeon', { stage: next, newFloor: true }, { transition: 'fade', dur: 1.0 });
+  if (typeof run.nextStage === 'function') {
+    // the run heals 30% and lays out the next stage's floor (null after the last stage)
+    if (!run.nextStage()) return victory(game);
+  } else {
+    const next = (run.stage ?? 0) + 1;
+    if (next >= Math.max(1, stages().length)) return victory(game);
+    run.stage = next;
+  }
+  if (run.stage > (save.data.stats.bestRegion || 0)) { save.data.stats.bestRegion = run.stage; save.write(); }
+  game.go('dungeon', { stage: run.stage }, { transition: 'fade', dur: 1.0 });
 }
 
 export function gameOver(game, cause = '') {

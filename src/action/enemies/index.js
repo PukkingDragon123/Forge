@@ -32,7 +32,7 @@ export function spawnEnemy(world, id, x, z, opts = {}) {
   if (typeof world.add === 'function') world.add(e);
   else (world.enemies || (world.enemies = [])).push(e);
   if (world.enemies && !world.enemies.includes(e)) world.enemies.push(e);
-  if (world.scene && !e.model.parent) world.scene.add(e.model);
+  if (world.scene && !e.g.parent) world.scene.add(e.g);
   return e;
 }
 

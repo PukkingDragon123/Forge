@@ -25,13 +25,16 @@ function keep(o) { o.traverse((c) => { c.userData.keep = true; if (c.geometry) c
 
 /** A small 3D model of an item, about `size` metres across (cached per id, cloned per drop). */
 export function itemModel(item, size = 0.36) {
-  const key = item.bp ? 'w|' + JSON.stringify([item.bp, item.ids, item.grade]) : 'm|' + item.id;
+  const key = item.bp ? 'w|' + JSON.stringify([item.bp, item.ids, item.grade]) : 'm|' + item.id + '|' + (item.q ?? 2);
   let t = tmpl.get(key);
   if (!t) {
     let m = null;
     try {
+      const mm = MATERIALS[item.id];
+      const look = mm && mm.kind === 'weapon' ? (mm.look || (mm.wpn ? { bp: mm.wpn.type, ids: ['iron'] } : null)) : null;
       if (item.bp) { m = buildWeaponMesh(item); m.rotation.z = -0.9; }
-      else if (MATERIALS[item.id]) m = buildOreModel(item.id, { res: 16, glow: 1.6 });
+      else if (look) { m = buildWeaponMesh({ bp: look.bp, ids: look.ids || ['iron'], grade: Math.max(0, (item.q ?? 2) - 1) }); m.rotation.z = -0.9; }
+      else if (mm) m = buildOreModel(item.id, { res: 16, glow: 1.6 });
     } catch (e) { m = null; }
     if (!m) {
       m = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), new THREE.MeshLambertMaterial({ color: rarityColor(item), emissive: new THREE.Color(rarityColor(item)).multiplyScalar(0.35) }));
@@ -75,7 +78,8 @@ export class Pickups {
     if (typeof item === 'string') item = makeItem(item, 2);
     if (!item) return null;
     const root = new THREE.Group();
-    const model = itemModel(item, item.bp ? 0.62 : 0.34);
+    const isW = item.bp || (MATERIALS[item.id] && MATERIALS[item.id].kind === 'weapon');
+    const model = itemModel(item, isW ? 0.62 : 0.34);
     root.add(model);
     const col = rarityColor(item);
     const ring = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: disc(col), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
