@@ -98,12 +98,13 @@ function roomFloorTop(A, X, Z, sl, nw, stage) {
 const GROVE_SLAB = { id: 0, lx: 5, lz: 5, len: 20, joint: false, sink: false, gone: false };
 /** Boss grove floor: soft mossy earth threaded with glowing mycelium and old flagstones half buried. */
 function groveTop(A, X, Z) {
-  const qx = X >> 1, qz = Z >> 1; // 2×2-voxel pixels, broad calm patches: crisp from the camera, few faces
+  // deep, moody moss: the boss, telegraphs and drops are the brightest things here; mycelium and caps are the accents
+  const qx = X >> 1, qz = Z >> 1;
   const n = noise2(qx * 0.06, qz * 0.06), m = noise2(qx * 0.05 + 7, qz * 0.05);
-  if (Math.abs(m - 0.5) < 0.009) return h3(qx >> 2, qz >> 2, 1, 1) > 0.6 ? glowC('#9affe0') : C('#c8f0d8');
-  if (n > 0.68) { const sl = slabAt(X, Z); return sl.joint ? A.joint : tone(A.flag, 0.3 + h3(sl.id, 1, 2, 3) * 0.3); }
-  if (n < 0.24) return tone(A.dirt, n < 0.18 ? 0.5 : 0.62);
-  return tone(A.moss, 0.2 + Math.round(noise2(qx * 0.12, qz * 0.12) * 3) / 3 * 0.45);
+  if (Math.abs(m - 0.5) < 0.008) return h3(qx >> 2, qz >> 2, 1, 1) > 0.72 ? glowC('#7affd8') : mixC(A.moss[1], C('#8ac8b0'), 0.35);
+  if (n > 0.68) { const sl = slabAt(X, Z); return sl.joint ? A.joint : tone(A.flag, 0.16 + h3(sl.id, 1, 2, 3) * 0.2); }
+  if (n < 0.24) return tone(A.dirt, n < 0.18 ? 0.12 : 0.22);
+  return mixC(tone(A.moss, 0.06 + Math.round(noise2(qx * 0.12, qz * 0.12) * 3) / 3 * 0.2), A.rock[1], 0.25);
 }
 /** Floor slab (3 voxels) with flagstones, moss and dirt, holes for pits, a glowing mycelium web, blades of grass. */
 export function paintFloor(w, ctx) {
@@ -183,7 +184,7 @@ export function wallHeights(ctx) {
   return {
     north,
     side: (z) => 2.0 - 1.45 * clampi((z + HD) / D, 0, 1),   // tall at the back, low near the camera
-    south: 0.5,
+    south: 0.4,
   };
 }
 /** The four walls with their doorways (openings only; gates are separate meshes), corner towers, capstones, moss. */
@@ -519,7 +520,7 @@ export function wallFootDressing(w, ctx, spots) {
       // the mushroom dungeon: clusters of caps of every size crowd the wall foot
       if (k < 0.2) fern(w, A, X, 0, Z, 6 + Math.round(s.k2 * 6), X + Z, s.k2 > 0.6 ? 2 : 0);
       else if (k < 0.3) tufts(w, A, X, 0, Z, 7, X + Z, 14);
-      else if (k < 0.88) { const n = 2 + Math.floor(s.k2 * 4); for (let q = 0; q < n; q++) { const big = q === 0 && s.k2 > 0.45; const hh = big ? 9 + Math.round(h3(q, X, Z, 3) * 8) : 4 + Math.round(h3(q, X, Z, 3) * 7); const mx = X + Math.round((h3(q, X, 1, 1) - 0.5) * 14), mz = Z + Math.round((h3(q, Z, 2, 1) - 0.5) * 10); if (big) bigMushroom(w, A, mx, 0, mz, hh, 6 + Math.round(s.k2 * 5), X + q, X * 3 + q); else smallMushroom(w, A, mx, 0, mz, hh, X + q, X + q); } }
+      else if (k < 0.88) { const n = 2 + Math.floor(s.k2 * 4); for (let q = 0; q < n; q++) { const big = q === 0 && s.k2 > 0.45 && !s.low; const hh = big ? 9 + Math.round(h3(q, X, Z, 3) * 8) : 4 + Math.round(h3(q, X, Z, 3) * 7); const mx = X + Math.round((h3(q, X, 1, 1) - 0.5) * 14), mz = Z + Math.round((h3(q, Z, 2, 1) - 0.5) * 10); if (big) bigMushroom(w, A, mx, 0, mz, hh, 6 + Math.round(s.k2 * 5), X + q, X * 3 + q); else smallMushroom(w, A, mx, 0, mz, hh, X + q, X + q); } }
       else if (k < 0.95) rubble(w, A, X, 0, Z, 5, X ^ Z, 4);
       else PR.bones(w, X, 0, Z, X ^ Z, s.k2 > 0.5);
       continue;

@@ -168,11 +168,17 @@ export function drawActionHud(ui, st, p) {
   // bag
   const rxB = ui.w - 16 - (sz + gap) * 3, ryB = ui.h - sz - 14;
   const bgx = touch ? 10 : rxB - 40, bgy = touch ? 10 + 14 : ryB - 2;
-  const bh2 = ui.hit('hud-bag', bgx, bgy, 32, 32, { sound: false });
-  ui.icon('bag', bgx, bgy - (bh2.hover ? 2 : 0), { scale: 2 });
-  if (!touch) ui.keycap('TAB', bgx + 22, bgy - 4);
-  if (bh2.hover) ui.tooltip({ title: 'Backpack', body: 'Your build lives here' });
-  if (bh2.clicked) out.bag = true;
+  if (touch) {
+    // an on-screen button (Touch_bag → the 'bag' action) so it works while the stick is held
+    // (the scene reads the 'bag' action; this only draws and registers the button)
+    ui.touchButton('bag', bgx + 18, bgy + 16, 19, { icon: 'bag', style: 'brass' });
+  } else {
+    const bh2 = ui.hit('hud-bag', bgx, bgy, 32, 32, { sound: false });
+    ui.icon('bag', bgx, bgy - (bh2.hover ? 2 : 0), { scale: 2 });
+    ui.keycap('TAB', bgx + 22, bgy - 4);
+    if (bh2.hover) ui.tooltip({ title: 'Backpack', body: 'Your build lives here' });
+    if (bh2.clicked) out.bag = true;
+  }
 
   // ---- boss bar
   const boss = p.boss;

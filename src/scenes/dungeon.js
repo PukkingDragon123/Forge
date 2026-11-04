@@ -191,6 +191,8 @@ export class DungeonScene extends Scene {
     this.curId = id; this.curRoom = r; this.built = b;
     const aw = this.aw;
     aw.setRoom(b);
+    // bigger rooms pull the camera back a little so a 3 m boss keeps its crown in frame
+    if (aw.cam) aw.cam.dist = r.type === 'boss' ? 13.5 : (r.size || (b.size)) === 'large' ? 11.5 : 10.5;
     // entry point: just inside the door we came through (or the room's start mark / its south side)
     let px = 0, pz = 0, facing = Math.PI;
     const entry = fromDir ? DIRS[fromDir].opp : null;
@@ -421,6 +423,8 @@ export class DungeonScene extends Scene {
   /** Register something you can use: the engine's player finds it and calls onInteract. */
   addInteract(it) {
     it.onInteract = () => this.interact(it);
+    // icon for the engine's touch interact button
+    if (!it.icon) it.icon = { vein: 'pickaxe', statue: 'pickaxe', chest: 'chest', bench: 'hammer', shrine: 'star', crack: 'bomb', pedestal: 'treasure', hole: 'arrowD' }[it.kind] || 'arrowU';
     it.enabled = true;
     this.inter.push(it);
     this.aw.addInteractable(it);
@@ -784,7 +788,14 @@ export class DungeonScene extends Scene {
     });
     if (out.bag) this.openBag();
     if (out.interact && it) this.interact(it);
-    drawMinimap(ui, this.floor, this.curId, { x: ui.w - 7 * 20 - 3 - (touch ? 40 : 10), alpha: this.trans ? 0.5 : 1 });
+    const mmx = ui.w - 7 * 20 - 3 - (touch ? 40 : 10);
+    drawMinimap(ui, this.floor, this.curId, { x: mmx, alpha: this.trans ? 0.5 : 1 });
+    // tap / click the minimap for the big map (touch has no M key); tap anywhere to close it
+    if (!this.trans && !this.leaving) {
+      const mh = this.mapHeld ? ui.hit('bigmap-close', 0, 0, ui.w, ui.h, { sound: false }) : ui.hit('minimap', mmx, 10, 143, 78, { sound: false });
+      if (!this.mapHeld && mh.hover) ui.tooltip({ title: 'Map', body: touch ? 'Tap to unfold' : 'M or click to unfold' });
+      if (mh.clicked) this.mapHeld = !this.mapHeld;
+    }
     if (this.mapOpen > 0.02) drawBigMap(ui, this.floor, this.curId, this.mapOpen, { title: this.sdef.name });
     const B = this.banner;
     if (B && B.t > 0) {

@@ -244,7 +244,7 @@ function planDressing(pl, stage, type, doors) {
   // wall foot (inside, along the north and side walls)
   for (let x = -HW + 0.4; x < HW - 0.3; x += 0.5 + r() * 0.6) if (!nearDoorN(x) && r() < 0.8) foot.push({ x, z: -HD + 0.22, k: r(), k2: r() });
   for (const side of [-1, 1]) for (let z = -HD + 0.5; z < HD - 0.4; z += 0.6 + r() * 0.8) if (!nearDoorEW(z, side < 0 ? 'w' : 'e') && r() < 0.6) foot.push({ x: side * (HW - 0.22), z, k: r(), k2: r() });
-  for (let x = -HW + 0.4; x < HW - 0.3; x += 1 + r() * 1.4) if (!nearDoorS(x) && r() < 0.35) foot.push({ x, z: HD - 0.2, k: 0.5 + r() * 0.3, k2: r() });
+  for (let x = -HW + 0.4; x < HW - 0.3; x += 1 + r() * 1.4) if (!nearDoorS(x) && r() < 0.35) foot.push({ x, z: HD - 0.2, k: 0.5 + r() * 0.3, k2: r(), low: true });
   const free = (x, z) => { const v = grid.at(x, z); return v === 0; };
   // open floor
   const kinds = stage === 0 ? [['spores', 0.22], ['shrooms', 0.4], ['roots', 0.16], ['pebbles', 0.08], ['puddle', 0.1], ['crack', 0.04]]
@@ -419,7 +419,8 @@ function makeRoom(n) {
   for (const s of pl.special) lamps.push({ x: (s.b.x0 + s.b.x1) / 2, y: 1, z: (s.b.z0 + s.b.z1) / 2 + 0.3, c: s.kind === 'bench' ? '#ffd27a' : A.glow, r: 3, i: 1 });
   for (const v of pl.veins) lamps.push({ x: (v.b.x0 + v.b.x1) / 2, y: 0.8, z: (v.b.z0 + v.b.z1) / 2 + 0.3, c: A.oreGlow || '#fff0b0', r: 1.8, i: 0.7 });
   if (type === 'boss') lamps.push({ x: 0, y: 1.2, z: 0, c: A.glow, r: 6, i: 0.8 });
-  const rig = makeLightRig({ amb: A.amb, ambI: 0.64, sky: A.sky, skyI: 0.24, key: A.key, keyI: 0.26, keyDir: [-0.35, 1, 0.45], lamps: lamps.map((l) => ({ ...l, i: l.i * 1.7, r: l.r * 1.15 })), bands: 12 });
+  const moody = type === 'boss';
+  const rig = makeLightRig({ amb: A.amb, ambI: moody ? 0.46 : 0.64, sky: A.sky, skyI: moody ? 0.12 : 0.24, key: A.key, keyI: moody ? 0.18 : 0.26, keyDir: [-0.35, 1, 0.45], lamps: lamps.map((l) => ({ ...l, i: l.i * 1.7, r: l.r * 1.15 })), bands: 12 });
   const rigBack = makeLightRig({ amb: A.amb, ambI: 0.55, sky: A.sky, skyI: 0.25, key: A.key, keyI: 0.15, keyDir: [-0.35, 1, 0.45], lamps: bd.lamps, bands: 18 });
   // ---- paint ops (voxel AABBs). core: floor, walls, obstacles; dressing; backdrop (coarse)
   const vb = (x0, x1, z0, z1, sc = S) => ({ x0: Math.floor(x0 / sc) - 2, x1: Math.ceil(x1 / sc) + 2, z0: Math.floor(z0 / sc) - 2, z1: Math.ceil(z1 / sc) + 2 });
@@ -440,8 +441,10 @@ function makeRoom(n) {
   core.push({ ...vb(-HW, HW, -HD, HD), fn: (w) => RP.paintFloor(w, ctx) });
   core.push({ ...vb(-HW - 2.4, HW + 2.4, -HD - 2, HD + 2), fn: (w) => RP.paintWalls(w, ctx) });
   const OB = { rock: RP.rockObstacle, shroom: RP.shroomObstacle, pillar: RP.pillarObstacle, roots: RP.rootObstacle, statue: RP.statueObstacle, crystal: RP.crystalObstacle, basalt: RP.basaltObstacle, hedge: RP.hedgeObstacle, pedestal: RP.pedestal, bench: RP.workbench, shrine: RP.shrine, chest: RP.oldChest, ore: RP.oreBoulderBase };
+  // obstacles are separate meshes so they can fade when they stand between the camera and the hero
+  const propUnits = [];
   let k = 0;
-  for (const o of [...pl.obs, ...pl.special, ...pl.veins]) { const sd = seed * 31 + (k++) * 7; const pad = o.kind === 'shroom' || o.kind === 'shrine' ? 0.9 : 0.3; core.push({ ...vb(o.b.x0 - pad, o.b.x1 + pad, o.b.z0 - pad, o.b.z1 + pad), fn: (w) => (OB[o.kind] || RP.rockObstacle)(w, A, o.b, sd) }); }
+  for (const o of [...pl.obs, ...pl.special, ...pl.veins]) { const sd = seed * 31 + (k++) * 7; propUnits.push({ tag: 'core', prop: { kind: o.kind, box: o.b, fn: (w) => (OB[o.kind] || RP.rockObstacle)(w, A, o.b, sd) } }); }
   // boss-arena thicket: dense stalks & roots on every thicket tile, giant mushrooms rising out of it
   if (pl.thicket.length) {
     // the grove's rim: low mossy mounds on every blocked tile (core), a wall of giant mushrooms on top (streamed)
@@ -455,7 +458,9 @@ function makeRoom(n) {
       if (gr() > 0.26) continue;
       const b = grid.box(ix + 1, iz + 1), x = (b.x0 + b.x1) / 2, z = (b.z0 + b.z1) / 2, south = z > 0;
       const h = south ? 10 + Math.floor(gr() * 8) : 22 + Math.floor(gr() * 26), cap = south ? 9 + Math.floor(gr() * 5) : 14 + Math.floor(gr() * 14), k = q++;
-      dress.push({ ...vb(x - 1.4, x + 1.4, z - 1.4, z + 1.4), fn: (w) => RP.bigMushroom(w, A, Math.round(x / S), 3, Math.round(z / S), h, cap, k, seed + k * 13) });
+      const fn = (w) => RP.bigMushroom(w, A, Math.round(x / S), 3, Math.round(z / S), h, cap, k, seed + k * 13);
+      if (south || Math.abs(x) > HW - 3) propUnits.push({ tag: 'dress', prop: { kind: 'grove', box: { x0: x - cap * S, x1: x + cap * S, z0: z - cap * S, z1: z + cap * S }, fn } });
+      else dress.push({ ...vb(x - 1.4, x + 1.4, z - 1.4, z + 1.4), fn });
     }
     for (const [sx, sz] of [[-1, -1], [1, -1]]) { const x = sx * (HW - 1.6), z = sz * (HD - 1.5); dress.push({ ...vb(x - 2, x + 2, z - 2, z + 2), fn: (w) => RP.bigMushroom(w, A, Math.round(x / S), 3, Math.round(z / S), 54, 32, sx > 0 ? 1 : 3, seed + sx * 5) }); }
     dress.push({ ...vb(-2.2, 2.2, -HD + 0.2, -HD + 3.4), fn: (w) => RP.bossThrone(w, A, { x0: -0.9, x1: 0.9, z0: -HD + 0.7, z1: -HD + 2.3 }, seed) });
@@ -502,7 +507,8 @@ function makeRoom(n) {
     return out;
   };
   const coreU = units(core, S, 'core'), dressU = units(dress, S, 'dress'), backU = [...units(back.filter((o) => !o.far), BS, 'back'), ...units(back.filter((o) => o.far), BS * 2, 'back')];
-  const queue = [...coreU, ...dressU, ...backU];
+  const queue = [...propUnits.filter((u) => u.tag === 'core'), ...coreU, ...propUnits.filter((u) => u.tag === 'dress'), ...dressU, ...backU];
+  const props = [];
   const backGroup = new THREE.Group(); backGroup.name = 'backdrop';
   st.group.add(backGroup);
   let faces = 0, firstFrameDone = false;
@@ -511,6 +517,18 @@ function makeRoom(n) {
   const bakeNext = () => {
     const u0 = queue.shift(); if (!u0) return false;
     const tb = performance.now();
+    if (u0.prop) {
+      const g = bakeModel(u0.prop.fn, rig);
+      g.traverse((m) => { if (m.geometry) { m.matrixAutoUpdate = false; m.updateMatrix(); } });
+      const bb = new THREE.Box3().setFromObject(g);
+      const rec = { kind: u0.prop.kind, box: u0.prop.box, top: isFinite(bb.max.y) ? bb.max.y : 0.6, group: g, alpha: 1, faded: null };
+      g.userData.prop = rec;
+      props.push(rec);
+      st.group.add(g);
+      faces += g.userData.faces || 0; timing['f_' + u0.tag] = (timing['f_' + u0.tag] || 0) + (g.userData.faces || 0);
+      timing[u0.tag] += performance.now() - tb;
+      return true;
+    }
     const res = bakeUnit(u0.ops, u0.box, u0.scale, u0.tag === 'back' ? rigBack : rig, u0.tag === 'back' ? 1.4 : 1.6, SKIP);
     timing[u0.tag] += performance.now() - tb;
     if (!res) return true;
@@ -624,7 +642,7 @@ function makeRoom(n) {
     key: n.key, stage, type, size, seed, grid, group: st.group, stage3d: st,
     bounds: { x0: -HW, x1: HW, z0: -HD, z1: HD }, width: pl.W, depth: pl.D,
     doors: doorsOut, spawns: pl.spawns, veins: veinsOut, anchors, background: backGroup, lights: lightsOut,
-    obstacles: [...pl.obs, ...pl.special].map((o) => ({ kind: o.kind, box: o.b, tiles: [o.ix + 1, o.iz + 1, o.tw, o.th] })), pits: pl.pits.map((p) => ({ box: p.b })),
+    obstacles: [...pl.obs, ...pl.special].map((o) => ({ kind: o.kind, box: o.b, tiles: [o.ix + 1, o.iz + 1, o.tw, o.th] })), pits: pl.pits.map((p) => ({ box: p.b })), props,
     fog: st.fog, bg: st.background, pattern: pl.pattern, timing, active: false, disposed: false,
     get faces() { return faces; },
     attach(scene) { scene.add(st.group); scene.fog = st.fog; scene.background = st.background; return R; },
@@ -640,12 +658,16 @@ function makeRoom(n) {
     syncBox: n.opts.syncBox || (type === 'chase' ? { x0: -23, x1: -9, z0: -6, z1: 6 } : null),
     bakeNext,
     done: () => queue.length === 0,
-    progress: () => 1 - queue.length / Math.max(1, coreU.length + dressU.length + backU.length),
+    progress: () => 1 - queue.length / Math.max(1, coreU.length + dressU.length + backU.length + propUnits.length),
     /** Finish all streaming now (tests, screenshots). */
     bakeAll() { while (queue.length) bakeNext(); },
     openHole(kk) { if (!hole) return; hole.visible = kk > 0.01; hole.scale.setScalar(Math.max(0.01, kk)); },
-    update(dt, t) {
+    /** The entity the camera follows ({ x, z } in room space): props between it and the camera fade. */
+    setPlayer(e) { R._player = e; },
+    update(dt, t, o = {}) {
       firstFrameDone = true;
+      const pl0 = o.player || R._player, cam0 = o.cam || R._cam;
+      if (pl0 && cam0 && props.length) fadeProps(props, st.group, cam0, pl0, dt);
       // stream the dressing & backdrop within a small frame budget, nearest to the camera's focus first
       if (queue.length) {
         const tb = performance.now();
@@ -685,6 +707,40 @@ function sortQueue(queue, cam) {
   queue.sort((a, b) => pri(a) - pri(b));
 }
 
+// ---------------------------------------------------------------------------- see-through props
+const _cp = new THREE.Vector3();
+/** Does the segment a→b pass through the box (x0..x1, y0..y1, z0..z1)? (slab test) */
+function segHitsBox(ax, ay, az, bx, by, bz, x0, x1, y0, y1, z0, z1) {
+  let t0 = 0, t1 = 1;
+  const d = [bx - ax, by - ay, bz - az], a = [ax, ay, az], lo = [x0, y0, z0], hi = [x1, y1, z1];
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) { if (a[i] < lo[i] || a[i] > hi[i]) return false; continue; }
+    let ta = (lo[i] - a[i]) / d[i], tb = (hi[i] - a[i]) / d[i];
+    if (ta > tb) { const q = ta; ta = tb; tb = q; }
+    t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+/** Fade props that stand between the camera and the hero's feet or head; ease them back otherwise. */
+function fadeProps(props, root, cam, p, dt) {
+  cam.getWorldPosition(_cp); root.updateWorldMatrix(true, false); root.worldToLocal(_cp);
+  const px = p.x, pz = p.z;
+  for (const r of props) {
+    const b = r.box, pad = 0.12;
+    const hit = r.top > 0.45 && pz > b.z0 - 3 && (segHitsBox(_cp.x, _cp.y, _cp.z, px, 0.15, pz, b.x0 - pad, b.x1 + pad, 0, r.top, b.z0 - pad, b.z1 + pad)
+      || segHitsBox(_cp.x, _cp.y, _cp.z, px, 1.0, pz, b.x0 - pad, b.x1 + pad, 0, r.top, b.z0 - pad, b.z1 + pad));
+    const target = hit ? 0.28 : 1;
+    if (Math.abs(r.alpha - target) < 0.002) continue;
+    r.alpha += (target - r.alpha) * Math.min(1, dt * 10);
+    if (Math.abs(r.alpha - target) < 0.01) r.alpha = target;
+    if (r.alpha < 0.995) {
+      if (!r.faded) { r.faded = []; r.group.traverse((m) => { if (m.isMesh) { const fm = m.material.clone(); fm.transparent = true; fm.depthWrite = false; r.faded.push({ m, orig: m.material, fm }); m.material = fm; } }); }
+      for (const f of r.faded) f.fm.opacity = r.alpha;
+    } else if (r.faded) { for (const f of r.faded) { f.m.material = f.orig; f.fm.dispose(); } r.faded = null; }
+  }
+}
+
 // ---------------------------------------------------------------------------- small painters used only here
 function thicketTile(w, A, b, seed) {
   const X0 = Math.floor(b.x0 / S), X1 = Math.ceil(b.x1 / S), Z0 = Math.floor(b.z0 / S), Z1 = Math.ceil(b.z1 / S);
@@ -694,7 +750,7 @@ function thicketTile(w, A, b, seed) {
     const hTop = 3 + Math.round(noise2(qx * 0.12, qz * 0.12 + seed) * 3) * 2;
     for (let y = -3; y < hTop; y++) w.set(X, y, Z, A.dirt[0]);
     const root = noise2(qx * 0.32, qz * 0.32 + 3) > 0.66;
-    w.set(X, hTop, Z, root ? tone(A.root, 0.5) : tone(A.moss, 0.22 + Math.round(noise2(qx * 0.6, qz * 0.6) * 3) / 3 * 0.5));
+    w.set(X, hTop, Z, root ? tone(A.root, 0.4) : tone(A.moss, 0.1 + Math.round(noise2(qx * 0.6, qz * 0.6) * 3) / 3 * 0.3));
   }
 }
 function glowShard(w, x, y, z, r, col) {
