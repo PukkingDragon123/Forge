@@ -70,7 +70,37 @@ await page.evaluate(() => {
         const pick = (fresh.length ? fresh : dirs)[Math.floor(Math.random() * (fresh.length || dirs.length))];
         B.target = pick ? { room: room.id, dir: pick } : null;
       }
-      if (B.target) { const d = built.doors[B.target.dir]; const o = d.out || { x: 0, z: 0 }; move(d.x + o.x * 0.8 - p.x, d.z + o.z * 0.8 - p.z); }
+      if (B.target) {
+        const d = built.doors[B.target.dir]; const o = d.out || { x: 0, z: 0 };
+        const gx = d.x + o.x * 0.8, gz = d.z + o.z * 0.8;
+        // BFS on the room grid toward the tile just inside the door; steer at the next waypoint
+        const G = built.grid;
+        if (G && G.toTile && (!B.path || B.pathFor !== room.id + B.target.dir || B.t % 20 === 0)) {
+          const [sx, sz] = G.toTile(p.x, p.z), [tx, tz] = G.toTile(d.x - o.x * 0.6, d.z - o.z * 0.6);
+          const W = G.w, H = G.h, prev = new Int32Array(W * H).fill(-1), q = [sz * W + sx];
+          prev[sz * W + sx] = sz * W + sx;
+          const free = (x, z) => x >= 0 && z >= 0 && x < W && z < H && (G.get(x, z) === 0 || (Math.abs(x - tx) + Math.abs(z - tz) <= 1));
+          while (q.length) {
+            const c = q.shift(), cx = c % W, cz = (c / W) | 0;
+            if (cx === tx && cz === tz) break;
+            for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+              const nx = cx + dx, nz = cz + dz, k = nz * W + nx;
+              if (!free(nx, nz) || prev[k] >= 0) continue;
+              if (dx && dz && (!free(cx + dx, cz) || !free(cx, cz + dz))) continue;
+              prev[k] = c; q.push(k);
+            }
+          }
+          const path = []; let c = tz * W + tx;
+          if (prev[c] >= 0) { while (c !== sz * W + sx && path.length < 400) { path.push(c); c = prev[c]; } path.reverse(); }
+          B.path = path.map((k) => G.toWorld(k % W, (k / W) | 0)); B.pathFor = room.id + B.target.dir;
+        }
+        let wx = gx, wz = gz;
+        if (B.path && B.path.length) {
+          while (B.path.length > 1 && Math.hypot(B.path[0][0] - p.x, B.path[0][1] - p.z) < 0.45) B.path.shift();
+          [wx, wz] = B.path.length > 1 ? B.path[0] : [gx, gz];
+        }
+        move(wx - p.x, wz - p.z);
+      }
     } catch (e) { (window.__bot.err || (window.__bot.err = [])).push(String(e && e.message)); }
   }, 50);
 });

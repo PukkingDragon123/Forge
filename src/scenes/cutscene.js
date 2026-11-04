@@ -1065,7 +1065,7 @@ SCRIPTS.boss = (c, p) => {
     shots: [
       // 1. high and wide: the arena, and Durgan walking in
       { set: 'arena', dur: 3.4, dip: 0.9,
-        cam: { pos: [hadesAt(M.center, 1.25, -1.2).pos, hadesAt(M.center.clone().lerp(h1, 0.3), 1.05, -0.6).pos], look: [M.center.clone(), M.center.clone().lerp(h1, 0.3)], fov: [34, 32] },
+        cam: { pos: [hadesAt(h1.clone().lerp(bossPos, 0.3), 1.0, -1.0).pos, hadesAt(h1.clone().lerp(bossPos, 0.5), 0.92, -0.5).pos], look: [h1.clone().lerp(bossPos, 0.3), h1.clone().lerp(bossPos, 0.5)], fov: [36, 34] },
         enter: (c) => {
           c.walk(hero, h1, 2.4, { anim: 'walk', then: 'idleCombat' });
           if (pip) c.walk(pip, h1.clone().add(V(0.6, 0, 0.4)), 2.4, { anim: 'walk', then: 'sniff' });
