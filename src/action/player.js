@@ -4,7 +4,7 @@
 // the simulation steps at 60 Hz in ActionWorld.
 import * as THREE from 'three';
 import { Entity } from './entity.js';
-import { movesetOf, weaponBase } from './weapons.js';
+import { movesetOf, weaponBase, specialOf, REF } from './weapons.js';
 import { castSkill, skillDef } from './skills.js';
 import { drawControls } from './touch.js';
 import * as Chars from '../models/characters.js';
@@ -21,7 +21,11 @@ export const FEEL = {
   buffer: 0.25, comboReset: 0.5,
   autoAimCone: (70 * Math.PI) / 180, autoAimRange: 6,
 };
-const DEFAULT_STATS = { dmg: 0, atkSpd: 0, moveSpd: 0, crit: 0.05, critDmg: 1.75, maxHp: 0, armor: 0, dashCharges: 2, lifesteal: 0, thorns: 0, statusChance: {}, element: null, lootLuck: 0, oreLuck: 0, pickPower: 1, cdr: 0, pickupRadius: 0 };
+// loadout stats (systems/loadout.js): dmg/atkSpd/moveSpd/skillCd are multipliers (1 = none), crit 0..1,
+// critDmg ×, status = on-hit chances 0..1 per status, procs = [{ on, effect, chance, power }]
+const DEFAULT_STATS = { dmg: 1, atkSpd: 1, moveSpd: 1, skillCd: 1, crit: 0.05, critDmg: 1.5, maxHp: 0, armor: 0, dashCharges: 2, lifesteal: 0, thorns: 0, regen: 0, status: {}, procs: [], element: null, lootLuck: 0, oreLuck: 0, pickPower: 1, pickupRadius: 1.2, petrify: 0 };
+const STATUS_DUR = { poison: 3, burn: 3, slow: 2, freeze: 1.2, bleed: 3, stun: 0.45, root: 2 };
+const clampK = (v, a, b) => (v < a ? a : v > b ? b : v);
 const ELEMENT_FX = { burn: '#ff8a3a', fire: '#ff8a3a', poison: '#8aff5a', freeze: '#9ae8ff', ice: '#9ae8ff', shock: '#bff4ff', bleed: '#ff4a5a', stun: '#ffe85a' };
 const ELEMENT_STATUS = { fire: 'burn', burn: 'burn', ice: 'freeze', freeze: 'freeze', poison: 'poison', shock: 'stun', stun: 'stun', bleed: 'bleed', slow: 'slow', root: 'root' };
 const angOf = (x, z) => Math.atan2(x, z);
@@ -49,6 +53,50 @@ function fallbackModel(color = '#c8743a') {
   return { group: g, anim: 'idle', play(a) { this.anim = a; }, update() {}, flash() {}, hold() {} };
 }
 
+/** A burning floor patch (ember dash trails, fire_trail procs). */
+export function firePatch(P, w, x, z, r, life, tick, dmg, burn) {
+  w.fx.disc(x, z, r, '#ff6a1a', { life, alpha: 0.7, pulse: true });
+  w.every(tick, Math.max(1, Math.floor(life / tick)), () => {
+    w.areaDamage({ shape: 'circle', x, z, r }, P.skillHit(dmg, { kb: 0, status: { burn }, quiet: true, hitstop: 0, tag: 'proc' }));
+    w.fx.glow(x, 0.15, z, ['#ffb03a', '#ff6a1a', '#ffe08a'], 2, { spread: r * 0.6, vel: [0, 1.4, 0] });
+  });
+}
+/** Loadout proc effects (data/items.js): power = damage / heal / strength. */
+export const PROCS = {
+  spores(P, w, power) {
+    const x = P.x, z = P.z;
+    w.fx.disc(x, z, 1.8, '#6ac83a', { life: 2.5, alpha: 0.4, pulse: true });
+    w.fx.smoke(x, 0.3, z, ['#7ab84a', '#9ad86a'], 10, { spread: 0.8, rise: 0.25 });
+    w.every(0.5, 5, () => w.areaDamage({ shape: 'circle', x, z, r: 1.8 }, P.skillHit(power * 0.5, { kb: 0, status: { poison: 3 }, quiet: true, hitstop: 0, tag: 'proc' })));
+  },
+  fire_trail(P, w, power) { firePatch(P, w, P.x, P.z, 0.7, 2.2, 0.4, power * 0.5, 2); },
+  shock(P, w, power, target) {
+    const t = target && !target.dead ? target : w.nearestEnemy(P.x, P.z, 6);
+    if (!t) return;
+    const pts = [new THREE.Vector3(t.x, (t.height || 1) * 0.6, t.z)];
+    let cur = t; const seen = new Set([t]);
+    for (let i = 0; i < 2; i++) { const n = w.nearestEnemy(cur.x, cur.z, 4, (e) => !seen.has(e)); if (!n) break; seen.add(n); pts.push(new THREE.Vector3(n.x, (n.height || 1) * 0.6, n.z)); cur = n; }
+    [...seen].forEach((e, i) => { if (i > 0 || e !== target) w.damage(e, P.skillHit(power, { kb: 0.2, stun: 0.2, tag: 'proc', hitstop: 0 })); });
+    if (pts.length > 1) w.fx.bolt(pts, '#bff4ff', { life: 0.2 });
+    w.fx.spark(t.x, 0.8, t.z, '#bff4ff', 8);
+  },
+  heal(P, w, power) { w.heal(P, power); w.fx.glow(P.x, 0.8, P.z, ['#7aff9a', '#ffffff'], 8, { spread: 0.3, vel: [0, 1.2, 0] }); },
+  burst(P, w, power) {
+    const n = 8;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      w.spawnProjectile({ team: 'player', x: P.x, z: P.z, y: 0.6, dir: { x: Math.sin(a), z: Math.cos(a) }, speed: 13, radius: 0.15, dmg: power * (P.stats.dmg || 1), kb: 0.4, life: 0.45, color: '#c8baa8', source: P, pierce: 1 });
+    }
+    w.fx.ring(P.x, P.z, 1.5, '#e8d8b8', { life: 0.25 });
+  },
+  shield(P, w) { P.shield = Math.max(P.shield, 1); w.fx.ring(P.x, P.z, 0.8, '#9ae8ff', { life: 0.35 }); },
+  slow_field(P, w, power) {
+    const x = P.x, z = P.z, r = 2.4;
+    w.fx.disc(x, z, r, '#7a9aff', { life: 3, alpha: 0.35, pulse: true });
+    w.every(0.5, 6, () => w.areaDamage({ shape: 'circle', x, z, r }, P.skillHit(power * 0.2, { kb: 0, status: { slow: 1 }, quiet: true, hitstop: 0, tag: 'proc' })));
+  },
+};
+
 export class Player extends Entity {
   constructor(world, charId = 'durgan', loadout = {}, opts = {}) {
     super({ team: 'player', radius: 0.36, mass: 1.3 });
@@ -70,6 +118,8 @@ export class Player extends Entity {
     this.ghosting = false;
     this.height = 1.0;
     this.lifeAcc = 0;
+    this.buffs = {};          // timed effects from skills: { ember: { until, d } }
+    this.shield = 0;          // hits blocked (shield proc)
     this.mouseAim = new THREE.Vector3();
     this.hasMouseAim = false;
     // model
@@ -86,8 +136,9 @@ export class Player extends Entity {
     const run = world.game && world.game.run;
     const base = (CHARACTERS[charId] && CHARACTERS[charId].hp) || 100;
     this.applyLoadout(loadout, { keepHp: false });
-    this.maxHp = opts.maxHp ?? (run && run.maxHp) ?? base + (this.stats.maxHp || 0);
-    this.hp = opts.hp ?? (run && run.hp) ?? this.maxHp;
+    this.maxHp = opts.maxHp ?? loadout.maxHp ?? (run && run.maxHp) ?? base + (this.stats.maxHp || 0);
+    this.hp = Math.min(this.maxHp, opts.hp ?? loadout.hp ?? (run && run.hp) ?? this.maxHp);
+    this.unsub = world.on('roomCleared', () => { this.proc('roomClear'); if (this.stats.regen > 0 && !this.dead) world.heal(this, this.stats.regen); });
     this.dashCharges = this.dashMax;
     world.setPlayer(this);
   }
@@ -98,8 +149,16 @@ export class Player extends Entity {
     this.loadout = loadout;
     this.stats = { ...DEFAULT_STATS, ...(loadout.stats || {}) };
     this.weapon = loadout.weapon || null;
-    this.moves = movesetOf(this.weapon ? this.weapon : 'pickaxe');
+    const type = this.weapon ? this.weapon.type || this.weapon.bp || 'axe' : 'pickaxe';
+    const base = movesetOf(type);
+    // reach and knockback scale from the type's reference; specials come from the weapon's special id
+    const ref = REF[type] || REF.axe;
+    const rk = this.weapon && this.weapon.range ? clampK(this.weapon.range / ref[0], 0.7, 1.5) : 1;
+    const kk = this.weapon && this.weapon.kb !== undefined ? clampK(this.weapon.kb / ref[1], 0.5, 2) : 1;
+    const scale = (m) => ({ ...m, r: m.r && m.r * rk, len: m.len && m.len * rk, range: m.range && m.range * rk, quake: m.quake && m.quake * Math.sqrt(rk), kb: (m.kb || 0) * kk });
+    this.moves = { ...base, combo: base.combo.map(scale), dash: scale(base.dash), special: this.weapon ? specialOf(this.weapon) : base.special };
     this.base = this.weapon ? weaponBase(this.weapon) : 6;
+    this.atkMul = (this.stats.atkSpd || 1) * ((this.weapon && this.weapon.speed) || 1);
     this.armor = this.stats.armor || 0;
     this.dashMax = Math.max(1, this.stats.dashCharges || FEEL.dashCharges);
     if (this.dashCharges > this.dashMax) this.dashCharges = this.dashMax;
@@ -108,11 +167,12 @@ export class Player extends Entity {
       const id = sk[i] || null;
       if (this.skills[i] !== id) { this.skills[i] = id; this.skillCd[i] = 0; }
       const d = id && skillDef(id);
-      this.skillCdMax[i] = d ? d.cd * (1 - Math.min(0.5, this.stats.cdr || 0)) : 1;
+      this.skillCdMax[i] = d ? d.cd * (this.stats.skillCd || 1) : 1;
     }
-    if (o.keepHp !== false && this.maxHp) {
-      const want = (this.loadout.maxHp ?? null);
-      if (want) { this.hp = Math.min(this.hp, want); this.maxHp = want; }
+    if (o.keepHp !== false && this.maxHp && loadout.maxHp) {
+      const grow = loadout.maxHp - this.maxHp;
+      this.maxHp = loadout.maxHp;
+      this.hp = Math.min(this.maxHp, this.hp + Math.max(0, grow));
     }
     this.equipMesh();
   }
@@ -121,7 +181,8 @@ export class Player extends Entity {
     let mesh = null;
     try {
       const w = this.weapon || { bp: 'pickaxe', ids: ['iron'], grade: 1 };
-      if (typeof W3D.buildWeaponMesh === 'function') mesh = W3D.buildWeaponMesh({ bp: w.bp || w.type || 'axe', ids: w.ids || ['iron', 'iron'], el: w.el, grade: w.grade ?? 1 });
+      const look = w.look || { bp: w.type || w.bp || 'axe', ids: w.ids || ['iron', 'iron'], el: w.el, grade: w.grade ?? 1 };
+      if (typeof W3D.buildWeaponMesh === 'function') mesh = W3D.buildWeaponMesh(look);
     } catch (e) { mesh = null; }
     if (mesh) { this.model.hold(mesh, 'right'); this.weaponMesh = mesh; }
   }
@@ -211,30 +272,61 @@ export class Player extends Entity {
   }
 
   // ---------------------------------------------------------------- damage helpers
-  skillDmg(mul) { return Math.max(8, this.base) * mul * (1 + (this.stats.dmg || 0)); }
-  /** A hit from the player with buffs, crits and element procs folded in. */
+  /** A skill hit: absolute damage (data/skills.js) scaled by the dmg stat, crits allowed. */
+  skillHit(dmg, extra = {}) { return this.hitOf(1, { ...extra, base: dmg, noProc: extra.noProc ?? true }); }
+  /** A hit from the player with buffs, crits and status procs folded in. */
   hitOf(mul, extra = {}) {
     const st = this.stats;
-    let dmg = (extra.base ?? this.base) * mul * (1 + (st.dmg || 0));
+    let dmg = (extra.base ?? this.base) * mul * (st.dmg || 1);
     const crit = extra.crit !== undefined ? extra.crit : Math.random() < (st.crit || 0) + (extra.critBonus || 0);
-    if (crit) dmg *= st.critDmg || 1.75;
+    if (crit) dmg *= st.critDmg || 1.5;
     const status = { ...(extra.status || {}) };
-    const el = st.element || (this.weapon && this.weapon.element);
-    if (el && !extra.noProc) {
-      const sk = ELEMENT_STATUS[el] || el;
-      const ch = (st.statusChance && (st.statusChance[el] ?? st.statusChance[sk])) ?? 0.25;
-      if (Math.random() < ch) status[sk] = Math.max(status[sk] || 0, sk === 'freeze' ? 1.2 : sk === 'stun' ? 0.4 : 3);
+    if (!extra.noProc) {
+      const chances = { ...((this.weapon && this.weapon.status) || {}) };
+      for (const [k, v] of Object.entries(st.status || {})) chances[k] = Math.max(chances[k] || 0, v);
+      for (const [k, ch] of Object.entries(chances)) {
+        if (!ch || Math.random() >= ch) continue;
+        const key = ELEMENT_STATUS[k] || k;
+        status[key] = Math.max(status[key] || 0, STATUS_DUR[key] || 2);
+      }
     }
-    for (const k in st.statusChance || {}) if (k !== el && Math.random() < st.statusChance[k]) status[ELEMENT_STATUS[k] || k] = Math.max(status[k] || 0, 2.5);
-    return { dmg, crit, kb: extra.kb ?? 0.5, dir: extra.dir || { x: this.aimX, z: this.aimZ }, stun: extra.stun, status: Object.keys(status).length ? status : null, source: this, heavy: extra.heavy, tag: extra.tag, hitstop: extra.hitstop, quiet: extra.quiet, element: el };
+    const el = st.element || (this.weapon && this.weapon.element) || null;
+    return { dmg, crit, kb: extra.kb ?? 0.5, dir: extra.dir || { x: this.aimX, z: this.aimZ }, stun: extra.stun, status: Object.keys(status).length ? status : null, source: this, heavy: extra.heavy, tag: extra.tag, hitstop: extra.hitstop, quiet: extra.quiet, element: el, petrify: (this.weapon && this.weapon.petrify) || 0, skill: !!extra.base };
   }
-  onDealt(dmg, target) {
+  onDealt(dmg, target, hit) {
     const ls = this.stats.lifesteal || 0;
     if (ls > 0) { this.lifeAcc += dmg * ls; if (this.lifeAcc >= 1) { const n = Math.floor(this.lifeAcc); this.lifeAcc -= n; this.world.heal(this, n, n < 3); } }
-    void target;
+    if (hit && hit.tag !== 'dot' && hit.tag !== 'proc') {
+      this.proc('hit', target);
+      if (hit.crit) this.proc('crit', target);
+      if (target.dead || target.hp <= 0) this.proc('kill', target);
+    }
+  }
+  /** Fire the loadout's procs for an event: dash | hit | kill | crit | hurt | roomClear. */
+  proc(on, target = null) {
+    const list = this.stats.procs;
+    if (!list || !list.length) return;
+    for (const p of list) {
+      if (p.on !== on) continue;
+      if (Math.random() >= (p.chance ?? 1)) continue;
+      const k = 'proc:' + (p.from || '') + p.effect;
+      this.procCd = this.procCd || {};
+      if ((this.procCd[k] || 0) > this.world.time) continue;
+      this.procCd[k] = this.world.time + (on === 'hit' ? 0.4 : 0.15);
+      PROCS[p.effect] && PROCS[p.effect](this, this.world, p.power || 5, target);
+    }
   }
   onDamaged(dmg, hit, world) {
     if (this.state === 'dead') return dmg;
+    if (this.shield > 0 && hit.tag !== 'dot') {
+      this.shield--;
+      world.fx.ring(this.x, this.z, 1, '#9ae8ff', { life: 0.3 });
+      world.fx.number(this.x, 1.3, this.z, 'BLOCKED', 'status', { color: '#9ae8ff' });
+      this.invuln = Math.max(this.invuln, 0.4);
+      const au = world.game && world.game.audio; au && au.play('shield_block', { vol: 0.7 });
+      return 0;
+    }
+    this.proc('hurt', hit.source);
     this.invuln = Math.max(this.invuln, FEEL.hurtIFrames);
     if (this.state !== 'dash' && this.state !== 'whirl') this.enterState('hurt', FEEL.hurtStagger);
     tryPlay(this.model, ['hurt']);
@@ -252,7 +344,7 @@ export class Player extends Entity {
   startDash(dir, o = {}) {
     if (!o.free) { if (this.dashCharges <= 0) return false; this.dashCharges--; if (this.dashT <= 0) this.dashT = FEEL.dashRecharge; }
     const d = dir || this.moveDir() || { x: Math.sin(this.facing), z: Math.cos(this.facing) };
-    const dist = (o.dist ?? FEEL.dashD) * (1 + (this.stats.moveSpd || 0) * 0.4);
+    const dist = (o.dist ?? FEEL.dashD) * (1 + ((this.stats.moveSpd || 1) - 1) * 0.4);
     this.dash = { x: d.x, z: d.z, speed: dist / FEEL.dashT, t: 0, ghost: 0, color: o.color || this.moves.color, onStep: o.onStep };
     this.facing = angOf(d.x, d.z);
     this.atk = null;
@@ -265,6 +357,16 @@ export class Player extends Entity {
     w.fx.ring(this.x, this.z, 0.9, '#ffffff', { life: 0.18, alpha: 0.5 });
     w.cam.punch(d, 0.08);
     const au = w.game && w.game.audio; au && au.play(o.free ? 'dash_fire' : 'dash', { vol: 0.7, pitch: 0.95 + Math.random() * 0.1 });
+    if (!o.free) this.proc('dash');
+    const ember = this.buffs.ember;
+    if (ember && ember.until > w.time && !o.onStep) {
+      const d = ember.d, prev = { x: 1e9, z: 1e9 };
+      this.dash.onStep = (x, z) => {
+        if (Math.hypot(x - prev.x, z - prev.z) < d.trailWidth * 0.6) return;
+        prev.x = x; prev.z = z;
+        firePatch(this, w, x, z, d.trailWidth * 0.6, d.trailLife, d.tick, d.dmg, d.burn);
+      };
+    }
     w.emit('dash', { player: this });
     return true;
   }
@@ -275,7 +377,7 @@ export class Player extends Entity {
     const aim = this.resolveAim(true);
     this.aimX = aim.x; this.aimZ = aim.z;
     this.facing = angOf(aim.x, aim.z);
-    const sp = 1 + (this.stats.atkSpd || 0);
+    const sp = this.atkMul || 1;
     this.atk = { move, t: 0, hit: false, sp, wind: move.wind / sp, active: move.active / sp, rec: move.rec / sp, cancel: move.cancel / sp, dash, dir: aim, idx: this.combo };
     this.enterState('attack');
     // lunge: step toward the foe but stop short of it (Hades magnetism)
@@ -381,6 +483,23 @@ export class Player extends Entity {
         const pr = w.spawnProjectile({ team: 'player', x: this.x + Math.sin(a) * 0.4, z: this.z + Math.cos(a) * 0.4, y: 0.7, dir: { x: Math.sin(a), z: Math.cos(a) }, speed: sp.speed, radius: sp.radius, dmg: h.dmg, crit: h.crit, kb: 0.6, pierce: sp.pierce ?? 0, life: sp.range / sp.speed, color: col, source: this, model, spin: model ? 0 : 10 });
         if (model) { model.rotation.set(Math.PI / 2, 0, -a); pr.spin = 0; pr.sync = function (dt) { this.mesh.position.set(this.x, this.y, this.z); this.mesh.rotation.y += dt * 18; if (Math.random() < 0.6) this.world.fx.glow(this.x, this.y, this.z, col, 1, { spread: 0.03, life: [0.1, 0.2] }); }; }
       }
+    } else if (sp.kind === 'flurry') {
+      this.enterState('special', sp.hits * sp.gap + 0.1, { moveMul: 0.35 });
+      w.every(sp.gap, sp.hits, (i) => {
+        if (this.dead) return;
+        const dir = { x: Math.sin(this.facing), z: Math.cos(this.facing) };
+        w.areaDamage({ shape: 'cone', x: this.x, z: this.z, r: sp.r, angle: sp.arc, dir }, this.hitOf(sp.mul, { kb: sp.kb, dir, critBonus: 0.1, hitstop: 0.02 }));
+        w.fx.thrust(this.x + dir.x * 0.2 + (Math.random() - 0.5) * 0.3, this.z + dir.z * 0.2 + (Math.random() - 0.5) * 0.3, this.facing + (Math.random() - 0.5) * 0.6, sp.r, { color: col, width: 0.22, sweep: 0.04 });
+        tryPlay(this.model, i % 2 ? ['attack2', 'slash', 'stab'] : ['attack1', 'stab'], { speed: 3 });
+      });
+    } else if (sp.kind === 'bigbolt') {
+      this.enterState('special', 0.25, { moveMul: 0.2 });
+      const h = this.hitOf(sp.mul, { kb: 1.2, heavy: true });
+      const burst = (x, z) => {
+        w.areaDamage({ shape: 'circle', x, z, r: sp.burst }, this.hitOf(sp.mul * 0.6, { kb: 1.4, heavy: true }));
+        w.fx.ring(x, z, sp.burst, col, { life: 0.3 }); w.fx.glow(x, 0.5, z, [col, '#ffffff'], 16, { spread: 0.4 }); w.fx.light(x, 0.8, z, col, 5, 5, 0.2); w.shake(0.25);
+      };
+      w.spawnProjectile({ team: 'player', x: this.x + aim.x * 0.5, z: this.z + aim.z * 0.5, y: 0.8, dir: aim, speed: sp.speed, radius: sp.radius, dmg: h.dmg, crit: h.crit, kb: 1.2, pierce: 0, life: sp.range / sp.speed, color: col, source: this, scale: 1.6, status: h.status, onEnd: (pr) => burst(pr.x, pr.z) });
     } else if (sp.kind === 'nova') {
       this.enterState('special', 0.25);
       const hits = w.areaDamage({ shape: 'circle', x: this.x, z: this.z, r: sp.r }, this.hitOf(sp.mul, { kb: sp.kb, heavy: true }));
@@ -399,7 +518,7 @@ export class Player extends Entity {
     const ok = castSkill(this, this.world, id);
     if (!ok) return false;
     const d = skillDef(id);
-    this.skillCd[i] = this.skillCdMax[i] = (d ? d.cd : 6) * (1 - Math.min(0.5, this.stats.cdr || 0));
+    this.skillCd[i] = this.skillCdMax[i] = (d ? d.cd : 6) * (this.stats.skillCd || 1);
     if (this.state !== 'whirl' && this.state !== 'dash') { this.atk = null; this.enterState('skill', 0.18, { moveMul: 0.3 }); }
     tryPlay(this.model, ['cast', 'block'], { speed: 1.8 });
     this.world.emit('skillCast', { player: this, id, slot: i });
@@ -432,7 +551,7 @@ export class Player extends Entity {
 
     // state machine
     let tvx = 0, tvz = 0, moveMul = 1;
-    const mv = this.inMove, speed = FEEL.speed * (1 + (this.stats.moveSpd || 0)) * (this.status.slow > 0 ? 0.55 : 1);
+    const mv = this.inMove, speed = FEEL.speed * (this.stats.moveSpd || 1) * (this.status.slow > 0 ? 0.55 : 1);
     if (this.state === 'dash') {
       const d = this.dash;
       if (d) {

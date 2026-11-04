@@ -81,9 +81,28 @@ export const MOVESETS = {
 };
 MOVESETS.fists = MOVESETS.pickaxe;
 
+/** Weapon specials by kind (data/items.js names them: spin, slam, thrust, throw, flurry, bolt). */
+export const SPECIALS = {
+  spin: MOVESETS.axe.special,
+  leap: MOVESETS.hammer.special,
+  thrust: MOVESETS.sword.special,
+  throw: MOVESETS.spear.special,
+  fan: MOVESETS.dagger.special,
+  nova: MOVESETS.staff.special,
+  flurry: { kind: 'flurry', cd: 1.0, mul: 0.6, hits: 5, gap: 0.06, r: 1.7, arc: 1.4, kb: 0.25, anim: ['special_dagger', 'stab'], sound: 'swing_dagger' },
+  bigbolt: { kind: 'bigbolt', cd: 1.6, mul: 2.4, speed: 11, range: 9, radius: 0.42, pierce: 99, burst: 1.6, anim: ['special_staff', 'cast'], sound: 'bolt' },
+};
+const SPECIAL_ALIAS = { slam: 'leap', bolt: 'bigbolt' };
+export function specialOf(w) {
+  const id = w && w.special;
+  return (id && (SPECIALS[SPECIAL_ALIAS[id] || id])) || movesetOf(w).special;
+}
+/** Reference reach and knockback per type (data/items.js defaults) — weapons scale from these. */
+export const REF = { axe: [1.9, 0.7], hammer: [1.8, 1.4], sword: [2.0, 0.5], spear: [2.8, 0.6], dagger: [1.4, 0.2], staff: [7, 0.3], pickaxe: [1.5, 0.4], fists: [1.2, 0.3] };
+
 /** The moveset for a weapon object (bp = blueprint id) or a type name. */
 export function movesetOf(w) {
-  const bp = typeof w === 'string' ? w : w && (w.bp || w.type || w.kind);
+  const bp = typeof w === 'string' ? w : w && (w.type || w.bp || w.kind);
   return MOVESETS[bp] || MOVESETS.axe;
 }
 /** Base light-hit damage of a weapon (v5 weapons carry `dmg` = one light hit). */

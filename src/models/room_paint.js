@@ -74,13 +74,16 @@ export function paintFloor(w, ctx) {
     // distance to the room edge (voxels) feeds the moss creeping in from the walls
     const nw = Math.min(HW - Math.abs(x), HD - Math.abs(z)) / S;
     const mat = ctx.matAt ? ctx.matAt(x, z) : MAT.STONE;
-    for (let y = -4; y <= -1; y++) {
+    for (let y = -3; y <= -1; y++) {
       let c = floorColor(A, X, y, Z, -1 - y, mat, nw);
-      if (y === -1 && stage === 0) {
-        // mycelium threads: thin glowing filaments wandering between the stones
-        const m = noise2(X * 0.045 + 13, Z * 0.045) ;
-        if (Math.abs(m - 0.5) < 0.012 && noise2(X * 0.02, Z * 0.02 + 5) > 0.55) c = glowC(h3(X, Z, 1, 4) > 0.5 ? '#7affd8' : '#c8fff0');
-        else if (Math.abs(m - 0.5) < 0.03 && noise2(X * 0.02, Z * 0.02 + 5) > 0.5) c = mixC(c, C('#d8e8c8'), 0.35);
+      if (y === -1) {
+        if (stage === 0) {
+          // mycelium threads: faint pale filaments wandering between the stones, glowing here and there
+          const m = noise2(X * 0.045 + 13, Z * 0.045), on = noise2(X * 0.02, Z * 0.02 + 5);
+          if (Math.abs(m - 0.5) < 0.007 && on > 0.62) c = h3(X, Z, 1, 4) > 0.82 ? glowC('#9affe0') : mixC(c, C('#d8f0d8'), 0.5);
+        }
+        // soft shade where the floor meets the walls
+        if (nw < 14) c = mixC(c, A.rock[0], (1 - nw / 14) * 0.45);
       }
       w.set(X, y, Z, c);
     }
@@ -126,14 +129,17 @@ export function paintWalls(w, ctx) {
   // ---- north wall (the face the camera looks at): bricks, an arched doorway, a deep passage behind it
   if (touches(w, -HW - WT, HW + WT, -HD - 1.6, -HD)) {
     const top = yv(H.north);
+    const ZF = Math.ceil(-HD / S) - 1; // the voxel layer facing the room
     cols(w, -HW - WT, HW + WT, -HD - WT - 0.3, -HD, (X, Z, x, z) => {
       const u = x, inDoor = open('n') && Math.abs(u) < DW + 0.25;
       const archTop = inDoor ? ARCH(u, DW, 2.0) : -1;
       const jag = Math.round(noise2(X * 0.05, 9) * 3 + noise2(X * 0.21, 3) * 2);
       const yTop = top + jag;
+      const front = Z >= ZF - 2 || inDoor;
       for (let y = -4; y <= yTop; y++) {
         const m = (y + 0.5) * S;
         if (archTop > 0 && m < archTop && Math.abs(u) < DW) continue; // the opening
+        if (!front && y < yTop - 2) { w.set(X, y, Z, A.mortar); continue; } // hidden inside the wall
         let c;
         if (y >= yTop - 1) c = mossTop(X, Z, y, cap(X, y, Z, X));
         else c = wallColor(A, X, y, Z, X, 0, -1);
@@ -154,14 +160,17 @@ export function paintWalls(w, ctx) {
   for (const side of [-1, 1]) {
     const x0 = side < 0 ? -HW - WT : HW, x1 = side < 0 ? -HW : HW + WT, key = side < 0 ? 'w' : 'e';
     if (!touches(w, x0, x1, -HD - WT, HD + WT)) continue;
+    const XI = side < 0 ? Math.ceil(-HW / S) - 1 : Math.floor(HW / S), ZS = Math.ceil((HD + WT) / S) - 1;
     cols(w, x0, x1, -HD - WT - 0.3, HD + WT, (X, Z, x, z) => {
       const inDoor = open(key) && Math.abs(z) < DW + 0.3;
       const hM = H.side(z) + (inDoor ? 0.75 : 0);
       const archTop = inDoor ? ARCH(z, DW, Math.max(1.5, H.side(0) + 0.1)) : -1;
       const yTop = yv(hM) + Math.round(noise2(Z * 0.06, side * 5) * 2);
+      const shell = Math.abs(X - XI) <= 2 || inDoor || Z >= ZS - 2;
       for (let y = -4; y <= yTop; y++) {
         const m = (y + 0.5) * S;
         if (archTop > 0 && m < archTop && Math.abs(z) < DW) continue;
+        if (!shell && y < yTop - 2) { w.set(X, y, Z, A.mortar); continue; }
         let c = y >= yTop - 1 ? mossTop(X, Z, y, cap(X, y, Z, Z)) : wallColor(A, X, y, Z, Z, 0, -1);
         if (inDoor && Math.abs(z) >= DW - 0.04) c = y >= yTop - 2 ? tone(A.brick, 0.8) : tone(A.brick, 0.6 + h3(Math.floor(y / 6), Z > 0 ? 1 : 0, 5, 2) * 0.16);
         w.set(X, y, Z, c);
@@ -175,10 +184,12 @@ export function paintWalls(w, ctx) {
   }
   // ---- south parapet (low, near the camera) with a gap and steps going down for the south door
   if (touches(w, -HW - WT, HW + WT, HD, HD + WT + 1.6)) {
+    const ZO = Math.ceil((HD + WT) / S) - 1;
     cols(w, -HW - WT, HW + WT, HD, HD + WT, (X, Z, x) => {
       if (open('s') && Math.abs(x) < DW) return;
       const yTop = yv(H.south) + (Math.abs(x) % 2.5 < 0.18 ? 3 : 0) + Math.round(noise2(X * 0.1, 4) * 1.5);
-      for (let y = -4; y <= yTop; y++) w.set(X, y, Z, y >= yTop - 1 ? mossTop(X, Z, y, cap(X, y, Z, X)) : wallColor(A, X, y, Z, X, 0, -1));
+      const shell = Z >= ZO - 2 || (open('s') && Math.abs(x) < DW + 0.12);
+      for (let y = -4; y <= yTop; y++) w.set(X, y, Z, y >= yTop - 1 ? mossTop(X, Z, y, cap(X, y, Z, X)) : shell ? wallColor(A, X, y, Z, X, 0, -1) : A.mortar);
     });
     if (open('s')) cols(w, -DW, DW, HD, HD + 1.8, (X, Z, x, z) => {
       const step = Math.floor((z - HD) / 0.3), yTop = -1 - step * 3;

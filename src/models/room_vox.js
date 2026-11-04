@@ -273,35 +273,36 @@ function planBackdrop(pl, stage, type) {
   const { r, HW, HD } = pl, A = RP.ROOM_STYLES[stage];
   const items = [], lamps = [], u = (m) => Math.round(m / BS);
   const kind = A.backdrop;
+  const stemBase = (top, deep) => Math.max(deep, top - 7); // stems vanish into the fog well before their roots
   // north band: tall things rising above the north wall
-  for (let x = -HW - 7; x < HW + 7; x += 2.6 + r() * 2.8) {
-    const z = -HD - 1.6 - r() * 7.5, top = 3 + r() * 6.5;
-    if (kind === 'mushrooms' || (kind === 'ruins' && r() < 0.35)) items.push({ t: 'mush', x, z, base: -11, top, cap: 1.3 + r() * 2.2, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
-    else if (kind === 'crystals') items.push({ t: 'spire', x, z, base: -10, top: top * 0.8, rr: 0.5 + r() * 0.6, glow: r() < 0.6, seed: Math.floor(r() * 999) });
-    else if (kind === 'lava') items.push(r() < 0.5 ? { t: 'ash', x, z, base: -2.5, top, seed: Math.floor(r() * 999) } : { t: 'spire', x, z, base: -10, top: top * 0.7, rr: 0.6 + r() * 0.7, seed: Math.floor(r() * 999) });
-    else items.push({ t: 'ruin', x, z, base: -6, top: top * 0.8, span: 2 + r() * 2.5, seed: Math.floor(r() * 999) });
+  for (let x = -HW - 6; x < HW + 6; x += 3.4 + r() * 3.2) {
+    const z = -HD - 1.8 - r() * 6.5, top = 3.2 + r() * 5.5;
+    if (kind === 'mushrooms' || (kind === 'ruins' && r() < 0.35)) items.push({ t: 'mush', x, z, base: stemBase(top, -9), top, cap: 1.2 + r() * 1.8, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
+    else if (kind === 'crystals') items.push({ t: 'spire', x, z, base: stemBase(top, -9), top: top * 0.8, rr: 0.5 + r() * 0.5, glow: r() < 0.6, seed: Math.floor(r() * 999) });
+    else if (kind === 'lava') items.push(r() < 0.5 ? { t: 'ash', x, z, base: -2.5, top, seed: Math.floor(r() * 999) } : { t: 'spire', x, z, base: stemBase(top, -9), top: top * 0.7, rr: 0.6 + r() * 0.6, seed: Math.floor(r() * 999) });
+    else items.push({ t: 'ruin', x, z, base: stemBase(top, -6), top: top * 0.8, span: 2 + r() * 2.5, seed: Math.floor(r() * 999) });
   }
-  // far layer (fogged): bigger shapes
-  for (let x = -HW - 10; x < HW + 10; x += 5 + r() * 4) {
-    const z = -HD - 11 - r() * 8;
-    if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: -14, top: 6 + r() * 6, cap: 3 + r() * 2.5, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
-    else items.push({ t: 'spire', x, z, base: -14, top: 4 + r() * 6, rr: 1 + r(), glow: kind === 'crystals', seed: Math.floor(r() * 999) });
+  // far layer (fogged, coarser voxels): big shapes
+  for (let x = -HW - 9; x < HW + 9; x += 6 + r() * 5) {
+    const z = -HD - 11 - r() * 7, top = 6 + r() * 6;
+    if (kind === 'mushrooms') items.push({ t: 'mush', far: true, x, z, base: top - 8, top, cap: 2.6 + r() * 2.2, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
+    else items.push({ t: 'spire', far: true, x, z, base: top - 9, top: top * 0.8, rr: 1 + r() * 0.8, glow: kind === 'crystals', seed: Math.floor(r() * 999) });
   }
   // hanging root curtains / chains high above the back
-  for (let x = -HW - 4; x < HW + 4; x += 1.8 + r() * 3) if (r() < 0.6) items.push({ t: kind === 'lava' ? 'chain' : 'roots', x, z: -HD - 2.5 - r() * 5, top: 11 + r() * 3, len: 3 + r() * 5, seed: Math.floor(r() * 999) });
-  // sides: lower things (they frame the room without covering it)
-  for (const side of [-1, 1]) for (let z = -HD; z < HD + 3; z += 2.2 + r() * 2.4) {
-    const x = side * (HW + 1.3 + r() * 5);
-    if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: -10, top: -0.5 + r() * 3.5 - (z > 0 ? 1.5 : 0), cap: 1 + r() * 1.6, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
-    else items.push({ t: 'spire', x, z, base: -10, top: r() * 2 - (z > 0 ? 1 : 0), rr: 0.5 + r() * 0.5, glow: kind === 'crystals' && r() < 0.5, seed: Math.floor(r() * 999) });
+  for (let x = -HW - 3; x < HW + 3; x += 2.4 + r() * 3) if (r() < 0.55) items.push({ t: kind === 'lava' ? 'chain' : 'roots', x, z: -HD - 2.5 - r() * 5, top: 11 + r() * 3, len: 3 + r() * 4, seed: Math.floor(r() * 999) });
+  // sides: deep down in the abyss near the room, rising a little further out (never over the floor)
+  for (const side of [-1, 1]) for (let z = -HD - 1; z < HD + 3; z += 2.6 + r() * 2.6) {
+    const off = 1.6 + r() * 5.5, x = side * (HW + off), top = -2.6 + (off - 1.6) * 0.7 - (z > 0 ? 1 : 0);
+    if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: stemBase(top, -12), top, cap: 0.9 + r() * 1.3, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
+    else items.push({ t: 'spire', x, z, base: stemBase(top, -12), top, rr: 0.5 + r() * 0.5, glow: kind === 'crystals' && r() < 0.5, seed: Math.floor(r() * 999) });
   }
   // the abyss below the south edge: caps glowing far down
-  for (let x = -HW - 5; x < HW + 5; x += 2 + r() * 2.6) {
-    const z = HD + 1.4 + r() * 5;
-    if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: -14, top: -1.8 - r() * 4.5, cap: 1.2 + r() * 1.8, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
-    else items.push({ t: 'spire', x, z, base: -14, top: -2 - r() * 4, rr: 0.5 + r() * 0.6, glow: kind === 'crystals', seed: Math.floor(r() * 999) });
+  for (let x = -HW - 4; x < HW + 4; x += 2.6 + r() * 2.8) {
+    const z = HD + 1.5 + r() * 4.5, top = -2 - r() * 4;
+    if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: stemBase(top, -14), top, cap: 1 + r() * 1.5, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
+    else items.push({ t: 'spire', x, z, base: stemBase(top, -14), top, rr: 0.5 + r() * 0.5, glow: kind === 'crystals', seed: Math.floor(r() * 999) });
   }
-  for (const it of items) if (it.t === 'mush') lamps.push({ x: it.x, y: it.top, z: it.z, c: (A.gills || ['#7affd8'])[it.ci % (A.gills || [1]).length], r: 3 + it.cap, i: 0.8 });
+  for (const it of items) if (it.t === 'mush' && !it.far) lamps.push({ x: it.x, y: it.top, z: it.z, c: (A.gills || ['#7affd8'])[it.ci % (A.gills || [1]).length], r: 3 + it.cap, i: 0.8 });
   return { items, lamps, A, u };
 }
 
@@ -417,7 +418,7 @@ function makeRoom(n) {
   for (const s of pl.special) lamps.push({ x: (s.b.x0 + s.b.x1) / 2, y: 1, z: (s.b.z0 + s.b.z1) / 2 + 0.3, c: s.kind === 'bench' ? '#ffd27a' : A.glow, r: 3, i: 1 });
   for (const v of pl.veins) lamps.push({ x: (v.b.x0 + v.b.x1) / 2, y: 0.8, z: (v.b.z0 + v.b.z1) / 2 + 0.3, c: A.oreGlow || '#fff0b0', r: 1.8, i: 0.7 });
   if (type === 'boss') lamps.push({ x: 0, y: 1.2, z: 0, c: A.glow, r: 6, i: 0.8 });
-  const rig = makeLightRig({ amb: A.amb, ambI: 0.72, sky: A.sky, skyI: 0.32, key: A.key, keyI: 0.3, keyDir: [-0.35, 1, 0.45], lamps: lamps.map((l) => ({ ...l, i: l.i * 1.3 })), bands: 22 });
+  const rig = makeLightRig({ amb: A.amb, ambI: 0.56, sky: A.sky, skyI: 0.24, key: A.key, keyI: 0.26, keyDir: [-0.35, 1, 0.45], lamps: lamps.map((l) => ({ ...l, i: l.i * 1.7, r: l.r * 1.15 })), bands: 22 });
   const rigBack = makeLightRig({ amb: A.amb, ambI: 0.55, sky: A.sky, skyI: 0.25, key: A.key, keyI: 0.15, keyDir: [-0.35, 1, 0.45], lamps: bd.lamps, bands: 18 });
   // ---- paint ops (voxel AABBs). core: floor, walls, obstacles; dressing; backdrop (coarse)
   const vb = (x0, x1, z0, z1, sc = S) => ({ x0: Math.floor(x0 / sc) - 2, x1: Math.ceil(x1 / sc) + 2, z0: Math.floor(z0 / sc) - 2, z1: Math.ceil(z1 / sc) + 2 });
@@ -461,10 +462,10 @@ function makeRoom(n) {
   } });
   for (const t of dr.tops) dress.push({ ...vb(t.x - 1, t.x + 1, t.z - 1, t.z + 1), fn: (w) => (stage === 1 ? null : RP.bigMushroom(w, A, Math.round(t.x / S), Math.round(t.y / S), Math.round(t.z / S), t.h, t.cap, t.ci, Math.round(t.x * 7))) });
   // backdrop (coarse units)
-  const u = bd.u;
   for (const it of bd.items) {
+    const sc = it.far ? BS * 2 : BS, u = (m) => Math.round(m / sc);
     const x = u(it.x), z = u(it.z);
-    const box = { x0: x - 40, x1: x + 40, z0: z - 40, z1: z + 40 };
+    const box = { x0: x - 40, x1: x + 40, z0: z - 40, z1: z + 40, far: it.far };
     if (it.t === 'mush') back.push({ ...box, fn: (w) => RP.giantMushroom(w, A, x, u(it.base), z, u(it.top - it.base), u(it.cap), it.ci, it.seed) });
     else if (it.t === 'spire') back.push({ ...box, fn: (w) => { RP.spire(w, A, x, u(it.base), z, u(it.top - it.base), u(it.rr), it.seed, stage !== 1); if (it.glow) for (let q = 0; q < 3; q++) glowShard(w, x + q * 2 - 2, u(it.top) - q * 3, z, u(it.rr) * 0.6, A.crystal); } });
     else if (it.t === 'ash') back.push({ ...box, fn: (w) => ashTreeCoarse(w, A, x, u(it.base), z, u(it.top - it.base), it.seed) });
@@ -486,7 +487,7 @@ function makeRoom(n) {
     }
     return out;
   };
-  const coreU = units(core, S, 'core'), dressU = units(dress, S, 'dress'), backU = units(back, BS, 'back');
+  const coreU = units(core, S, 'core'), dressU = units(dress, S, 'dress'), backU = [...units(back.filter((o) => !o.far), BS, 'back'), ...units(back.filter((o) => o.far), BS * 2, 'back')];
   const queue = [...coreU, ...dressU, ...backU];
   const backGroup = new THREE.Group(); backGroup.name = 'backdrop';
   st.group.add(backGroup);
@@ -564,6 +565,18 @@ function makeRoom(n) {
     hole.visible = false;
     st.group.add(hole);
     st.emitters.push((dt) => { if (hole.visible && rnd.chance(dt * 10)) st.P.add.emit({ pos: [holeAt.x + rnd.float(-0.6, 0.6), 0.05, holeAt.z + rnd.float(-0.5, 0.5)], vel: [0, rnd.float(0.4, 1.2), 0], spread: 0.1, life: [1, 2], size: [1, 2], color: [A.glow, '#ffffff'], glow: 3, swirl: 0.8 }); });
+  }
+  // ---- the depths of each pit: a dark floor far below speckled with glowing caps, spores drifting up
+  if (pl.pits.length) {
+    const ptex = pitTexture(A, seed);
+    for (const p of pl.pits) {
+      const wd = p.b.x1 - p.b.x0, dp = p.b.z1 - p.b.z0;
+      const t2 = ptex.clone(); t2.needsUpdate = true; t2.repeat.set(wd / 2, dp / 2);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(wd, dp).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: t2, fog: false }));
+      m.position.set((p.b.x0 + p.b.x1) / 2, -1.55, (p.b.z0 + p.b.z1) / 2);
+      st.group.add(m);
+      st.emitters.push((dt) => { if (rnd.chance(dt * wd * dp * 0.8)) st.P.add.emit({ pos: [rnd.float(p.b.x0, p.b.x1), -1.2, rnd.float(p.b.z0, p.b.z1)], vel: [0, rnd.float(0.25, 0.6), 0], spread: 0.05, life: [2, 3.5], size: 1, color: [A.glow, '#ffffff'], glow: 2.5, swirl: 0.4, fadeIn: 0.5 }); });
+    }
   }
   // ---- flames, light shafts, particles, real-time lights for the actors
   for (const t of dr.torches) st.addFlame(t.x, t.y + 0.04, t.z + 0.12, 0.7, A.flame || 'fire', false, true);
@@ -667,6 +680,22 @@ function glowShard(w, x, y, z, r, col) {
 function ashTreeCoarse(w, A, x, y, z, h, seed) {
   for (let s = 0; s < h; s++) { const r = 1.6 * (1 - s / h) + 0.6; for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dz * dz <= r * r) w.set(x + dx, y + s, z + dz, h3(dx, s, dz, seed) > 0.96 ? glowC('#ff6a1a') : tone(A.root, 0.15 + h3(dx, s, dz, 2) * 0.25)); }
   for (let k = 0; k < 18; k++) { const a = h3(k, seed, 1, 1) * Math.PI * 2, rr = 2 + h3(k, seed, 2, 2) * 5, yy = y + h - 2 + Math.round(h3(k, seed, 3, 3) * 5); w.set(Math.round(x + Math.cos(a) * rr), yy, Math.round(z + Math.sin(a) * rr), h3(k, seed, 4, 4) > 0.4 ? glowC(A.leaf[3 + (k & 1)]) : tone(A.leaf, 0.5)); }
+}
+function pitTexture(A, seed) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#030607'; g.fillRect(0, 0, 64, 64);
+  const gl = A.gills || [A.glow];
+  for (let k = 0; k < 26; k++) {
+    const x = Math.floor(h3(k, seed, 1, 1) * 64), y = Math.floor(h3(k, seed, 2, 2) * 64), r = 1 + Math.floor(h3(k, seed, 3, 3) * 3);
+    g.fillStyle = gl[k % gl.length]; g.globalAlpha = 0.35 + h3(k, seed, 4, 4) * 0.5;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  g.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
 }
 function holeTexture(A) {
   const c = document.createElement('canvas'); c.width = c.height = 64;
