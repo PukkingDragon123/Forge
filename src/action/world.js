@@ -12,7 +12,7 @@ export const STEP = 1 / 60;
 const TAU = Math.PI * 2;
 const hexRgb = (h) => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
 
-export const STATUS_COLORS = { burn: '#ff8a3a', poison: '#8aff5a', slow: '#9ab8ff', freeze: '#9ae8ff', stun: '#ffe85a', bleed: '#ff4a5a', root: '#b8d080' };
+export const STATUS_COLORS = { burn: '#ff8a3a', poison: '#8aff5a', slow: '#9ab8ff', freeze: '#9ae8ff', stun: '#ffe85a', bleed: '#ff4a5a', root: '#b8d080', stone: '#b8b4a8' };
 const DOT = { burn: 6, bleed: 4, poison: 2.2 }; // damage per second (poison per stack)
 /** Rooms bring their own grid class (C's RoomGrid): give it the collision helpers the engine needs. */
 export function adaptGrid(g) {
@@ -310,7 +310,7 @@ export class ActionWorld {
     if (t.status.freeze > 0 && hit.tag !== 'dot') dmg *= 1.25; // frozen foes crack
     if (t.armor && hit.tag !== 'dot') dmg = Math.max(1, dmg - t.armor);
     dmg = Math.round(dmg);
-    if (t === this.player && t.onDamaged) dmg = t.onDamaged(dmg, hit, this);
+    if (t === this.player && t.onDamaged) { dmg = t.onDamaged(dmg, hit, this); if (dmg <= 0) return 0; }
     t.hp -= dmg;
     const isPlayer = t === this.player;
     const quiet = hit.quiet || hit.tag === 'dot';
@@ -390,7 +390,8 @@ export class ActionWorld {
       else {
         const had = (t.status[k] || 0) > 0;
         t.status[k] = Math.max(t.status[k] || 0, k === 'freeze' && t.boss ? v * 0.4 : v);
-        if (!had && t !== this.player) this.fx.number(t.x, (t.height || 1) * 1.1, t.z, { burn: 'BURN', freeze: 'FROZEN', stun: 'STUN', slow: 'SLOW', bleed: 'BLEED', root: 'ROOTED' }[k] || k.toUpperCase(), 'status', { color: STATUS_COLORS[k] });
+        if (!had && (t !== this.player || k === 'stone')) this.fx.number(t.x, (t.height || 1) * 1.1, t.z, { burn: 'BURN', freeze: 'FROZEN', stun: 'STUN', slow: 'SLOW', bleed: 'BLEED', root: 'ROOTED', stone: 'STONE' }[k] || k.toUpperCase(), 'status', { color: STATUS_COLORS[k] });
+        if (k === 'stone' && t === this.player) t.stoneBuild = (t.stoneBuild || 0) + v;
       }
     }
   }

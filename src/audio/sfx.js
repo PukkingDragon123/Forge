@@ -567,4 +567,12 @@ export const SFX = {
   // the Grand Puffcap
   puffcap_snore: { vol: 0.9, verb: 0.35, fn: (s) => { s.tone({ type: 'sawtooth', f: 70, f2: 95, dur: 0.9, a: 0.3, vol: 0.08, filter: LP(400), vib: { rate: 22, depth: 0.06 } }); s.noise({ t: 0.9, dur: 0.6, a: 0.2, vol: 0.08, filter: BP(700, 300, 0.8) }); s.tone({ t: 1.4, f: 300, f2: 520, dur: 0.1, vol: 0.05 }); return 1.6; } },
   puffcap_roar: { vol: 1, verb: 0.5, fn: (s) => { growl(s, { f: 68, f2: 52, dur: 1.2, vol: 0.32, ff: 600, rate: 14 }); for (let i = 0; i < 6; i++) s.tone({ t: 0.2 + i * 0.12, f: r(160, 320), f2: r(400, 700), dur: 0.1, vol: 0.06 }); s.noise({ t: 0.3, dur: 0.9, a: 0.2, vol: 0.12, filter: BP(900, 400, 0.7) }); return 1.4; } },
+  // ---------------------------------------------------------------- v5: names the enemy brains play
+  stagger: { vol: 0.85, verb: 0.12, fn: (s) => { s.tone({ f: 240, f2: 120, dur: 0.18, vol: 0.12 }); s.noise({ dur: 0.1, vol: 0.12, filter: LP(1400) }); return 0.22; } },
+  hop: { vol: 0.75, verb: 0.1, fn: (s) => { s.tone({ type: 'triangle', f: 320, f2: 520, sweep: 0.06, dur: 0.1, vol: 0.08 }); s.noise({ t: 0.08, dur: 0.05, vol: 0.06, filter: LP(800) }); return 0.16; } },
+  lunge: { vol: 0.85, verb: 0.1, fn: (s) => { whoosh(s, { dur: 0.2, f: 500, f2: 2200, vol: 0.18 }); s.tone({ type: 'sawtooth', f: 160, f2: 220, dur: 0.15, vol: 0.04, filter: LP(900) }); return 0.22; } },
+  charge: { vol: 0.9, verb: 0.15, fn: (s) => { growl(s, { f: 90, f2: 120, dur: 0.5, vol: 0.14, ff: 900 }); for (let i = 0; i < 4; i++) thud(s, { t: 0.1 + i * 0.11, f: 120, f2: 60, dur: 0.07, vol: 0.12 }); return 0.6; } },
+  cast: { vol: 0.85, verb: 0.3, fn: (s) => { s.tone({ type: 'triangle', f: 440, f2: 880, sweep: 0.25, dur: 0.3, vol: 0.06 }); chime(s, [1320, 1760], { t: 0.18, gap: 0.05, vol: 0.04, dur: 0.5 }); return 0.6; } },
+  summon: { vol: 0.95, verb: 0.45, fn: (s) => { s.tone({ type: 'sawtooth', f: 110, f2: 220, dur: 0.9, a: 0.3, vol: 0.06, filter: LP(1200) }); s.noise({ dur: 0.9, a: 0.4, vol: 0.08, filter: BP(600, 1800, 0.8) }); chime(s, [440, 554, 659], { t: 0.6, gap: 0.08, vol: 0.05, dur: 0.8 }); return 1.3; } },
+  swipe: { vol: 0.85, verb: 0.1, fn: (s) => { whoosh(s, { dur: 0.16, f: 700, f2: 2800, vol: 0.2 }); s.noise({ t: 0.06, dur: 0.05, vol: 0.06, filter: BP(2400, null, 2) }); return 0.2; } },
 };

@@ -5,7 +5,8 @@
 // window.__room = { room, cam, info }
 import * as THREE from 'three';
 import { Game, Scene } from '../../src/core/game.js';
-import { buildRoom, BAKE_STATS } from '../../src/models/room_vox.js';
+import { buildRoom, prebuildRoom, releaseRoom, BAKE_STATS } from '../../src/models/room_vox.js';
+window.__rooms = { buildRoom, prebuildRoom, releaseRoom };
 
 class RoomPreview extends Scene {
   enter(p) {

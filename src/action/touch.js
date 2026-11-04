@@ -72,7 +72,7 @@ export function drawControls(ui, P) {
   }
   const it = P.interactTarget;
   if (it) {
-    ui.touchButton('a_interact', L.interact[0], L.interact[1], L.interact[2], { icon: it.icon || 'arrowU', style: 'jade', glow: true, glowColor: '#9affc8', label: it.label ? undefined : undefined });
+    ui.touchButton('a_interact', L.interact[0], L.interact[1], L.interact[2], { icon: it.icon || 'arrowU', style: 'jade', glow: true, glowColor: '#9affc8' });
     if (it.label) drawText(ctx, it.label, L.interact[0], L.interact[1] - L.interact[2] - 12, { align: 'center', color: '#f4e6c8', outline: '#140c10', font: 'small' });
   }
 }

@@ -87,8 +87,12 @@ export class TutorialScene extends Scene {
     if (has(this.cam, 'snap')) this.cam.snap(this.player.x + 2, this.player.z);
     try { const pm = buildPet(); this.pet = new Action.PetFollower(aw, pm); this.pet.x = this.start.x - 1; this.pet.z = 0.6; aw.add(this.pet); } catch (e) { this.pet = null; }
     // ---- Morel (hidden in his ring of caps until he pops out)
-    this.morel = this.prop('morel', this.ringAt.clone().add(V(0.6, 0, -0.6)), -Math.PI / 2);
-    if (this.morel) { groupOf(this.morel).visible = false; groupOf(this.morel).position.y = -1.2; }
+    const m0 = this.ringAt.clone().add(V(0.6, 0, -0.6));
+    try { this.morel = has(Enemies, 'spawnNPC') ? Enemies.spawnNPC(aw, 'morel', m0.x, m0.z) : null; } catch (e) { this.morel = null; }
+    if (this.morel && this.morel.model && !this.morel.model.parent) aw.scene.add(this.morel.model);
+    if (!this.morel) this.morel = this.prop('morel', m0, -Math.PI / 2);
+    const mg0 = this.mg();
+    if (mg0) { mg0.visible = false; mg0.scale.setScalar(0.01); }
     // ---- the snake, always somewhere behind you
     this.snake = this.prop(MONSTERS.gorgon_snake ? 'gorgon_snake' : 'adder', V(B.x0 - 4, 0, 0.3), Math.PI / 2);
     this.snakeX = B.x0 - 4;
@@ -114,7 +118,8 @@ export class TutorialScene extends Scene {
     if (beat > 0) {
       const spots = [this.start.x, this.ringAt.x + 1.5, this.gap.x1 + 1, this.gap.x1 + 2, this.benchAt.x - 2, this.benchAt.x + 1, this.waveAt.x - 3];
       this.player.x = spots[Math.min(beat, spots.length - 1)]; this.player.z = 0;
-      const mg = groupOf(this.morel); if (mg) { mg.visible = true; mg.position.set(this.player.x + 1.5, 0, -0.8); }
+      const mg = this.mg(); if (mg) { mg.visible = true; mg.scale.setScalar(1); mg.position.set(this.player.x + 1.5, 0, -0.8); }
+      if (this.morel && this.morel.walkTo) { this.morel.x = this.player.x + 1.5; this.morel.z = -0.8; }
       this.snakeX = this.player.x - 10;
       if (beat > 3) this.flags.mined = true;
       if (beat === 3) {
@@ -137,6 +142,9 @@ export class TutorialScene extends Scene {
   }
 
   // ------------------------------------------------------------------ helpers
+  /** Morel's scene object (an NPC carries .model; a bare monster .group). */
+  mg() { const m = this.morel; return m ? (m.model && m.model.isObject3D ? m.model : groupOf(m)) : null; }
+  mplay(names, opts) { const m = this.morel; if (!m) return; if (m.walkTo) m.play([].concat(names)[0], opts); else playFirst(m, names, opts); }
   computeLoadout() { try { return Loadout.computeLoadout(this.run); } catch (e) { return { weapon: this.run.weapon || this.run.hand, skills: [null, null], stats: {} }; } }
   refreshLoadout() { this.loadout = this.computeLoadout(); if (has(this.player, 'applyLoadout')) this.player.applyLoadout(this.loadout); }
   prop(id, pos, rotY = 0) {
@@ -161,15 +169,22 @@ export class TutorialScene extends Scene {
     if (!g.scenes.dialogue) { done({ choices: {} }); return; }
     g.pushOverlay('dialogue', { cam: this.cam, freeze: false, lines, with: this.player, replyAt: this.player, onDone: done });
   }
-  moveMorel(to, dur = 1, anim = 'run', then = null) {
-    const m = this.morel, g = groupOf(m);
+  moveMorel(to, dur = 1, anim = 'run', then = null, ghost = false) {
+    const m = this.morel;
+    if (m && m.walkTo) {
+      m.ghost = ghost;
+      const d = Math.hypot(to.x - m.x, to.z - m.z);
+      m.walkTo(to.x, to.z, { run: anim === 'run', speed: Math.max(1.5, d / Math.max(0.3, dur)), onArrive: () => { m.ghost = false; if (then) then(); } });
+      return;
+    }
+    const g = groupOf(m);
     if (!g) { if (then) then(); return; }
     const from = g.position.clone(), dest = to.clone();
     g.rotation.y = Math.atan2(dest.x - from.x, dest.z - from.z);
     playFirst(m, [anim, 'move', 'walk', 'idle'], { loop: true });
     this.morelMove = { from, dest, t: 0, dur, then };
   }
-  faceMorelTo(x, z) { const g = groupOf(this.morel); if (g) g.rotation.y = Math.atan2(x - g.position.x, z - g.position.z); }
+  faceMorelTo(x, z) { const m = this.morel; if (m && m.face) { m.face({ x, z }); return; } const g = groupOf(m); if (g) g.rotation.y = Math.atan2(x - g.position.x, z - g.position.z); }
 
   // ------------------------------------------------------------------ the beats
   next() {
@@ -187,12 +202,12 @@ export class TutorialScene extends Scene {
         this.snakeX = this.start.x - 7;
         this.game.audio && this.game.audio.play('hiss', { vol: 0.8 });
         this.later(1.2, () => {
-          const m = this.morel, g = groupOf(m);
+          const g = this.mg();
           if (g) {
             g.visible = true;
             this.popT = 0;
             this.game.audio && this.game.audio.play('morel_pop', { vol: 0.8 });
-            playFirst(m, ['wave', 'cheer', 'idle'], { loop: true });
+            this.mplay(['wave', 'cheer', 'idle'], { loop: true });
             this.aw.fx.dust(g.position.x, g.position.z, 12, { speed: [0.6, 1.8] });
           }
           this.later(0.8, () => this.talk([
@@ -203,29 +218,29 @@ export class TutorialScene extends Scene {
       }, done() { return this.player.x > this.ringAt.x + 1.2; } },
       // 1 · the gap: dash over it
       { enter() {
-        this.moveMorel(V(this.gap.x1 + 1.4, 0, -1.0), 1.0, 'run', () => { this.faceMorelTo(this.player.x, this.player.z); playFirst(this.morel, ['wave', 'idle'], { loop: true }); });
+        this.moveMorel(V(this.gap.x1 + 1.4, 0, -1.0), 1.0, 'run', () => { this.faceMorelTo(this.player.x, this.player.z); this.mplay(['wave', 'idle'], { loop: true }); }, true);
         this.say('morel', 'Jump the gap — DASH!', 2.6);
         this.hint = { keys: this.game.input.touch ? ['dash'] : ['SPACE'], label: 'dash' };
       }, done() { return this.player.x > this.gap.x1 + 0.3; } },
       // 2 · two training shroomlings
       { enter() {
         this.foes = this.dummyAt.map((p) => this.addFoe('shroomling', p.x, p.z, { passive: true, hp: 24 }));
-        this.moveMorel(this.dummyAt[0].clone().add(V(-2.2, 0, -1.2)), 1.2, 'run', () => { this.faceMorelTo(this.dummyAt[0].x, this.dummyAt[0].z); playFirst(this.morel, ['point', 'idle'], { loop: true }); });
+        this.moveMorel(this.dummyAt[0].clone().add(V(-2.2, 0, -1.2)), 1.2, 'run', () => { this.faceMorelTo(this.dummyAt[0].x, this.dummyAt[0].z); this.mplay(['point', 'idle'], { loop: true }); });
         this.talk([
           { who: 'morel', at: this.morel, text: 'Practice shrooms! Whack them!', with: this.player, auto: 1.8 },
         ], () => { this.hint = { keys: this.game.input.touch ? ['attack'] : ['click', 'J'], label: 'attack' }; });
       }, done() { return this.flags.killed >= 2 && this.statues.every((s) => s.k >= 1); } },
       // 3 · mine a statue
       { enter() {
-        playFirst(this.morel, ['scared', 'surprised', 'idle'], { loop: true });
+        this.mplay(['scared', 'surprised', 'idle'], { loop: true });
         this.talk([
           { who: 'morel', at: this.morel, text: 'Your axe… it turned them to STONE!', with: this.player, replies: [{ text: 'Medusa cursed it.' }, { text: 'Is that bad?' }], replyAt: this.player },
           { who: 'morel', at: this.morel, text: 'Stone holds ore. Mine one!', auto: 1.8 },
-        ], () => { playFirst(this.morel, ['idle'], { loop: true }); this.hint = { keys: this.game.input.touch ? ['tap'] : ['F'], label: 'mine the statue' }; });
+        ], () => { this.mplay(['idle'], { loop: true }); this.hint = { keys: this.game.input.touch ? ['tap'] : ['F'], label: 'mine the statue' }; });
       }, done() { return this.flags.mined; } },
       // 4 · craft at the stump bench
       { enter() {
-        this.moveMorel(this.benchAt.clone().add(V(1.4, 0, 0.4)), 1.4, 'run', () => { this.faceMorelTo(this.player.x, this.player.z); playFirst(this.morel, ['idle'], { loop: true }); });
+        this.moveMorel(this.benchAt.clone().add(V(1.4, 0, 0.4)), 1.4, 'run', () => { this.faceMorelTo(this.player.x, this.player.z); this.mplay(['idle'], { loop: true }); });
         this.benchIt = this.aw.addInteractable({ x: this.benchAt.x, z: this.benchAt.z - 0.6, r: 1.6, label: 'Craft', onInteract: () => this.openBench() });
         this.later(1.0, () => this.say('morel', 'A stump bench! Come, come!', 2.4));
         this.hint = { keys: [], label: 'go to the bench' };
@@ -242,7 +257,7 @@ export class TutorialScene extends Scene {
       // 5 · it's slotted: use it on a little wave
       { enter() {
         if (this.benchIt) { this.aw.removeInteractable(this.benchIt); this.benchIt = null; }
-        playFirst(this.morel, ['cheer', 'idle'], {});
+        this.mplay(['cheer', 'idle'], {});
         this.talk([
           { who: 'morel', at: this.morel, text: 'Spore Burst! I slotted it for you.', with: this.player, auto: 1.8 },
           { who: 'morel', at: this.morel, text: 'Uh-oh. Visitors. Use it!', auto: 1.4 },
@@ -250,7 +265,7 @@ export class TutorialScene extends Scene {
           this.hint = { keys: this.game.input.touch ? ['skill'] : ['Q'], label: 'Spore Burst' };
           const w = this.waveAt;
           this.foes = [[-2.4, -1.4], [-1.2, 1.6], [0.4, -0.2]].map(([dx, dz], i) => this.spawnFoe('shroomling', w.x + dx, w.z + dz, i));
-          this.moveMorel(this.benchAt.clone().add(V(0.6, 0, 1.8)), 0.9, 'run', () => playFirst(this.morel, ['scared', 'idle'], { loop: true }));
+          this.moveMorel(this.benchAt.clone().add(V(0.6, 0, 1.8)), 0.9, 'run', () => this.mplay(['scared', 'idle'], { loop: true }));
         });
       }, done() { return this.foes.length > 0 && this.foes.every((f) => f.dead) && (this.flags.cast > 0 || this.stepT > 16); } },
       // 6 · the snake catches up; Morel saves you
@@ -359,7 +374,7 @@ export class TutorialScene extends Scene {
     this.aw.shake(0.4);
     this.snakeRush = { from: this.snakeX, to: P.x - 3.4, t: 0, dur: 1.4 };
     playFirst(this.snake, ['intro', 'attack', 'idle'], {});
-    this.moveMorel(V(P.x - 1.2, 0, P.z + 0.3), 0.6, 'run', () => { this.faceMorelTo(P.x - 6, P.z); playFirst(this.morel, ['scared', 'idle'], { loop: true }); });
+    this.moveMorel(V(P.x - 1.2, 0, P.z + 0.3), 0.6, 'run', () => { this.faceMorelTo(P.x - 6, P.z); this.mplay(['scared', 'idle'], { loop: true }); });
     this.later(1.6, () => {
       if (has(this.room, 'openHole')) this.room.openHole(1);
       this.talk([
@@ -371,7 +386,7 @@ export class TutorialScene extends Scene {
   shove() {
     const P = this.player, game = this.game;
     if (has(P, 'lockInput')) P.lockInput(true);
-    playFirst(this.morel, ['attack', 'cheer', 'idle'], {});
+    this.mplay(['attack', 'cheer', 'idle'], {});
     game.audio && game.audio.play('trip', { vol: 0.7 });
     // Durgan stumbles toward the hole and drops
     this.fall = { from: V(P.x, 0, P.z), to: this.holeAt.clone(), t: 0, dur: 1.0 };
@@ -381,6 +396,7 @@ export class TutorialScene extends Scene {
       game.renderer && game.renderer.doFlash && game.renderer.doFlash(0.45, [0.48, 1, 0.75]);
       playFirst(this.snake, ['special', 'roar', 'idle'], {});
       this.stoneT = 0;
+      if (this.morel && this.morel.petrify) this.morel.petrify(1.1);
       game.audio && game.audio.play('petrify', { vol: 0.8 });
     });
     this.later(2.6, () => { this.fadeOut = true; game.audio && game.audio.play('fall_whoosh', { vol: 0.8 }); });
@@ -410,24 +426,27 @@ export class TutorialScene extends Scene {
       if (P.x >= a.to || a.t > 2) { this.autorun = null; playFirst(P.model, ['idleCombat', 'idle'], { loop: true }); }
     }
     // Morel's scripted moves and pop-up
-    const mg = groupOf(this.morel);
-    if (mg && this.popT !== undefined && this.popT < 1) { this.popT = Math.min(1, this.popT + dt * 2.4); mg.position.y = -1.2 + 1.2 * ease.outBack(this.popT); }
+    const mg = this.mg();
+    if (mg && this.popT !== undefined && this.popT < 1) { this.popT = Math.min(1, this.popT + dt * 2.4); mg.scale.setScalar(Math.max(0.01, ease.outBack(this.popT))); }
+    if (this.morel && this.morel.walkTo) this.morel.update(dt);
     if (this.morelMove && mg) {
       const m = this.morelMove; m.t += dt;
       const k = ease.inOutSine(clamp(m.t / m.dur));
       mg.position.lerpVectors(m.from, m.dest, k);
       mg.position.y = Math.abs(Math.sin(k * Math.PI * 4)) * 0.08;
-      if (m.t >= m.dur) { this.morelMove = null; mg.position.y = 0; playFirst(this.morel, ['idle'], { loop: true }); if (m.then) m.then(); }
+      if (m.t >= m.dur) { this.morelMove = null; mg.position.y = 0; this.mplay(['idle'], { loop: true }); if (m.then) m.then(); }
     }
-    if (this.morel && this.morel.update && !(this.stoneT >= 1.2)) this.morel.update(dt);
-    if (this.stoneT !== undefined && this.stoneT < 1.2) { this.stoneT += dt; if (has(this.morel, 'setStone')) this.morel.setStone(ease.inOutSine(clamp(this.stoneT / 1.1))); }
+    if (this.morel && !this.morel.walkTo && this.morel.update && !(this.stoneT >= 1.2)) this.morel.update(dt);
+    if (this.stoneT !== undefined && this.stoneT < 1.2 && !(this.morel && this.morel.walkTo)) { this.stoneT += dt; if (has(this.morel, 'setStone')) this.morel.setStone(ease.inOutSine(clamp(this.stoneT / 1.1))); }
     // the snake trails you (never far), rushes at the end
     const sg = groupOf(this.snake);
     if (sg) {
       if (this.snakeRush) { const r = this.snakeRush; r.t += dt; this.snakeX = r.from + (r.to - r.from) * ease.outCubic(clamp(r.t / r.dur)); }
       else if (this.step >= 0) { const want = P.x - 9.5; this.snakeX = Math.max(this.snakeX, Math.min(want, this.snakeX + dt * 1.6)); }
+      const vx = this.snakeX - (this.snakeLast ?? this.snakeX); this.snakeLast = this.snakeX;
       sg.position.set(this.snakeX, 0, 0.3 + Math.sin(this.time * 2) * 0.3);
       sg.rotation.y = Math.PI / 2;
+      if (has(this.snake, 'setMove')) this.snake.setMove(clamp(Math.abs(vx) / Math.max(1e-4, dt) / 3, 0, 1), Math.abs(vx) / Math.max(1e-4, dt));
       if (this.snake.update) this.snake.update(dt);
       if (!this.snakeRush && (this.hissT = (this.hissT || 6) - dt) <= 0) { this.hissT = 7 + Math.random() * 5; this.game.audio && this.game.audio.play('hiss', { vol: 0.4 }); }
     }
@@ -466,7 +485,8 @@ export class TutorialScene extends Scene {
     const game = this.game, P = this.player;
     const ctx = ui.ctx;
     // the HUD (hidden in the opening and the outro)
-    const hidden = this.step === 0 && this.stepT < 2 || this.outroT >= 0 || this.talking;
+    const overlay = game.overlays.length > 0;
+    const hidden = this.step === 0 && this.stepT < 2 || this.outroT >= 0 || this.talking || overlay;
     let prompt = null;
     const it = P && P.interactTarget;
     if (it && !hidden) { const p = this.project(it.x, 1.3, it.z); prompt = { x: p.x, y: p.y, label: it.label, key: 'F' }; }
@@ -474,14 +494,15 @@ export class TutorialScene extends Scene {
     if (out.interact && it && it.onInteract) it.onInteract(P, this.aw);
     if (!hidden) this.aw.drawUI(ui);
     // Morel shouting while you play
-    if (this.aside && !this.talking) {
+    if (this.aside && !this.talking && !overlay) {
       const a = this.aside;
-      const at = this.morel ? groupOf(this.morel).position.clone().add(V(0, ((this.morel.height || 1) + 0.35), 0)) : null;
+      const g = this.mg();
+      const at = this.morel && this.morel.headPos ? this.morel.headPos(V()).add(V(0, 0.2, 0)) : g ? g.position.clone().add(V(0, (this.morel.height || 1) + 0.35, 0)) : null;
       const p = at ? this.project(at.x, at.y, at.z) : { x: ui.w / 2, y: ui.h * 0.3 };
       drawFloat(ui, p.x, p.y, a.text, { name: 'Morel', color: '#b8f08a', alpha: clamp(a.t / 0.15) * clamp((a.dur - a.t) / 0.3), shown: Math.floor(a.t * 42), now: a.t, revealT: (i) => i / 42, maxW: 240 });
     }
     // the control hint for this beat
-    if (this.hint && !this.talking && this.outroT < 0) this.drawHint(ui);
+    if (this.hint && !this.talking && this.outroT < 0 && !overlay) this.drawHint(ui);
     // skip (only once you've seen it)
     const seen = save.data.seen && (save.data.seen.tutorial || save.data.seen.v5tutorial);
     if (seen && !this.finished) {

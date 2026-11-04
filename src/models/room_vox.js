@@ -624,12 +624,20 @@ function makeRoom(n) {
     key: n.key, stage, type, size, seed, grid, group: st.group, stage3d: st,
     bounds: { x0: -HW, x1: HW, z0: -HD, z1: HD }, width: pl.W, depth: pl.D,
     doors: doorsOut, spawns: pl.spawns, veins: veinsOut, anchors, background: backGroup, lights: lightsOut,
+    obstacles: [...pl.obs, ...pl.special].map((o) => ({ kind: o.kind, box: o.b, tiles: [o.ix + 1, o.iz + 1, o.tw, o.th] })), pits: pl.pits.map((p) => ({ box: p.b })),
     fog: st.fog, bg: st.background, pattern: pl.pattern, timing, active: false, disposed: false,
     get faces() { return faces; },
     attach(scene) { scene.add(st.group); scene.fog = st.fog; scene.background = st.background; return R; },
     setCamera(cam) { st.setCamera(cam); R._cam = cam; },
     /** Bake everything gameplay needs before the first frame (floor, walls, obstacles). */
-    finishCore() { const tc = performance.now(); while (queue.length && queue[0].tag === 'core') bakeNext(); timing.firstFrame = (timing.firstFrame || 0) + performance.now() - tc; },
+    finishCore(box = R.syncBox) {
+      const tc = performance.now();
+      if (box) { // only the core near the given box now; the rest of the core streams first thing
+        for (let i = 0; i < queue.length;) { const u = queue[i]; const half = 32 * u.scale; if (u.tag === 'core' && u.cx + half > box.x0 && u.cx - half < box.x1 && u.cz + half > box.z0 && u.cz - half < box.z1) { queue.splice(i, 1); queue.unshift(u); bakeNext(); } else i++; }
+      } else while (queue.length && queue[0].tag === 'core') bakeNext();
+      timing.firstFrame = (timing.firstFrame || 0) + performance.now() - tc;
+    },
+    syncBox: n.opts.syncBox || (type === 'chase' ? { x0: -23, x1: -9, z0: -6, z1: 6 } : null),
     bakeNext,
     done: () => queue.length === 0,
     progress: () => 1 - queue.length / Math.max(1, coreU.length + dressU.length + backU.length),

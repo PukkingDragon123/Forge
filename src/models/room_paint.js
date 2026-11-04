@@ -91,7 +91,7 @@ function roomFloorTop(A, X, Z, sl, nw, stage) {
   const mn = noise2(qx * 0.14 + 5, qz * 0.14);
   if ((nw < 8 && mn > 0.4) || mn > 0.74) c = tone(A.moss, 0.2 + Math.round(noise2(qx * 0.7, qz * 0.7) * 3) / 3 * 0.5);
   else if (noise2(qx * 0.1 + 9, qz * 0.1) > 0.76) c = tone(A.dirt, 0.35 + Math.round(h3(qx >> 1, qz >> 1, 7, 2) * 2) / 2 * 0.3);
-  if (stage === 2 && Math.abs(noise2(X * 0.03 + 4, Z * 0.03) - 0.5) < 0.006) c = glowC(h3(X, Z, 1, 1) > 0.5 ? '#ff6a1a' : '#ffb04a');
+  if (stage === 2 && Math.abs(noise2(X * 0.03 + 4, Z * 0.03) - 0.5) < 0.005 && noise2(X * 0.012, Z * 0.012 + 3) > 0.55) c = glowC(h3(X, Z, 1, 1) > 0.5 ? '#ff6a1a' : '#ffb04a');
   if (stage === 3 && !sl.joint && noise2(X * 0.06 + sl.k, Z * 0.2) > 0.82) c = mixC(c, C(A.glow), 0.2); // marble veins
   return c;
 }
@@ -102,7 +102,7 @@ function groveTop(A, X, Z) {
   const n = noise2(qx * 0.06, qz * 0.06), m = noise2(qx * 0.05 + 7, qz * 0.05);
   if (Math.abs(m - 0.5) < 0.009) return h3(qx >> 2, qz >> 2, 1, 1) > 0.6 ? glowC('#9affe0') : C('#c8f0d8');
   if (n > 0.68) { const sl = slabAt(X, Z); return sl.joint ? A.joint : tone(A.flag, 0.3 + h3(sl.id, 1, 2, 3) * 0.3); }
-  if (n < 0.3) return tone(A.dirt, n < 0.2 ? 0.3 : 0.45);
+  if (n < 0.24) return tone(A.dirt, n < 0.18 ? 0.5 : 0.62);
   return tone(A.moss, 0.2 + Math.round(noise2(qx * 0.12, qz * 0.12) * 3) / 3 * 0.45);
 }
 /** Floor slab (3 voxels) with flagstones, moss and dirt, holes for pits, a glowing mycelium web, blades of grass. */
@@ -305,7 +305,8 @@ export function rockObstacle(w, A, b, seed) {
     const top = py > -1 + ry * 0.72 - noise2(px * 0.2, pz * 0.2) * 3;
     if (d > 0.92 && h3(px, py, pz, seed) > 0.6) return undefined; // chipped silhouette
     const strata = ((py + Math.round(noise2(px * 0.1, pz * 0.1) * 4)) >> 2) & 1;
-    let c = tone(A.rock, 0.22 + (py + 1) / (ry + 1) * 0.42 + strata * 0.06 + h3(px, py, pz, seed + 1) * 0.07);
+    const lit = (px - cx) * -0.4 + (pz - cz) * 0.5 > 0 ? 0.1 : 0; // the face toward the light
+    let c = tone(A.brick, 0.18 + (py + 1) / (ry + 1) * 0.45 + strata * 0.08 + lit);
     if (top && noise2(px * 0.15 + seed, pz * 0.15) > 0.42) c = tone(A.moss, 0.3 + noise2(px * 0.5, pz * 0.5) * 0.55);
     if (h3(px, py, pz, seed + 7) > 0.997) c = glowC(A.oreGlow || '#fff0b0');
     return c;
@@ -354,20 +355,25 @@ export function bigMushroom(w, A, x, y, z, h, capR, capIdx = 0, seed = 1) {
 export function pillarObstacle(w, A, b, seed) {
   if (!touches(w, b.x0, b.x1, b.z0, b.z1, 4)) return;
   const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2, hw = (b.x1 - b.x0) / 2 * 0.96, hd = (b.z1 - b.z0) / 2 * 0.96;
-  const hTop = 0.6 + h3(seed, 1, 1, 1) * 1.4;
+  const small = hw < 0.4;
+  const hTop = small ? 0.55 + h3(seed, 1, 1, 1) * 0.55 : 0.9 + h3(seed, 1, 1, 1) * 1.0;
+  const yT = Math.round(hTop / S);
   cols(w, cx - hw, cx + hw, cz - hd, cz + hd, (X, Z, x, z) => {
-    const inner = Math.abs(x - cx) < hw - 0.06 && Math.abs(z - cz) < hd - 0.06;
-    const broken = Math.round((noise2(X * 0.2, Z * 0.2 + seed) - 0.5) * 8);
-    const yTop = Math.round(hTop / S) + (inner ? broken : broken - 2);
-    for (let y = -1; y <= yTop; y++) {
-      const base = y < 4 || (y > 3 && y < 6 && !inner);
-      let c = base ? tone(A.brick, 0.7) : ((y % 12) === 0 ? tone(A.brick, 0.72) : tone(A.brick, 0.42 + (x - cx) * -0.2 + (z - cz) * 0.25 + h3(X, y, Z, seed) * 0.12));
-      if (y >= yTop - 1 && noise2(X * 0.2, Z * 0.2) > 0.35) c = tone(A.moss, 0.35 + h3(X, Z, y, 1) * 0.5);
-      if (noise2(X * 0.12 + seed, y * 0.08) > 0.8) c = tone(A.moss, 0.25 + h3(X, y, 2, 2) * 0.3);
+    const ex = Math.abs(x - cx) / hw, ez = Math.abs(z - cz) / hd, e = Math.max(ex, ez);
+    const broken = Math.round((noise2(X * 0.25, Z * 0.25 + seed) - 0.5) * 6);
+    for (let y = -1; y <= yT + broken; y++) {
+      const base = y < 4, capital = y > yT - 6 && y <= yT - 3;
+      const r = base || capital ? 1 : 0.82;                           // a slimmer shaft between base and capital
+      if (e > r) continue;
+      const flute = !base && !capital && ((Math.round((x - cx) / S) + Math.round((z - cz) / S)) & 3) === 0;
+      const lit = (x - cx) * -1 + (z - cz) * 1.2 > 0 ? 0.12 : 0;
+      let c = tone(A.brick, (base || capital ? 0.72 : 0.5) + lit - (flute ? 0.12 : 0) + (((y + 40) % 10) === 0 ? 0.08 : 0));
+      if (y >= yT + broken - 1 && noise2(X * 0.3, Z * 0.3) > 0.32) c = tone(A.moss, 0.4 + h3(X >> 1, Z >> 1, y, 1) * 0.4);
+      else if (noise2((X >> 1) * 0.3 + seed, (y >> 1) * 0.2) > 0.78) c = tone(A.moss, 0.35);
       w.set(X, y, Z, c);
     }
   });
-  if (A.caps && h3(seed, 9, 9, 9) > 0.5) bigMushroom(w, A, Math.round(cx / S), Math.round(hTop / S) - 2, Math.round(cz / S), 8 + Math.floor(h3(seed, 4, 4, 4) * 6), 7, seed % A.caps.length, seed);
+  if (A.caps && h3(seed, 9, 9, 9) > 0.35) bigMushroom(w, A, Math.round(cx / S), yT - 2, Math.round(cz / S), small ? 6 + Math.floor(h3(seed, 4, 4, 4) * 4) : 9 + Math.floor(h3(seed, 4, 4, 4) * 6), small ? 6 : 9, seed, seed);
 }
 /** Thick gnarled roots arching out of the floor across the footprint. */
 export function rootObstacle(w, A, b, seed) {
@@ -556,7 +562,7 @@ export function floorDressing(w, ctx, spots) {
         w.set(X + dx, -1, Z + dz, h3(X + dx, Z + dz, 9, 9) > 0.985 ? glowC('#e8ffff') : C(shadeHex(A.water, d > 0.7 ? 0.55 : 0.4)));
       }
     } else if (s.kind === 'shrooms' && A.caps) { const n = 3 + Math.floor(h3(X, Z, 3, 3) * 4); for (let q = 0; q < n; q++) smallMushroom(w, A, X + Math.round((h3(q, X, 5, 1) - 0.5) * 16), 0, Z + Math.round((h3(q, Z, 6, 1) - 0.5) * 12), 3 + Math.round(h3(q, X, Z, 4) * 5), (X + q) % A.caps.length, q + X); }
-    else if (s.kind === 'crack') { for (let q = 0; q < 40; q++) w.set(X + Math.round(q * 0.8 + Math.sin(q * 0.5) * 3), -1, Z + Math.round(Math.cos(q * 0.3) * 4), stage === 2 ? glowC('#ff6a1a') : C('#0e1414')); }
+    else if (s.kind === 'crack') { for (let q = 0; q < 26; q++) w.set(X + Math.round(q * 0.8 + Math.sin(q * 0.5) * 3), -1, Z + Math.round(Math.cos(q * 0.3) * 4), stage === 2 && q % 3 === 0 ? glowC('#ff6a1a') : C('#0e1414')); }
   }
 }
 /** Shelf fungus brackets on a wall face (normal +z for the north wall). r in voxels. */

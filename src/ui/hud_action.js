@@ -181,7 +181,7 @@ export function drawActionHud(ui, st, p) {
     const k = clamp(boss.hp / boss.maxHp);
     if (st.bossChip === null || st.bossChip < k) st.bossChip = k;
     st.bossChip = Math.max(k, st.bossChip - dt * 0.25);
-    ui.text(boss.name || 'Boss', ui.w / 2, Y - 14, { align: 'center', color: '#ffd8a8', outline: INK });
+    ui.text(boss.title ? `${boss.name || 'Boss'}  ·  ${boss.title}` : boss.name || 'Boss', ui.w / 2, Y - 14, { align: 'center', color: '#ffd8a8', outline: INK });
     frame(ctx, X, Y, W, 7, '#c8a050', '#2a1a10');
     ctx.fillStyle = '#20080c'; ctx.fillRect(X, Y, W, 7);
     ctx.fillStyle = '#f4e6d0'; ctx.fillRect(X, Y, Math.round(W * st.bossChip), 7);

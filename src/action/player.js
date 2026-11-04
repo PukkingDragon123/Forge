@@ -359,6 +359,10 @@ export class Player extends Entity {
     w.cam.punch(d, 0.08);
     const au = w.game && w.game.audio; au && au.play(o.free ? 'dash_fire' : 'dash', { vol: 0.7, pitch: 0.95 + Math.random() * 0.1 });
     if (!o.free) this.proc('dash');
+    if (this.status.stone > 0) {
+      this.status.stone = Math.max(0, this.status.stone - 1.3); this.stoneBuild = Math.max(0, (this.stoneBuild || 0) - 1.6);
+      w.fx.chipsAt(this.x, 0.5, this.z, ['#a8a49c', '#8a8680', '#c8c4b8'], 8, { speed: 2.2, up: 2 });
+    }
     const ember = this.buffs.ember;
     if (ember && ember.until > w.time && !o.onStep) {
       const d = ember.d, prev = { x: 1e9, z: 1e9 };
@@ -549,6 +553,7 @@ export class Player extends Entity {
     for (let i = 0; i < 2; i++) if (this.skillCd[i] > 0) this.skillCd[i] -= h;
     if (this.dashCharges < this.dashMax) { this.dashT -= h; if (this.dashT <= 0) { this.dashCharges++; this.dashT = this.dashCharges < this.dashMax ? FEEL.dashRecharge : 0; } }
     if (this.dead) { this.vx = this.vz = 0; return; }
+    this.tickStone(h, w);
     this.findInteract();
 
     const st = this.state;
@@ -564,7 +569,7 @@ export class Player extends Entity {
 
     // state machine
     let tvx = 0, tvz = 0, moveMul = 1;
-    const mv = this.inMove, speed = FEEL.speed * (this.stats.moveSpd || 1) * (this.status.slow > 0 ? 0.55 : 1);
+    const mv = this.inMove, speed = FEEL.speed * (this.stats.moveSpd || 1) * (this.status.slow > 0 ? 0.55 : 1) * (this.status.stone > 0 ? 0.6 : 1);
     if (this.state === 'dash') {
       const d = this.dash;
       if (d) {
@@ -639,6 +644,20 @@ export class Player extends Entity {
     const kd = Math.exp(-9 * h);
     this.kbx *= kd; this.kbz *= kd;
   }
+  /** Medusa's stone: grey creeps over the hero while status.stone lasts; past 4 s of build-up the hero
+   *  is petrified for a moment (stunned). Dashes chip it off. */
+  tickStone(h, w) {
+    const s = this.status.stone || 0;
+    if (s <= 0) { this.stoneBuild = Math.max(0, (this.stoneBuild || 0) - h * 2); return; }
+    if ((this.stoneBuild || 0) >= 4 && !(this.status.stun > 0)) {
+      this.stoneBuild = 0; this.status.stone = 1.4; this.status.stun = 1.2;
+      w.fx.number(this.x, 1.4, this.z, 'PETRIFIED', 'status', { color: '#d8d4c8' });
+      w.fx.chipsAt(this.x, 0.6, this.z, ['#a8a49c', '#8a8680', '#c8c4b8'], 10, { speed: 1.5 });
+      w.shake(0.35);
+      const au = w.game && w.game.audio; au && au.play('petrify', { vol: 0.8 });
+    }
+    if (Math.random() < 0.15) w.fx.chipsAt(this.x, 0.3 + Math.random() * 0.6, this.z, ['#a8a49c', '#8a8680'], 1, { speed: 0.4, up: 0.6 });
+  }
   findInteract() {
     let best = null, bd = 1e9;
     for (const it of this.world.interactables) {
@@ -673,6 +692,11 @@ export class Player extends Entity {
       const spd = Math.hypot(this.vx, this.vz);
       if (spd > 0.6) tryPlay(m, ['run', 'walk'], { speed: 0.9 + (spd / FEEL.speed) * 0.6, restart: false });
       else if (m.anim === 'run' || m.anim === 'walk' || !m.anim || this.stateT > 0.5 && !['idleCombat', 'idle'].includes(m.anim)) tryPlay(m, ['idleCombat', 'idle'], { restart: false });
+    }
+    if (m && m.setStone) {
+      const want = this.dead ? 0 : this.status.stun > 0 && this.status.stone > 0 ? 0.92 : this.status.stone > 0 ? Math.min(0.6, 0.15 + (this.stoneBuild || 0) * 0.12) : 0;
+      this._stoneK = (this._stoneK || 0) + (want - (this._stoneK || 0)) * Math.min(1, dt * 6);
+      if (Math.abs(this._stoneK - (this._stoneSet ?? -1)) > 0.01) { m.setStone(this._stoneK < 0.02 ? 0 : this._stoneK); this._stoneSet = this._stoneK; }
     }
     if (m && m.update) m.update(dt);
     // flicker while invulnerable after a hit

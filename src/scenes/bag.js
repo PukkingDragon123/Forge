@@ -286,7 +286,7 @@ export class BagOverlay extends Scene {
     if (st.length || S.element) {
       y += 4;
       let x = L.stats.x;
-      for (const [k, v] of st) { ui.icon(k === 'freeze' ? 'ice' : k === 'burn' ? 'fire' : k === 'slow' ? 'clock' : k === 'stun' ? 'shock' : k, x, y - 1); ui.text(`${Math.round(v * 100)}%`, x + 12, y, { font: 'small', color: '#e8d8b8' }); x += 40; }
+      for (const [k, v] of st) { ui.icon(k === 'freeze' ? 'ice' : k === 'burn' ? 'fire' : k === 'slow' ? 'clock' : k === 'stun' ? 'shock' : k, x, y - 1); const t = `${Math.round(v * 100)}% ${k}`; ui.text(t, x + 12, y, { font: 'small', color: '#e8d8b8' }); x += 18 + ui.measure(t, 'small'); if (x > L.stats.x + 150) { x = L.stats.x; y += 12; } }
       y += 13;
     }
     // set bonuses

@@ -89,6 +89,12 @@ export class DungeonScene extends Scene {
     this.prebuildQ = [];
     this.killed = new WeakSet();
     this.loadout = this.computeLoadout();
+    // ---- warm the floor's monsters (their voxel models) so rooms open without a hitch
+    try {
+      const ids = new Set();
+      for (const r of roomsOf(this.floor)) { const enc = Floors.encounterFor ? Floors.encounterFor(run, r) : null; for (const w of (enc && enc.waves) || []) for (const g of w) ids.add(g.id); }
+      const pre = fn(Enemies, 'preloadEnemies'); if (pre) pre([...ids]);
+    } catch (e) { /* optional */ }
     // ---- start room (dev: ?goto=<type>)
     let start = run.roomId ?? this.floor.startId;
     if (params.goto) { const r = roomsOf(this.floor).find((x) => x.type === params.goto); if (r) start = r.id; }
@@ -247,7 +253,7 @@ export class DungeonScene extends Scene {
     const go = () => { if (this.waves) this.waves.t = 0.1; };
     const id = 'boss_' + bossId;
     if (fn(Cut, 'hasCutscene') && Cut.hasCutscene(id) && game.scenes.cutscene) {
-      try { game.pushOverlay('cutscene', { id, char: this.run.char, onDone: go }); return; } catch (e) { /* fall through */ }
+      try { const o = game.pushOverlay('cutscene', { id, char: this.run.char, onDone: go }); this.waves.cut = o || true; return; } catch (e) { /* fall through */ }
     }
     const def = MONSTERS[bossId];
     this.banner = { text: (def && def.name) || 'Boss', sub: (def && def.title) || '', t: 0, boss: true };
@@ -270,7 +276,8 @@ export class DungeonScene extends Scene {
         k++;
         const jx = g.boss ? 0 : (rnd.next() - 0.5) * 0.8, jz = g.boss ? 0 : (rnd.next() - 0.5) * 0.8;
         let e = null;
-        try { e = Enemies.spawnEnemy(aw, g.id, s.x + jx, s.z + jz, { elite: !!g.elite, boss: !!g.boss, delay: k * 0.16, from: s.from }); } catch (err) { console.error('spawnEnemy', g.id, err); }
+        const spawn = s.from === 'ceiling' ? 'drop' : s.from === 'floor' ? 'burrow' : s.from === 'spores' ? 'spores' : undefined;
+        try { e = Enemies.spawnEnemy(aw, g.id, s.x + jx, s.z + jz, { elite: !!g.elite, boss: !!g.boss, stage: this.stage, delay: k * 0.16, spawn }); } catch (err) { console.error('spawnEnemy', g.id, err); }
         if (!e) continue;
         if (g.boss || (MONSTERS[g.id] && MONSTERS[g.id].tier === 'boss')) this.boss = e;
       }
@@ -281,6 +288,8 @@ export class DungeonScene extends Scene {
   updateWaves(dt) {
     const W = this.waves;
     if (!W || W.done) return;
+    // the boss cutscene closed without calling back (skipped or popped): bring the boss anyway
+    if (W.cut && W.t > 50 && !this.game.overlays.some((o) => o.name === 'cutscene')) { W.cut = null; W.t = 0.1; }
     W.t -= dt;
     if (W.i >= 0 && this.alive().length > 0) return;
     if (W.i >= 0 && W.t > 0.8) W.t = 0.8;
@@ -334,6 +343,7 @@ export class DungeonScene extends Scene {
   bindWorld(aw) {
     aw.on('enemyKilled', (ev) => this.onKill(ev));
     aw.on('playerDead', () => this.onDeath());
+    aw.on('bossPhase', (ev) => { if (ev && ev.text) this.banner = { text: ev.text, t: 0.4, small: true }; this.game.audio && this.game.audio.play('herald_roar', { vol: 0.6, pitch: 0.8 }); });
     aw.on('playerHurt', () => { const m = this.petF && this.petF.model; if (has(m, 'play')) m.play('yelp'); });
   }
   onKill(ev) {
@@ -363,7 +373,7 @@ export class DungeonScene extends Scene {
     const st = this.roomState(this.curId);
     const rec = { id: def.id || e.id, x, z, yaw: g ? g.rotation.y : 0, mined: false };
     st.statues.push(rec);
-    const s = { id: rec.id, def, x, z, model: mon, rec, r: (e.radius || 0.5) + 0.95 };
+    const s = { id: rec.id, def, x, z, model: mon, rec, r: (e.radius || 0.5) + 0.95, enemy: e };
     this.statues.push(s);
     this.addInteract({ kind: 'statue', x, z, r: s.r, label: 'Mine', statue: s, y: (mon.height || 1) + 0.4 });
     if (g && !g.parent) { g.position.set(x, 0, z); this.scene3.add(g); }
@@ -377,7 +387,7 @@ export class DungeonScene extends Scene {
       if (this.curId !== room) return;
       let sh = null;
       try { sh = has(mon, 'shatter') ? mon.shatter() : null; } catch (err) { sh = null; }
-      if (sh) this.shards.push(sh); else { const g = groupOf(mon); if (g && g.parent) g.parent.remove(g); }
+      if (sh) { sh.enemy = e; this.shards.push(sh); } else { const g = groupOf(mon); if (g && g.parent) g.parent.remove(g); if (has(e, 'removeStatue')) e.removeStatue(); }
       this.game.audio && this.game.audio.play('stone_crack', { vol: 0.35 });
     });
   }
@@ -403,7 +413,7 @@ export class DungeonScene extends Scene {
     for (let i = this.shards.length - 1; i >= 0; i--) {
       const sh = this.shards[i];
       try { sh.update && sh.update(dt); } catch (e) { this.shards.splice(i, 1); continue; }
-      if (sh.done) { try { sh.dispose && sh.dispose(); } catch (e) { /* ignore */ } this.shards.splice(i, 1); }
+      if (sh.done) { try { sh.dispose && sh.dispose(); } catch (e) { /* ignore */ } if (sh.enemy && has(sh.enemy, 'removeStatue')) { try { sh.enemy.removeStatue(); } catch (e) { /* ignore */ } } this.shards.splice(i, 1); }
     }
   }
 
@@ -544,8 +554,8 @@ export class DungeonScene extends Scene {
       this.disable(it); s.rec.mined = true;
       let sh = null;
       try { sh = has(s.model, 'shatter') ? s.model.shatter() : null; } catch (e) { sh = null; }
-      if (sh) this.shards.push(sh);
-      else { const g = groupOf(s.model); if (g && g.parent) g.parent.remove(g); }
+      if (sh) { sh.enemy = s.enemy; this.shards.push(sh); }
+      else { const g = groupOf(s.model); if (g && g.parent) g.parent.remove(g); if (s.enemy && has(s.enemy, 'removeStatue')) s.enemy.removeStatue(); }
       this.game.audio && this.game.audio.play('stone_shatter');
       this.aw.shake(0.35);
     } else {
@@ -733,6 +743,24 @@ export class DungeonScene extends Scene {
     });
   }
 
+  /** Small HP bars over hurt foes; elites also get their name. */
+  drawEnemyBars(ui) {
+    const ctx = ui.ctx;
+    for (const e of this.aw.enemies) {
+      if (e.dead || e.boss || e === this.boss || !e.maxHp) continue;
+      if (e.hp >= e.maxHp && !e.elite) continue;
+      const h = (e.height || (e.model && e.model.height) || 1) + 0.35;
+      const p = this.project(e.x, h, e.z);
+      const w = e.elite ? 46 : 28, x = Math.round(p.x - w / 2), y = Math.round(p.y - 6);
+      if (x < -60 || x > ui.w + 10 || y < -20 || y > ui.h) continue;
+      const k = clamp(e.hp / e.maxHp);
+      ctx.fillStyle = '#140c10'; ctx.fillRect(x - 1, y - 1, w + 2, 5);
+      ctx.fillStyle = '#3a1418'; ctx.fillRect(x, y, w, 3);
+      ctx.fillStyle = e.elite ? '#e8a030' : '#d8343a'; ctx.fillRect(x, y, Math.round(w * k), 3);
+      if (e.elite) { const d = e.def || MONSTERS[e.id] || {}; ui.text(d.name || 'Elite', p.x, y - 10, { align: 'center', font: 'small', color: '#ffd27a', outline: '#140c10' }); }
+    }
+  }
+
   draw(ui) {
     const game = this.game, ctx = ui.ctx;
     const touch = ui.touch;
@@ -742,6 +770,7 @@ export class DungeonScene extends Scene {
     }
     // damage numbers, impacts and (touch) the action controls
     if (!this.trans) this.aw.drawUI(ui);
+    if (!this.trans) this.drawEnemyBars(ui);
     let prompt = null;
     const it = this.player && this.player.interactTarget;
     if (it && !this.trans && !it.used && !(this.inFight() && it.kind !== 'hole')) {
@@ -750,7 +779,7 @@ export class DungeonScene extends Scene {
     }
     const out = drawActionHud(ui, this.hud, {
       player: this.player, loadout: this.loadout, run: this.run, touch, hidden: !!this.trans || this.mapOpen > 0.5 || !!this.leaving,
-      boss: this.boss && !this.boss.dead ? { name: (MONSTERS[this.boss.id] && MONSTERS[this.boss.id].name) || 'Boss', hp: this.boss.hp, maxHp: this.boss.maxHp, phases: 3 } : null,
+      boss: this.boss && !this.boss.dead ? (() => { const b = this.boss, d = b.def || MONSTERS[b.id] || {}; const ph = Array.isArray(d.phases) ? d.phases.length : (b.phases || d.phases || 3); return { name: d.name || 'Boss', title: d.title, hp: b.hp, maxHp: b.maxHp, phases: ph }; })() : null,
       interact: touch ? null : prompt,
     });
     if (out.bag) this.openBag();
