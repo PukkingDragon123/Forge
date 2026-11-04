@@ -1,5 +1,6 @@
 // Monster lineup preview: ?set=0..3 (acts) | set=bosses | set=snakes | id=<monster,…> ; &state=windup|attack|multi|die|hurt|stun|intro|roar|special ;
 // &phase=2 ; &zoom=2 ; &yaw=-0.3 ; &stone=0..1 ; &seq=1 (petrify → cracks → shatter) ; &fp=3 (first-person camera at 0.95 m, 3 m away)
+// &top=14 (the v5 Hades camera: 52° down, FOV 32, 14 m away)
 import * as THREE from 'three';
 import { Scene } from '../core/game.js';
 import { CameraRig } from '../gfx/camera.js';
@@ -51,7 +52,12 @@ export class PreviewMonsters extends Scene {
     const dist = Math.max((total / 2 + 0.6) / Math.tan(hf / 2), (maxH * 0.75) / Math.tan((30 * Math.PI) / 360), 1.7) / +(q.get('zoom') || 1);
     const yaw = +(q.get('yaw') ?? -0.3); // default: front three-quarter (monsters face −X)
     const zy = q.get('zoom') ? maxH * 0.5 : maxH * 0.42;
-    if (q.get('fp')) {
+    if (q.get('top')) {
+      // the Hades camera of the v5 action game: ~52° down, FOV 32, room-scale distance (top=<metres>)
+      const d = +q.get('top') || 14, pitch = (52 * Math.PI) / 180;
+      this.rig = new CameraRig(32);
+      this.rig.cut([0, Math.sin(pitch) * d, Math.cos(pitch) * d], [0, 0.4, 0], 32);
+    } else if (q.get('fp')) {
       // first person: eye height 0.95 m, the creature fp metres ahead, FOV 62
       const fp = +q.get('fp');
       this.rig = new CameraRig(62);

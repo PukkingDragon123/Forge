@@ -40,6 +40,9 @@ export function weaponLook(w) {
   const second = metals.find((id) => id !== metals[0]) || solids.find((id) => id !== metals[0]);
   let trim = second ? (METAL_TINT[second] || m3(second).color) : '#8a6a3a';
   if (w.grade >= 4) trim = '#ffcf4a';
+  // Medusa's gaze: the starter blade is stone, grey and grained, split by glowing jade cracks
+  const stone = !!(w.starter || w.stoneLook);
+  if (stone) { blade = '#8e8b86'; bladeKind = 'stone'; trim = '#5e5b58'; }
   const gem = gems.length ? m3(gems[0]).color : ids.includes('golem_core') ? '#ffb84a' : null;
   const wrapId = ids.find((id) => WRAP[id]);
   const wrap = wrapId ? WRAP[wrapId] : bones.length && bladeKind !== 'bone' ? '#efe6d0' : '#5a3a24';
@@ -50,7 +53,7 @@ export function weaponLook(w) {
     glow: els.length ? ELEMENT_GLOW[els[0]] : null, glow2: els.length > 1 ? ELEMENT_GLOW[els[1]] : null,
     power: els.length ? el[els[0]] : 0,
     fangs: ids.filter((id) => tagged(id, 'fang')).length, core: ids.includes('golem_core') || ids.includes('lava_core'),
-    masterwork: w.grade >= 4, grade: w.grade || 0, star: ids.includes('stariron'), magma: ids.includes('magmasteel'),
+    masterwork: w.grade >= 4, grade: w.grade || 0, star: ids.includes('stariron'), magma: ids.includes('magmasteel'), stone,
   };
 }
 
@@ -270,6 +273,29 @@ const BUILD = {
   },
 };
 
+// ------------------------------------------------------------------ the stone look
+/** Grain the blade's stone, wrap the grip in grey, and split both with glowing jade cracks. */
+function petrifyParts(r) {
+  const JADE = { glow: true, c: rgb('#7affc0') }, JADE2 = { glow: true, c: rgb('#bfffe0') };
+  const crack = (x, y, z) => {
+    // a few jagged seams: a cell is on a seam if it lies near a sawtooth line through the part
+    const a = Math.abs(((y * 0.9 + x * 0.55 + (z & 1)) % 9) - 4.5) < 0.55 && hash(x >> 1, y >> 1, 3) > 0.35;
+    const b = Math.abs(((y * 0.7 - x * 0.8 + 50) % 13) - 6.5) < 0.5 && hash(x, y >> 2, 4) > 0.5;
+    return a || b;
+  };
+  r.blade.paint((x, y, z, c) => {
+    if (crack(x, y, z) && r.blade.surface(x, y, z)) return hash(x, y, z, 6) > 0.7 ? JADE2 : JADE;
+    const l = (c[0] + c[1] + c[2]) / 3, n = hash(x, y, z, 5);
+    const g = Math.max(40, Math.min(200, l * 0.85 + (n - 0.5) * 26));
+    return [g, g * 0.985, g * 0.95];
+  });
+  r.hilt.paint((x, y, z, c) => {
+    if (y > 8 && crack(x, y, z) && hash(x, y, z, 7) > 0.5) return JADE;
+    const l = (c[0] + c[1] + c[2]) / 3;
+    return [l * 0.75 + 34, l * 0.72 + 34, l * 0.7 + 32];
+  });
+}
+
 // ------------------------------------------------------------------ build + cache
 const CACHE = new Map();
 /**
@@ -280,11 +306,12 @@ export function buildWeaponMesh(w = {}) {
   const g = new THREE.Group();
   g.name = 'weapon_' + (w.bp || 'sword');
   const L = weaponLook(w);
-  const key = JSON.stringify([w.bp, w.ids, w.el, w.grade]);
+  const key = JSON.stringify([w.bp, w.ids, w.el, w.grade, !!(w.starter || w.stoneLook)]);
   let G = CACHE.get(key);
   if (!G) {
     const Q = pal(L);
     const r = (BUILD[w.bp] || BUILD.sword)(L, Q);
+    if (L.stone) petrifyParts(r);
     G = { hilt: r.hilt.geometry(WVS, [0, 0, 0], { glowIntensity: 2.4 }), blade: r.blade.geometry(WVS, [0, 0, 0], { glowIntensity: 2.6 }), tip: r.tip, orb: r.orb };
     CACHE.set(key, G);
     if (CACHE.size > 60) CACHE.delete(CACHE.keys().next().value);

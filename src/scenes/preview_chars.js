@@ -14,6 +14,7 @@ export class CharPreview extends Scene {
     const q = new URLSearchParams(location.search);
     this.q = q;
     if (q.get('fp')) return this.enterFP(q);
+    if (q.get('hades')) return this.enterHades(q);
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0d0a10);
     scene.fog = new THREE.FogExp2(0x0d0a10, 0.05);
@@ -148,6 +149,104 @@ export class CharPreview extends Scene {
     else if (cam === 'wide' && !this.pets && !this.meds) this.rig.cut([0, 0.85, 4.8], [0, 0.55, 0], 34);
     this.ff = +(q.get('t') || 0);
   }
+  /**
+   * Hades-camera bench (the v5 action view: ~52° down, narrow FOV, far back), on a busy mossy floor:
+   *   ?hades=durgan&weapon=axe&list=attack1:0.1,attack1:0.2   frozen frames in a row (sp=spacing, dist=camera metres)
+   *   ?hades=all&anim=idleCombat                               the four heroes side by side
+   *   ?hades=durgan&run=1&pip=1                               running a loop with setFacing, Pip following
+   *   ?hades=durgan&real=1&anim=attack1                        real game framing (14 m back, one hero)
+   */
+  enterHades(q) {
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0c120e);
+    scene.fog = new THREE.FogExp2(0x0c120e, 0.018);
+    const cv = document.createElement('canvas'); cv.width = 800; cv.height = 560; // 5 cm pixels, like the voxel rooms
+    const g = cv.getContext('2d');
+    const hs = (x, y) => { const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return v - Math.floor(v); };
+    for (let y = 0; y < 560; y++) for (let x = 0; x < 800; x++) {
+      const sx = x + ((y / 10 | 0) % 2) * 5, stone = ((sx / 10 | 0) + (y / 10 | 0)) % 3, h = hs(x, y), moss = hs(x >> 3, y >> 3) > 0.62 || hs(x >> 4, y >> 4) > 0.8;
+      const c = moss ? [52 + h * 34, 82 + h * 44, 40 + h * 22] : stone === 0 ? [80 + h * 22, 72 + h * 18, 66 + h * 16] : stone === 1 ? [70 + h * 18, 64 + h * 14, 60 + h * 12] : [62 + h * 16, 58 + h * 14, 56 + h * 12];
+      if (sx % 10 === 0 || y % 10 === 0) { c[0] *= 0.55; c[1] *= 0.55; c[2] *= 0.55; }
+      g.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`; g.fillRect(x, y, 1, 1);
+    }
+    const tex = new THREE.CanvasTexture(cv); tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 28).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tex }));
+    floor.receiveShadow = true; scene.add(floor);
+    for (let i = 0; i < 14; i++) { // a few mushroom-ish clutter bumps so the floor is busy like the real rooms
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.18 + (i % 3) * 0.08, 0.22, 0.25 + (i % 4) * 0.12, 6), new THREE.MeshLambertMaterial({ color: [0x7a5a8a, 0x3a6a4a, 0x8a6a4a][i % 3] }));
+      m.position.set(-9 + (i * 3.7) % 18, 0.15, -6 + (i * 2.3) % 12); scene.add(m);
+    }
+    const key = new THREE.DirectionalLight(0xffe2c0, 2.2); key.position.set(-6, 12, 5); key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024); Object.assign(key.shadow.camera, { left: -12, right: 12, top: 10, bottom: -10 }); scene.add(key);
+    scene.add(new THREE.HemisphereLight(0x8ab0a0, 0x2a2018, 0.7));
+    const torch = new FlickerLight(0xffa050, 6, 9, { amount: 0.12 }); torch.position.set(3, 2, -1.5); scene.add(torch); this.fire = torch;
+    const cam = new THREE.PerspectiveCamera(+(q.get('fov') || 32), 16 / 9, 0.1, 200);
+    this.world = { scene, camera: cam, post: { outline: 0.6, edge: 0.35 } };
+    this.hcam = cam;
+    const aim = (x, z, dist) => { const pitch = (+(q.get('pitch') || 52)) * Math.PI / 180; cam.position.set(x, Math.sin(pitch) * dist, z + Math.cos(pitch) * dist); cam.lookAt(x, 0.35, z); };
+    const id = q.get('hades'), wt = q.get('weapon');
+    const BP = { bran: 'hammer', elio: 'staff', durgan: 'axe', clover: 'dagger' };
+    const arm = (c) => {
+      const t = wt || BP[c.id];
+      const stone = c.id === 'durgan' && !wt;
+      c.hold(buildWeaponMesh(stone ? { bp: 'axe', ids: ['iron', 'tin'], grade: 1, starter: true, stone: 0.3 } : { bp: t, ids: ['iron', 'coal', 'ruby'], el: q.get('el') ? { [q.get('el')]: 3 } : {}, grade: 3 }));
+      c.setWeaponType && c.setWeaponType(t);
+      c.showBackItem(false);
+    };
+    this.chars = [];
+    if (q.get('list')) {
+      const list = q.get('list').split(','), n = list.length, sp = +(q.get('sp') || 1.6), cols = +(q.get('cols') || n);
+      this.posed = list.map((e, i) => {
+        const [anim, t] = e.split(':');
+        const c = buildCharacter(id);
+        const cx = i % cols, cz = Math.floor(i / cols);
+        c.group.position.set((cx - (Math.min(n, cols) - 1) / 2) * sp, 0, cz * sp * 0.9);
+        c.group.rotation.y = +(q.get('rot') ?? 0);
+        scene.add(c.group);
+        arm(c);
+        c.play('idleCombat');
+        for (let k = 0; k < 30; k++) c.update(1 / 60);
+        c.play(anim, { then: anim });
+        for (let k = 0, m = Math.round(+t * 60); k < m; k++) c.update(1 / 60);
+        return c;
+      });
+      const rows = Math.ceil(n / cols);
+      aim(0, (rows - 1) * sp * 0.45, +(q.get('dist') || 5 + Math.min(n, cols) * sp * 0.9));
+      this.frozenHades = true;
+      return;
+    }
+    const ids = id === 'all' ? ['durgan', 'bran', 'elio', 'clover'] : [id];
+    ids.forEach((cid, i) => {
+      const c = buildCharacter(cid);
+      c.group.position.set((i - (ids.length - 1) / 2) * 1.6, 0, 0);
+      scene.add(c.group); arm(c);
+      c.play(q.get('anim') || 'idleCombat');
+      this.chars.push(c);
+    });
+    if (q.get('pip') || q.get('run')) { this.pip = buildPet(); this.pip.group.position.set(1.2, 0, 1); scene.add(this.pip.group); }
+    this.runMode = !!q.get('run');
+    this.loopAnim = q.get('anim');
+    aim(0, 0, q.get('real') ? 14 : +(q.get('dist') || (ids.length > 1 ? 9 : 6)));
+  }
+  updateHades(dt) {
+    if (this.frozenHades) { this.fire.tick(this.time); return; }
+    const c = this.chars[0];
+    if (this.runMode && c) {
+      // a figure-eight run so every facing shows up
+      const t = this.time * 0.9, x = Math.sin(t) * 3.2, z = Math.sin(t * 2) * 1.6;
+      const dx = Math.cos(t) * 3.2, dz = Math.cos(t * 2) * 3.2;
+      c.group.position.set(x, 0, z);
+      c.setFacing ? c.setFacing(Math.atan2(dx, dz)) : (c.group.rotation.y = Math.atan2(dx, dz));
+      if (c.anim !== 'run') c.play('run');
+    } else if (this.loopAnim && c && c.anim !== this.loopAnim && !(this.loopT > 0)) { this.loopT = 0.5; }
+    if (this.loopT > 0 && (this.loopT -= dt) <= 0) this.chars.forEach((ch) => ch.play(this.loopAnim, { restart: true }));
+    this.chars.forEach((ch) => ch.update(dt));
+    if (this.pip && c) {
+      const p = this.pip, tx = c.group.position.x - 0.7, tz = c.group.position.z + 0.5;
+      if (p.follow) p.follow(tx, tz, dt); else p.update(dt);
+    }
+    this.fire.tick(this.time);
+  }
   /** First-person arms bench: ?fp=bran&hold=weapon&anim=swing&t=0.2&freeze=1 */
   enterFP(q) {
     const scene = new THREE.Scene();
@@ -180,6 +279,7 @@ export class CharPreview extends Scene {
     this.chars = [];
   }
   update(dt) {
+    if (this.hcam) return this.updateHades(dt);
     if (this.arms) {
       if (!this.q.get('freeze')) this.arms.update(dt, { speed: this.speed });
       if (this.q.get('turn')) this.fpCam.rotation.y = Math.sin(this.time * 2) * 0.4;
@@ -196,6 +296,7 @@ export class CharPreview extends Scene {
     this.rig.update(dt);
   }
   draw(ui) {
+    if (this.hcam) { ui.text(`hades ${this.q.get('hades')} ${this.q.get('list') || this.q.get('anim') || ''}`.slice(0, 120), 6, 6, { font: 'small', color: '#cfe0c8' }); return; }
     if (this.arms) { ui.text(`fp=${this.q.get('fp')} anim=${this.q.get('anim') || 'idle'}`, 6, 6, { font: 'small', color: '#9d8f7d' }); return; }
     ui.text(`anim=${this.q.get('anim') || 'idle'}  fps ${this.game.fps.toFixed(0)}`, 6, 6, { font: 'small', color: '#9d8f7d' });
   }

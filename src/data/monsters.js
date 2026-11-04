@@ -1,4 +1,5 @@
-// Monster roster (v4, Medusa's Curse). `region` is the ACT the creature lives in: 0 Mossy Undercroft,
+// Monster roster. v5: `region` is the STAGE (see the v5 section at the end, which retunes every creature for the
+// real-time game). v4 notes: `region` was the ACT the creature lives in: 0 Mossy Undercroft,
 // 1 Crystal Cistern, 2 Ember Foundry, 3 Medusa's Garden (−1 = anywhere (mimic), −2 = retired, never rolled).
 // hp/dmg are base values, scaled by act in systems/combat.js. Old bosses now serve as elites; each act's boss is
 // one of Medusa's Snake Heralds, and Medusa herself waits at the end of act 3. actPool(act, tier) picks from here.
@@ -473,12 +474,131 @@ mon('mimic', {
   desc: 'It was never a chest. It was always teeth.',
 });
 
+// ================================================================== v5 · the action roguelike (Hades camera, Isaac rooms)
+// `region` is now the STAGE: 0 Overgrown Mycelium, 1 Crystal Cistern, 2 Ember Foundry, 3 Medusa's Garden
+// (−1 anywhere, −2 retired / cinematic only). Real-time fields (read by src/action/enemies):
+//   ai: { brain, speed (m/s), range (m), cd (s between attacks), …brain params }
+//   ore: material ids a petrified statue of it yields (systems/loot statueOre picks from these)
+//   radius (m, collision; default from the model), spawn: 'ground'|'spores'|'drop'|'burrow' entrance
+// hp/dmg stay base values; enemies/stats.js scales them by stage and elite.
+
+// ---- stage 0 · the Overgrown Mycelium (new / renamed for the mushroom dungeon)
+mon('sporegoblin', {
+  name: 'Spore Goblin', region: 0, hp: 60, dmg: 5, interval: 2.3, weak: ['fire'],
+  drops: [{ id: 'spore_sac', chance: 0.6 }, { id: 'mushroom_cap', chance: 0.4 }],
+  model: { arch: 'sporegoblin', body: '#8aa860', belly: '#c8d890', accent: '#c0ff4a', cap: '#8a4ab0', eye: '#ff6a3a', scale: 1.1 },
+  desc: 'Pokes first. Asks never.',
+});
+mon('bloatcap', {
+  name: 'Bloatcap', region: 0, hp: 80, dmg: 5, interval: 3.0, weak: ['fire'],
+  drops: [{ id: 'spore_sac', chance: 1 }, { id: 'toad_tongue', chance: 0.4 }],
+  model: { arch: 'bloatcap', body: '#6c8c5a', belly: '#e6d69c', accent: '#b4c86a', tongue: '#e0607a', eye: '#ffd24a', cap: '#c8462e', spore: '#5af0c8', scale: 1.15 },
+  desc: 'Puffs up. Pops. Stay out of the cloud.',
+});
+mon('glowwisp', {
+  name: 'Glowcap Wisp', region: 0, hp: 40, dmg: 4, interval: 2.2, dodge: 0.1, weak: ['fire'],
+  drops: [{ id: 'wisp_essence', chance: 0.7 }, { id: 'moth_dust', chance: 0.5 }],
+  model: { arch: 'glowwisp', body: '#bff8ec', belly: '#ffffff', accent: '#5af0c8', cap: '#4a58c8', eye: '#141a2e', scale: 1.15 },
+  desc: 'Drifts over pits. Dives at your back.',
+});
+mon('rootling', {
+  name: 'Rootling', region: 0, hp: 55, dmg: 6, interval: 2.6, weak: ['fire'],
+  drops: [{ id: 'fern_root', chance: 0.8 }, { id: 'bitterbark', chance: 0.4 }],
+  model: { arch: 'rootling', body: '#6e4a2e', belly: '#a07a4a', accent: '#8ae84a', cap: '#d8a040', eye: '#ffe46a', scale: 1 },
+  desc: 'A knot of roots that swims through the floor.',
+});
+mon('cap_archer', {
+  name: 'Cap Archer', region: 0, hp: 46, dmg: 5, interval: 2.4, weak: ['fire'],
+  drops: [{ id: 'mushroom_cap', chance: 0.7 }, { id: 'spore_sac', chance: 0.3 }],
+  model: { arch: 'caparcher', body: '#e8d8b8', belly: '#f4ead0', accent: '#ff9a4a', cap: '#c86a2e', eye: '#1a1214', scale: 1 },
+  desc: 'Spits thorn darts from a hollow reed. Rude.',
+});
+mon('grand_puffcap', {
+  name: 'Grand Puffcap', title: 'King of the Mycelium', region: 0, tier: 'boss', hp: 900, dmg: 7, interval: 2.6, weak: ['fire'], resist: ['poison'],
+  attacks: [{ name: 'Belly Slam', dmg: 1.4, windup: 1.0, kind: 'heavy' }, { name: 'Spore Ring', dmg: 0.7, windup: 0.9, kind: 'special' }, { name: 'Roll', dmg: 1.2, windup: 0.9, kind: 'heavy' }],
+  phases: [{ at: 0.66, text: 'The king rolls up his sleeves.', speed: 1.15 }, { at: 0.33, text: 'Grand Puffcap is FURIOUS!', speed: 1.3 }],
+  drops: [{ id: 'mycel_crown', chance: 1 }, { id: 'spore_sac', chance: 1 }, { id: 'mushroom_cap', chance: 1 }, { id: 'emerald', chance: 0.6 }],
+  model: { arch: 'puffcap', body: '#f0dcc0', belly: '#fff0d8', accent: '#7affd0', cap: '#d8384a', spot: '#fff4e0', crown: '#ffd04a', eye: '#2a1018', scale: 1 },
+  intro: 'Who dares trample my garden?!',
+  desc: 'Fat, jiggly, and absolutely the king.',
+});
+mon('morel', {
+  name: 'Morel', title: 'Mushroom Friend', region: -2, tier: 'normal', hp: 999, dmg: 0, interval: 9,
+  drops: [],
+  model: { arch: 'morel', body: '#f2e2c4', belly: '#fff4e0', accent: '#7ad8ff', cap: '#c08a52', capDark: '#5e3a1e', eye: '#1a1210', cape: '#4a8a5a', satchel: '#8a5a32', scale: 1.15, vox: 0.018 },
+  desc: 'Helpful. Nervous. Very spongy.',
+});
+
+const V5 = {
+  // stage 0 · Overgrown Mycelium
+  shroomling: { region: 0, ai: { brain: 'hopper', speed: 2.4, range: 1.8, cd: 1.6 }, ore: ['petrite', 'copper', 'amber'], spawn: 'spores' },
+  sporegoblin: { ai: { brain: 'lunger', speed: 2.8, range: 3.2, cd: 1.8, lunge: 4 }, ore: ['petrite', 'copper', 'venomite'], spawn: 'spores' },
+  bloatcap: { ai: { brain: 'puffer', speed: 1.3, range: 3.2, cd: 3.2 }, ore: ['petrite', 'emerald', 'brimstone'], spawn: 'spores' },
+  glowwisp: { ai: { brain: 'flyer', speed: 3.2, range: 3.5, cd: 2.2 }, ore: ['petrite', 'quartz', 'moonstone'], spawn: 'drop' },
+  moss_snail: { region: 0, ai: { brain: 'shell', speed: 1.1, range: 1.6, cd: 2.2 }, ore: ['petrite', 'iron', 'fossil'], spawn: 'ground' },
+  rootling: { ai: { brain: 'burrower', speed: 3.4, range: 1.6, cd: 2.4 }, ore: ['petrite', 'amber', 'tin'], spawn: 'burrow' },
+  cap_archer: { ai: { brain: 'spitter', speed: 2.0, range: 6, cd: 2.0, shots: 1, projSpeed: 7.5 }, ore: ['petrite', 'copper', 'topaz'], spawn: 'spores' },
+  vine_viper: { region: 0, ai: { brain: 'lunger', speed: 3.0, range: 3.6, cd: 2.0, lunge: 4.6 }, ore: ['petrite', 'venomite', 'emerald'], spawn: 'ground' },
+  myconid_brute: { region: 0, ai: { brain: 'charger', speed: 1.9, range: 7, cd: 2.6 }, ore: ['petrite', 'iron', 'emerald', 'gorgonite'], spawn: 'ground' },
+  coil_brood: { region: 0, ai: { brain: 'spawner', speed: 0.9, range: 5, cd: 5.5, minion: 'vine_viper' }, ore: ['petrite', 'venomite', 'gorgonite'], spawn: 'ground' },
+  grand_puffcap: { ai: { brain: 'puffcap', speed: 1.6 }, ore: ['petrite', 'emerald', 'silver', 'gorgonite', 'glowcap'], spawn: 'drop' },
+  morel: { ai: { brain: 'npc', speed: 3.2 }, ore: [] },
+  // stage 1 · Crystal Cistern
+  shard_bat: { ai: { brain: 'flyer', speed: 3.4, range: 3.5, cd: 2.0 }, ore: ['petrite', 'quartz', 'amethyst'], spawn: 'drop' },
+  crystal_crab: { ai: { brain: 'shell', speed: 1.4, range: 1.6, cd: 2.0 }, ore: ['petrite', 'quartz', 'sapphire'], spawn: 'ground' },
+  gem_slime: { ai: { brain: 'hopper', speed: 2.6, range: 1.8, cd: 1.5 }, ore: ['petrite', 'amethyst', 'sapphire'], spawn: 'ground' },
+  prism_wisp: { ai: { brain: 'caster', speed: 1.6, range: 6, cd: 3.0, burst: 8 }, ore: ['petrite', 'prism', 'moonstone'], spawn: 'drop' },
+  rock_beetle: { region: 1, ai: { brain: 'charger', speed: 1.8, range: 6, cd: 2.4 }, ore: ['petrite', 'iron', 'geode'], spawn: 'ground' },
+  glass_adder: { ai: { brain: 'lunger', speed: 3.0, range: 3.6, cd: 1.8, lunge: 4.5 }, ore: ['petrite', 'quartz', 'rime'], spawn: 'ground' },
+  cistern_naga: { ai: { brain: 'spitter', speed: 2.2, range: 5.5, cd: 2.0, shots: 3, spread: 0.35, projSpeed: 7 }, ore: ['petrite', 'sapphire', 'rime'], spawn: 'ground' },
+  crystal_golem: { ai: { brain: 'charger', speed: 1.7, range: 7, cd: 2.8 }, ore: ['petrite', 'diamond', 'sapphire', 'gorgonite'], spawn: 'ground' },
+  geodessa: { ai: { brain: 'spawner', speed: 1.0, range: 6, cd: 6, minion: 'shard_bat' }, ore: ['petrite', 'amethyst', 'prism', 'gorgonite'], spawn: 'ground' },
+  glasscoil: { ai: { brain: 'herald', speed: 2.2, flavor: 'crystal' }, ore: ['petrite', 'diamond', 'prism', 'gorgonite'], spawn: 'ground' },
+  // stage 2 · Ember Foundry
+  magma_slime: { ai: { brain: 'hopper', speed: 2.4, range: 1.8, cd: 1.6, trail: 'fire' }, ore: ['petrite', 'brimstone', 'ember'], spawn: 'ground' },
+  salamander: { ai: { brain: 'spitter', speed: 2.4, range: 5.5, cd: 2.0, shots: 1, projSpeed: 8, element: 'fire' }, ore: ['petrite', 'ember', 'magmasteel'], spawn: 'ground' },
+  cinder_bat: { ai: { brain: 'flyer', speed: 3.6, range: 3.5, cd: 2.0, element: 'fire' }, ore: ['petrite', 'obsidian', 'ember'], spawn: 'drop' },
+  cinder_golem: { ai: { brain: 'chaser', speed: 1.7, range: 1.7, cd: 2.0 }, ore: ['petrite', 'iron', 'obsidian'], spawn: 'ground' },
+  ember_asp: { ai: { brain: 'lunger', speed: 3.0, range: 3.6, cd: 1.8, lunge: 4.6, element: 'fire' }, ore: ['petrite', 'ember', 'ruby'], spawn: 'ground' },
+  bonepicker: { ai: { brain: 'chaser', speed: 2.6, range: 1.6, cd: 1.6 }, ore: ['petrite', 'fossil', 'tin'], spawn: 'ground' },
+  gilded_guard: { ai: { brain: 'shell', speed: 1.5, range: 1.8, cd: 2.0 }, ore: ['petrite', 'gold', 'bronze_ancient'], spawn: 'ground' },
+  lava_wyrmling: { ai: { brain: 'charger', speed: 2.0, range: 7, cd: 2.4, element: 'fire' }, ore: ['petrite', 'magmasteel', 'ruby', 'gorgonite'], spawn: 'ground' },
+  pyrrhax: { ai: { brain: 'caster', speed: 1.2, range: 7, cd: 2.6, burst: 10, element: 'fire' }, ore: ['petrite', 'magmasteel', 'ruby', 'gorgonite'], spawn: 'drop' },
+  rune_guardian: { ai: { brain: 'chaser', speed: 1.5, range: 2.2, cd: 2.4, slam: true }, ore: ['petrite', 'runestone', 'gold', 'gorgonite'], spawn: 'ground' },
+  cinderfang: { ai: { brain: 'herald', speed: 2.0, flavor: 'fire' }, ore: ['petrite', 'magmasteel', 'ruby', 'gorgonite'], spawn: 'ground' },
+  // stage 3 · Medusa's Garden
+  stone_sentinel: { ai: { brain: 'caster', speed: 0.9, range: 7, cd: 3.0, burst: 6 }, ore: ['petrite', 'runestone', 'silver'], spawn: 'ground' },
+  ruin_owl: { ai: { brain: 'flyer', speed: 3.4, range: 3.8, cd: 2.0 }, ore: ['petrite', 'silver', 'moonstone'], spawn: 'drop' },
+  cursed_knight: { ai: { brain: 'lunger', speed: 2.4, range: 3.2, cd: 2.0, lunge: 4 }, ore: ['petrite', 'cursedore', 'silver'], spawn: 'ground' },
+  wraith: { ai: { brain: 'caster', speed: 2.2, range: 6, cd: 2.6, burst: 6, flies: true }, ore: ['petrite', 'voidcrystal', 'cursedore'], spawn: 'drop' },
+  bone_hound: { ai: { brain: 'charger', speed: 2.6, range: 6, cd: 2.2 }, ore: ['petrite', 'fossil', 'cursedore'], spawn: 'ground' },
+  gorgon_snake: { ai: { brain: 'spitter', speed: 2.4, range: 5.5, cd: 2.2, shots: 3, spread: 0.3, projSpeed: 7, status: 'slow' }, ore: ['petrite', 'gorgonite', 'emerald'], spawn: 'ground' },
+  basilisk: { ai: { brain: 'charger', speed: 2.0, range: 7, cd: 2.4, gaze: true }, ore: ['petrite', 'gorgonite', 'diamond'], spawn: 'ground' },
+  grave_colossus: { ai: { brain: 'chaser', speed: 1.4, range: 2.4, cd: 2.6, slam: true }, ore: ['petrite', 'runestone', 'gorgonite'], spawn: 'ground' },
+  warden: { ai: { brain: 'spawner', speed: 1.0, range: 6, cd: 6, minion: 'gorgon_snake' }, ore: ['petrite', 'runestone', 'gold', 'gorgonite'], spawn: 'ground' },
+  medusa: { ai: { brain: 'medusa', speed: 2.4 }, ore: ['petrite', 'gorgonite', 'soulstone', 'diamond'], spawn: 'ground' },
+  // anywhere
+  mimic: { ai: { brain: 'hopper', speed: 3.0, range: 2.0, cd: 1.4 }, ore: ['petrite', 'gold', 'ruby'], spawn: 'ground' },
+};
+// creatures of the v4 mine that don't belong to the v5 stages (models kept for cinematics/tools)
+for (const id of ['rustrat', 'cave_bat', 'ooze', 'kobold', 'mole_brute', 'rustjaw', 'adder', 'silk_spider', 'bloat_toad', 'lantern_moth', 'thornscale', 'mycel', 'cursed_lord', 'gilded_guard_old']) if (MONSTERS[id]) MONSTERS[id].region = -2;
+for (const [id, o] of Object.entries(V5)) if (MONSTERS[id]) Object.assign(MONSTERS[id], o);
+// default for anything not tuned above: a plain chaser
+for (const m of Object.values(MONSTERS)) {
+  if (!m.ai) m.ai = { brain: m.tier === 'boss' ? 'herald' : 'chaser', speed: 2, range: 1.8, cd: 2 };
+  if (!m.ore) m.ore = ['petrite'];
+}
+
 export const monster = (id) => MONSTERS[id];
 /** Monsters of one act and tier ('normal' | 'elite' | 'boss'). */
 export function actPool(act, tier = 'normal') {
   return Object.values(MONSTERS).filter((m) => m.region === act && m.tier === tier);
 }
-/** The Herald (or Medusa) who ends an act. */
-export const ACT_BOSS = ['thornscale', 'glasscoil', 'cinderfang', 'medusa'];
+/** The boss who ends each stage (v5: the mushroom king first, then two Heralds and Medusa). */
+export const ACT_BOSS = ['grand_puffcap', 'glasscoil', 'cinderfang', 'medusa'];
+/** v5 name for the same thing. */
+export const STAGE_BOSS = ACT_BOSS;
+/** v5 name: monsters of a stage and tier. */
+export const stagePool = (stage, tier = 'normal') => actPool(stage, tier);
 /** @deprecated v3 name — kept until the old scenes are removed. */
 export const regionPool = actPool;

@@ -82,3 +82,60 @@ export const NODE_TYPES = {
 export const TUNNELS = {
   tunnel: { name: 'Tunnel', icon: 'arrowR', risk: 0, desc: '' },
 };
+
+// ---------------------------------------------------------------- v5: stages (Isaac floors)
+// docs/REDESIGN.md §2. Stage 0 is the showcase. roster: preferred normal foes (ids that exist in
+// data/monsters.js are used; otherwise actPool(stage)). elites / boss likewise. veins: ore table for
+// vein rooms and walls [id, weight]. forage: ingredients found lying around. Who actually lives on a
+// stage is data/monsters.js (`region`); roster/elites only order the preferred ones first.
+export const STAGES = [
+  {
+    id: 'shroom', name: 'The Overgrown Mycelium', sub: 'A dungeon swallowed by mushrooms', music: 'delve0', tone: 'green',
+    boss: 'grand_puffcap', bossFallback: 'myconid_brute', frees: 'bran',
+    roster: ['shroomling', 'sporegoblin', 'bloatcap', 'glowwisp', 'moss_snail', 'rootling', 'cap_archer', 'vine_viper'],
+    elites: ['myconid_brute', 'coil_brood'],
+    veins: [['copper', 30], ['tin', 22], ['iron', 22], ['coal', 18], ['petrite', 12], ['quartz', 16], ['amethyst', 7], ['emerald', 5], ['silver', 4]],
+    forage: [['glowcap', 30], ['puffball', 24], ['cave_moss', 20], ['fern_root', 16], ['honeycomb', 8], ['truffle', 2]],
+    pal: { fog: '#0c140e', glow: '#5af0c8', glow2: '#ff8ab0' },
+  },
+  {
+    id: 'cistern', name: 'The Crystal Cistern', sub: 'Halls the water took back', music: 'delve1', tone: 'blue',
+    boss: 'glasscoil', bossFallback: 'crystal_golem', frees: 'elio',
+    roster: ['glass_adder', 'cistern_naga', 'shard_bat', 'crystal_crab', 'gem_slime', 'prism_wisp', 'rock_beetle'],
+    elites: ['crystal_golem', 'geodessa'],
+    veins: [['silver', 22], ['iron', 18], ['quartz', 20], ['sapphire', 10], ['amethyst', 12], ['rime', 12], ['storm', 10], ['moonstone', 5], ['diamond', 2]],
+    forage: [['frost_lily', 24], ['cave_moss', 20], ['snake_egg', 16], ['starfruit', 6], ['stone_salt', 14]],
+    pal: { fog: '#080c18', glow: '#6ad8ff', glow2: '#ff8af0' },
+  },
+  {
+    id: 'foundry', name: 'The Ember Foundry', sub: 'Forge-halls of a lost clan', music: 'delve2', tone: 'red',
+    boss: 'cinderfang', bossFallback: 'lava_wyrmling', frees: 'clover',
+    roster: ['ember_asp', 'magma_slime', 'salamander', 'cinder_bat', 'cinder_golem', 'bonepicker', 'gilded_guard'],
+    elites: ['lava_wyrmling', 'pyrrhax', 'rune_guardian'],
+    veins: [['iron', 20], ['coal', 20], ['gold', 10], ['magmasteel', 8], ['ember', 14], ['ruby', 10], ['obsidian', 10], ['brimstone', 10]],
+    forage: [['ember_pepper', 24], ['fern_root', 16], ['bitterbark', 16], ['honeycomb', 8]],
+    pal: { fog: '#140806', glow: '#ff8a3a', glow2: '#ffd25e' },
+  },
+  {
+    id: 'garden', name: "Medusa's Garden", sub: 'Marble, moss and statues', music: 'delve3', tone: 'jade',
+    boss: 'medusa', bossFallback: 'basilisk', frees: null,
+    roster: ['gorgon_snake', 'cursed_knight', 'wraith', 'bone_hound', 'stone_sentinel', 'ruin_owl'],
+    elites: ['basilisk', 'warden', 'grave_colossus'],
+    veins: [['gorgonite', 14], ['petrite', 20], ['gold', 12], ['mithril', 6], ['emerald', 14], ['soulstone', 2], ['runestone', 10]],
+    forage: [['bitterbark', 20], ['starfruit', 10], ['snake_egg', 16], ['stone_salt', 12]],
+    pal: { fog: '#0c1410', glow: '#7affc0', glow2: '#ffe08a' },
+  },
+];
+export const stageOf = (i) => STAGES[Math.max(0, Math.min(STAGES.length - 1, i | 0))];
+
+/** v5 room types (Isaac floors): icon, minimap colour, a ≤ 6-word line. */
+export const ROOM_TYPES = {
+  start: { name: 'Landing', icon: 'start', color: '#e0d0b0', short: 'Where you fell in.' },
+  fight: { name: 'Fight', icon: 'monster', color: '#c0442e', short: 'Clear it to open doors.' },
+  vein: { name: 'Ore Vein', icon: 'mining', color: '#2a8aaa', short: 'Rich rock. Mine it.' },
+  treasure: { name: 'Treasure', icon: 'treasure', color: '#e0b03a', short: 'An item on a pedestal.' },
+  craft: { name: 'Workshop', icon: 'forge', color: '#d07a2a', short: 'Craft in order.' },
+  shrine: { name: 'Shrine', icon: 'event', color: '#8a5ad0', short: 'Something strange.' },
+  secret: { name: 'Secret', icon: 'question', color: '#5a5a7a', short: 'Hidden. Rewarding.' },
+  boss: { name: 'Boss', icon: 'boss', color: '#a8261e', short: 'The stage boss waits.' },
+};

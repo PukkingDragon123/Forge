@@ -9,6 +9,8 @@
 //   unlock archaeo seehaz quality
 // regions: indices of mine regions where it can be dug (0 Hollowdeep … 5 Forbidden Tomb)
 
+import { V5_ITEMS } from './items.js';
+
 export const RARITY = {
   common: { order: 0, color: '#c9c1b3', name: 'Common', weight: 100 },
   uncommon: { order: 1, color: '#5fd17a', name: 'Uncommon', weight: 42 },
@@ -248,7 +250,7 @@ def('brimstone', {
   flavor: 'Smells like a dragon\'s breakfast.',
 });
 def('glowcap', {
-  name: 'Glowcap', kind: 'forage', rarity: 'common', tags: ['organic', 'poison', 'forage'], color: '#5af0c8', color2: '#2a6a7a', sprite: 'mushroom',
+  name: 'Glowcap', kind: 'forage', rarity: 'common', tags: ['organic', 'poison', 'forage', 'spore'], color: '#5af0c8', color2: '#2a6a7a', sprite: 'mushroom',
   value: 3, regions: [2], depth: 0.1,
   weapon: { mult: 2, poison: 1 }, pick: { seehaz: 1, reveal: 1 },
   desc: '{mult}+2 Mult{/} {poison}Poison 1{/}.', pdesc: 'Lights the wall: reveals hazards and glints.',
@@ -294,11 +296,11 @@ part('slime_gel', { name: 'Slime Gel', rarity: 'common', color: '#6ae04a', color
 part('beetle_shell', { name: 'Pebble Plate', rarity: 'common', color: '#3a5a8a', color2: '#7ab0ff', sprite: 'shell', shape: 'o4', value: 4, weapon: { chips: 4, block: 25 }, pick: {}, desc: '{chips}+4 Chips{/} {block}+25% Block{/}.', tags: ['shell', 'solid'] });
 part('mandible', { name: 'Flint Knuckle', rarity: 'uncommon', color: '#4a3a2a', color2: '#c8a060', sprite: 'claw', value: 5, weapon: { chips: 5, crit: 10 }, pick: { strikes: 1 }, desc: '{chips}+5 Chips{/} {crit}+10% Crit{/}.', tags: ['fang', 'solid'] });
 part('spider_silk', { name: 'Snare Silk', rarity: 'uncommon', color: '#f0f0ff', color2: '#b0b0d0', sprite: 'silk', value: 6, weapon: { multi: 1 }, pick: {}, desc: '{good}+1 extra hit{/} per attack (half damage).', tags: ['organic'] });
-part('venom_sac', { name: 'Spore Sac', rarity: 'uncommon', color: '#8a4ad0', color2: '#c0ff4a', sprite: 'sac', value: 6, weapon: { poison: 3 }, pick: {}, desc: '{poison}Poison 3{/}.', tags: ['organic', 'poison'] });
+part('venom_sac', { name: 'Toxin Sac', rarity: 'uncommon', color: '#8a4ad0', color2: '#c0ff4a', sprite: 'sac', value: 6, weapon: { poison: 3 }, pick: {}, desc: '{poison}Poison 3{/}.', tags: ['organic', 'poison'] });
 part('crystal_claw', { name: 'Crystal Claw', rarity: 'uncommon', color: '#7ad8ff', color2: '#e0f8ff', sprite: 'claw', value: 7, weapon: { chips: 4, critDmg: 0.5 }, pick: { gemDupe: 1 }, desc: '{chips}+4 Chips{/} {crit}+0.5× Crit damage{/}.', tags: ['solid', 'gem'] });
 part('golem_core', { name: 'Golem Core', rarity: 'rare', color: '#ffb84a', color2: '#5a4a3a', sprite: 'core', shape: 'o4', value: 14, weapon: { chips: 18, stun: 10 }, pick: { area: 1, strikes: 1 }, desc: '{chips}+18 Chips{/}. 10% Stun. Hammers love it.', pdesc: '+1 Strike, each strike also breaks the tile below.', tags: ['core', 'solid'] });
 part('wisp_essence', { name: 'Wisp Essence', rarity: 'rare', color: '#9af0ff', color2: '#ffffff', sprite: 'essence', value: 12, weapon: { mult: 2, fx: 'wisp' }, pick: { reveal: 1 }, desc: '{mult}+2 Mult{/}. +1 stack of each Element already present.', tags: ['magic'] });
-part('spore_sac', { name: 'Spore Sac', rarity: 'common', color: '#c08a4a', color2: '#f0e08a', sprite: 'sac', value: 3, weapon: { poison: 2, miss: 10 }, pick: {}, desc: '{poison}Poison 2{/}. Spores: enemy {good}10% miss{/}.', tags: ['organic', 'poison'] });
+part('spore_sac', { name: 'Spore Sac', rarity: 'common', color: '#c08a4a', color2: '#f0e08a', sprite: 'sac', value: 3, weapon: { poison: 2, miss: 10 }, pick: {}, desc: '{poison}Poison 2{/}. Spores: enemy {good}10% miss{/}.', tags: ['organic', 'poison', 'spore'] });
 part('moth_dust', { name: 'Glowcap Dust', rarity: 'uncommon', color: '#e0d0ff', color2: '#9a8ac0', sprite: 'dust', value: 5, weapon: { miss: 15 }, pick: {}, desc: 'Dazzle: enemy {good}15% miss{/}.', tags: ['magic'] });
 part('snail_shell', { name: 'Mossy Stone', rarity: 'common', color: '#c88a5a', color2: '#f0d0a0', sprite: 'shell', shape: 'o4', value: 4, weapon: { chips: 3, block: 30 }, pick: {}, desc: '{chips}+3 Chips{/} {block}+30% Block{/}.', tags: ['shell', 'solid'] });
 part('salamander_scale', { name: 'Magma Hide', rarity: 'uncommon', color: '#ff5a2a', color2: '#ffd04a', sprite: 'scale', value: 6, weapon: { chips: 4, fire: 2 }, pick: { smelt: 1 }, desc: '{chips}+4 Chips{/} {fire}Fire 2{/}.', tags: ['scale', 'solid'] });
@@ -309,7 +311,7 @@ part('wyrm_scale', { name: 'Drake Scale', rarity: 'rare', color: '#c83a2a', colo
 part('fire_gland', { name: 'Fire Gland', rarity: 'rare', color: '#ff7a2a', color2: '#ffe0a0', sprite: 'sac', value: 10, weapon: { fire: 3, xmult: 1.25 }, pick: { smelt: 1 }, desc: '{fire}Fire 3{/} {xmult}×1.25 Mult{/}.', tags: ['organic', 'fire'] });
 part('mimic_tongue', { name: 'Mimic Tongue', rarity: 'rare', color: '#ff6a9a', color2: '#9a2a4a', sprite: 'tongue', shape: 'i2', value: 12, weapon: { greed: 2, mult: 1 }, pick: { unlock: 1 }, desc: '{mult}+1 Mult{/}. Greed: +2{@coin} per hit.', pdesc: 'Licks open treasure pockets.', tags: ['organic'] });
 part('mimic_teeth', { name: 'Mimic Teeth', rarity: 'rare', color: '#fff6e0', color2: '#c8a060', sprite: 'teeth', value: 11, weapon: { bleed: 2, xmult: 1.2 }, pick: { strikes: 1 }, desc: '{bleed}Bleed 2{/} {xmult}×1.2 Mult{/}.', tags: ['fang', 'solid'] });
-part('mushroom_cap', { name: 'Shroom Cap', rarity: 'common', color: '#d04a3a', color2: '#ffffff', sprite: 'mushroom', value: 3, weapon: { chips: 3, fx: 'regen' }, pick: {}, desc: '{chips}+3 Chips{/}. Heal {heal}1 HP{/} every 3 hits.', tags: ['organic'] });
+part('mushroom_cap', { name: 'Shroom Cap', rarity: 'common', color: '#d04a3a', color2: '#ffffff', sprite: 'mushroom', value: 3, weapon: { chips: 3, fx: 'regen' }, pick: {}, desc: '{chips}+3 Chips{/}. Heal {heal}1 HP{/} every 3 hits.', tags: ['organic', 'spore'] });
 part('lava_core', { name: 'Lava Core', rarity: 'uncommon', color: '#ff8a2a', color2: '#3a1a14', sprite: 'core', value: 7, weapon: { chips: 6, fire: 2 }, pick: { hard: 1 }, desc: '{chips}+6 Chips{/} {fire}Fire 2{/}.', pdesc: 'Breaks hard rock in one hit.', tags: ['core', 'solid', 'fire'] });
 part('cursed_plate', { name: 'Cursed Plate', rarity: 'uncommon', color: '#4a3a5a', color2: '#c86bff', sprite: 'plate', shape: 'o4', value: 8, weapon: { chips: 6, block: 40, curse: 1 }, pick: {}, desc: '{chips}+6 Chips{/} {block}+40% Block{/} {curse}Curse 1{/}.', tags: ['solid', 'cursed'] });
 part('hound_fang', { name: 'Ghoul Fang', rarity: 'uncommon', color: '#e0d8c8', color2: '#7a3ab0', sprite: 'fang', value: 6, weapon: { bleed: 2, speed: 10 }, pick: {}, desc: '{bleed}Bleed 2{/}. +10% Speed.', tags: ['fang', 'bone'] });
@@ -415,6 +417,14 @@ for (const m of Object.values(M)) {
   m.acts = [...new Set(m.regions.map((r) => OLD2ACT[r] ?? 3))].sort();
   m.regions = m.acts;
 }
+
+// ------------------------------------------------------------------ v5: the build items (data/items.js)
+for (const [id, o] of Object.entries(V5_ITEMS)) M[id] = { id, tags: [], value: 3, shape: 'o1', weapon: null, pick: null, ...o, regions: o.acts || [0, 1, 2, 3] };
+// v5 bag room: ores are bulky (2×2 or L), rare ores take odd shapes; gems 1, crystals/minerals 2
+const ORE_SHAPE = { copper: 'l4', tin: 'l3', coal: 'l3', silver: 't4', gold: 's4', mithril: 'l3', stariron: 't4', magmasteel: 's4', bronze_ancient: 'l4', lodestone: 'l3', junk: 'l3', cursedore: 't4', gorgonite: 't4' };
+for (const [id, sh] of Object.entries(ORE_SHAPE)) if (M[id]) M[id].shape = sh;
+// v5 stages are the v4 acts (0 shroom/undercroft, 1 cistern, 2 foundry, 3 garden)
+for (const m of Object.values(M)) m.stages = m.acts;
 
 export const MATERIALS = M;
 export const mat = (id) => M[id];

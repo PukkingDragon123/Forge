@@ -23,8 +23,17 @@ import { RPG_ARCHES } from './vox_mon_rpg.js';
 import { RPG_ARCHES2 } from './vox_mon_rpg2.js';
 
 import { SNAKE_ARCHES } from './vox_mon_snakes.js';
+import { SHROOM_ARCHES } from './vox_mon_shroom.js';
 
-const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES, ...RPG_ARCHES, ...RPG_ARCHES2, ...SNAKE_ARCHES };
+const ARCH = { ...NORMAL_ARCHES, ...BOSS_ARCHES, ...RPG_ARCHES, ...RPG_ARCHES2, ...SNAKE_ARCHES, ...SHROOM_ARCHES };
+/** Locomotion style per archetype for setMove() (archetypes may also carry `gait` themselves). */
+const GAIT = {
+  slime: 'hop', mushroom: 'hop', toad: 'hop', bloatcap: 'hop', mimic: 'hop',
+  glowwisp: 'float', sprite: 'float', prismwisp: 'float', wraith: 'float', lanternwing: 'float', flameskull: 'float', gargoyle: 'float',
+  adder: 'slither', vine_viper: 'slither', glass_adder: 'slither', ember_asp: 'slither', gorgon_snake: 'slither', naga: 'slither',
+  coilbrood: 'slither', basilisk: 'slither', thornscale: 'slither', glasscoil: 'slither', cinderfang: 'slither',
+  pebblegolem: 'roll',
+};
 /** Authored −X front → +Z front (see FACING above). */
 export const FACE_YAW = Math.PI / 2;
 
@@ -47,7 +56,9 @@ const _M = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _E = new THREE.Eule
  * Monster
  *  .group             THREE.Group to add to the scene (position/rotate this)
  *  .update(dt)        advance animation
- *  .play(state, {onDone, hits})  idle|windup|attack|multi|special|hurt|stun|die|intro|roar|disguise
+ *  .play(state, {onDone, hits})  idle|windup|attack|multi|special|hurt|stun|die|intro|roar|disguise (+ arch-specific)
+ *  .setMove(k, speed) gait blend (walk|hop|float|slither|roll per archetype) on top of any state
+ *  .petrify(dur, onDone) animated stone sweep (setStone ramps to 1)
  *  .flash(color, t)   hit flash
  *  .setPhase(n)       boss phase visuals (1, 2, 3)
  *  .height            standing height (m)
@@ -75,14 +86,16 @@ export class Monster {
     this.group.add(this.facing);
     this.root = new THREE.Group();
     this.facing.add(this.root);
-    this.stone = 0; this.cracks = []; this._crackSrc = null; this._shake = 0; this.shattered = null;
+    this.stone = 0; this.cracks = []; this._crackSrc = null; this._shake = 0; this.shattered = null; this._stoneAnim = null;
+    // locomotion (v5 action game): setMove(k, speed) blends a gait in on top of any state
+    this.moveTarget = 0; this.moveSpeed = 0; this.gaitT = 0; this._gaitHop = 0;
     this.sculpt = new Sculpt();
     this.bones = []; this.boneIdx = {}; this._frames = new Map();
     this.parts = {};
     this.rootBone = new THREE.Bone(); this.rootBone.name = '_root';
     this.root.add(this.rootBone); this.bones.push(this.rootBone); this.boneIdx.root = 0; this._rest(this.rootBone);
     this.state = 'idle'; this.st = 0; this.t = (this.seed * 1.7) % 10;
-    this.env = { wind: 0, strike: 0, hurt: 0, dead: 0, stun: 0, roar: 0, special: 0, intro: 1, multi: 0, disguise: 0 };
+    this.env = { wind: 0, strike: 0, hurt: 0, dead: 0, stun: 0, roar: 0, special: 0, intro: 1, multi: 0, disguise: 0, move: 0 };
     this.hits = 3;
     this.flashT = 0; this.flashDur = 0.1; this.flashColor = new THREE.Color(1, 1, 1);
     this.phase = 1;
@@ -180,7 +193,7 @@ export class Monster {
   _buildMesh() {
     let g = GEO_CACHE.get(this.id);
     if (!g) {
-      g = voxelizeMonster(this, VOXEL / this.scale);
+      g = voxelizeMonster(this, (this.md.vox || VOXEL) / this.scale); // md.vox: finer voxels for close-up characters (Morel)
       GEO_CACHE.set(this.id, g);
       MONSTER_STATS.meshed++;
     }
@@ -264,6 +277,10 @@ export class Monster {
   }
 
   // ------------------------------------------------------------ petrify (Medusa's stone)
+  /** Locomotion: k 0..1 how much it is moving, speed in m/s (drives the gait rate). Works in any state. */
+  setMove(k, speed = 1.5) { this.moveTarget = clamp(k, 0, 1); this.moveSpeed = speed; }
+  /** Animated petrify: stone sweeps from the current amount to 1 over `dur` s (needs update() calls). */
+  petrify(dur = 0.7, onDone = null) { this._stoneAnim = { from: this.stone, t: 0, dur: Math.max(0.01, dur), onDone }; }
   /** 0..1 — stone sweeps up from the feet; animation slows and freezes at 1. */
   setStone(k) {
     this.stone = clamp(k, 0, 1);
@@ -377,6 +394,13 @@ export class Monster {
   get introDur() { return this.boss ? 2.6 : DUR.intro; }
 
   update(dt) {
+    if (this._stoneAnim) {
+      const a = this._stoneAnim;
+      a.t += dt;
+      const k = clamp(a.t / a.dur);
+      this.setStone(a.from + (1 - a.from) * ease.outCubic(k));
+      if (k >= 1) { this._stoneAnim = null; if (a.onDone) a.onDone(); }
+    }
     // stone: world-space sweep bounds, cracks opening, a small shudder when one is hit
     if (this.stone > 0 || this.cracks.length) {
       this.group.updateMatrixWorld();
@@ -455,6 +479,7 @@ export class Monster {
     r.scale.y *= 1 + breathe;
     r.scale.x *= 1 - breathe * 0.5;
     if (e.roar > 0) { r.rotation.z -= e.roar * 0.12; r.scale.multiplyScalar(1 + e.roar * 0.04); }
+    this._gait(dt);
 
     if (this.arch.anim) this.arch.anim(this, dt);
 
@@ -525,6 +550,45 @@ export class Monster {
       if (cb) cb();
     } else if (s === 'die' && st >= DUR.die && this.onDone) {
       const cb = this.onDone; this.onDone = null; cb();
+    }
+  }
+
+  /** Gait on top of the pose: walk (bob + waddle), hop (arcs with squash on landing), float, slither, roll. */
+  _gait(dt) {
+    const e = this.env, r = this.root;
+    e.move = damp(e.move, this.moveTarget * (1 - e.dead), 10, dt);
+    const g = this.arch.gait || GAIT[this.md.arch] || (this.fly > 0 ? 'float' : 'walk');
+    const sp = Math.max(0.3, this.moveSpeed);
+    const H = this.height / (this.scale || 1);
+    if (g === 'hop') {
+      // hops: one arc every ~0.42 s at 2 m/s; landing squash through the jolt spring
+      const prev = this.gaitT;
+      this.gaitT += dt * e.move * (1.6 + sp * 0.55);
+      const k = this.gaitT % 1;
+      if (Math.floor(this.gaitT) !== Math.floor(prev) && e.move > 0.3) this.joltV += 5 * e.move;
+      r.position.y += Math.sin(k * Math.PI) * Math.min(0.5, 0.16 * H + 0.05) * e.move;
+      r.rotation.z += (k < 0.5 ? 0.12 : -0.06) * e.move;
+      r.scale.y *= 1 + Math.sin(k * Math.PI) * 0.1 * e.move;
+    } else if (g === 'float') {
+      this.gaitT += dt * (1 + sp * 0.4);
+      r.position.y += Math.sin(this.gaitT * 2.6) * 0.06 * (0.4 + e.move);
+      r.rotation.z += 0.18 * e.move;
+    } else if (g === 'slither') {
+      this.gaitT += dt * e.move * (2 + sp * 1.2);
+      r.rotation.x += Math.sin(this.gaitT * 3) * 0.12 * e.move;
+      r.position.z += Math.sin(this.gaitT * 3 + 1) * 0.06 * e.move;
+      r.rotation.z += 0.05 * e.move;
+    } else if (g === 'roll') {
+      this.gaitT += dt * e.move * sp * 2.2;
+      r.rotation.z += 0.1 * e.move;
+      r.position.y += Math.abs(Math.sin(this.gaitT * 2)) * 0.03 * e.move;
+    } else {
+      // walk: quick bob twice per stride, side-to-side waddle, lean into the run
+      this.gaitT += dt * e.move * (2.2 + sp * 0.9);
+      const ph = this.gaitT * Math.PI;
+      r.position.y += Math.abs(Math.sin(ph)) * Math.min(0.12, 0.05 * H + 0.015) * e.move;
+      r.rotation.x += Math.sin(ph) * 0.07 * e.move;
+      r.rotation.z += 0.1 * e.move;
     }
   }
 

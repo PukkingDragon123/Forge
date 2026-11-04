@@ -91,10 +91,41 @@ export class Pet {
   }
   play(name) { if (name !== this.anim) { this.anim = name; this.animT = 0; } }
   lookAt(v) { this.look = v ? v.clone() : null; }
+  /** Face a direction (atan2(dx, dz), 0 = +Z); turns quickly but smoothly unless instant. */
+  setFacing(a, instant = false) {
+    this.facingTarget = a;
+    if (instant || this.facing === undefined) { this.facing = a; this.group.rotation.y = a; }
+  }
+  /**
+   * Trot after a point on the floor (call every frame instead of update): walks when close, runs to
+   * catch up, sits when there. o: { stop (m, 0.4), runAt (m, 1.3), walk (m/s, 2.4), run (m/s, 6.5),
+   * idle ('idle' | 'sniff' | …), collide(x, z) → [x, z] (optional, keeps Pip out of walls) }.
+   */
+  follow(x, z, dt, o = {}) {
+    const g = this.group.position, dx = x - g.x, dz = z - g.z, d = Math.hypot(dx, dz);
+    const stop = o.stop ?? 0.4, runAt = o.runAt ?? 1.3;
+    if (d > stop) {
+      const fast = d > runAt, sp = fast ? (o.run ?? 6.5) : (o.walk ?? 2.4);
+      const step = Math.min(d - stop * 0.7, sp * dt);
+      let nx = g.x + (dx / d) * step, nz = g.z + (dz / d) * step;
+      if (o.collide) [nx, nz] = o.collide(nx, nz);
+      g.x = nx; g.z = nz;
+      this.setFacing(Math.atan2(dx, dz));
+      const want = fast ? 'run' : 'walk';
+      if (this.anim !== want && !['bark', 'yelp'].includes(this.anim)) this.play(want);
+    } else if (this.anim === 'run' || this.anim === 'walk') this.play(o.idle || 'idle');
+    this.update(dt);
+  }
 
   update(dt) {
     dt = Math.min(dt || 0, 0.1);
     this.t += dt; this.animT += dt;
+    if (this.facingTarget !== undefined) {
+      let d = this.facingTarget - this.facing;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this.facing += d * (1 - Math.exp(-14 * dt));
+      this.group.rotation.y = this.facing;
+    }
     const t = this.t, a = this.anim, R = this.rig;
     // pose targets
     let bodyY = 9 * VS, bodyX = 0, bodyZ = 0, head = [0, 0, 0], legs = [0, 0, 0, 0], wag = 6, wagAmp = 0.35, earUp = 0, tongue = false, squash = 0, rootY = 0;

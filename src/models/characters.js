@@ -49,8 +49,9 @@ const GEO_CACHE = new Map();
 // Legs: hip=forward, hab=abduct, kn=knee bend, ft=toe point. Spine: lean/twist/side. Head: nod/turn/tilt.
 // squash: impact squash (negative stretches), smear: the fast-swing stretch along the strike,
 // flare: signature glow (runes, gauntlet coals, ore studs, charms).
+// wp/wy: the held weapon's pitch/yaw in the fist (wp > 0 lays the blade out along the arm for reach).
 const CH = ['dy', 'bx', 'by', 'bz', 'hrx', 'hry', 'hrz', 'lean', 'twist', 'side', 'nod', 'turn', 'tilt',
-  'lSh', 'lAb', 'lTw', 'lEl', 'rSh', 'rAb', 'rTw', 'rEl', 'lHip', 'lHab', 'lKn', 'lFt', 'rHip', 'rHab', 'rKn', 'rFt', 'ears', 'squash', 'smear', 'flare'];
+  'lSh', 'lAb', 'lTw', 'lEl', 'rSh', 'rAb', 'rTw', 'rEl', 'lHip', 'lHab', 'lKn', 'lFt', 'rHip', 'rHab', 'rKn', 'rFt', 'ears', 'squash', 'smear', 'flare', 'wp', 'wy'];
 const REST = { lAb: 0.14, rAb: 0.14, lEl: 0.18, rEl: 0.18 };
 
 /**
@@ -79,7 +80,7 @@ function sitLegs(c) {
 
 /** Fighting stance, the base every swing starts from and returns to. */
 function stance(c) {
-  const s = { dy: -0.05, lean: 0.14, twist: 0.25, lHip: 0.3, rHip: -0.25, lKn: 0.45, rKn: 0.3, lHab: 0.1, rHab: 0.12, rSh: 0.8, rEl: 0.95, rAb: 0.28, lSh: 0.6, lEl: 1.3, lAb: 0.22, nod: 0.06, turn: -0.15 };
+  const s = { dy: -0.05, lean: 0.14, twist: 0.25, lHip: 0.3, rHip: -0.25, lKn: 0.45, rKn: 0.3, lHab: 0.14, rHab: 0.16, rSh: 0.75, rEl: 0.95, rAb: 0.42, wp: 0.35, lSh: 0.6, lEl: 1.3, lAb: 0.22, nod: 0.06, turn: -0.15 };
   if (c.id === 'durgan') Object.assign(s, { dy: -0.05, lean: 0.2, lSh: 0.3, lEl: 0.2, lAb: -0.22, lTw: 0, rSh: 0.7, rEl: 1.1, lHab: 0.2, rHab: 0.2 }); // the tower shield set before him
   if (c.id === 'clover') Object.assign(s, { dy: -0.09, lean: 0.3, lKn: 0.8, rKn: 0.6, lHip: 0.5, rHip: -0.1, lSh: 0.9, lEl: 1.5, rSh: 0.5, rEl: 1.2, nod: 0.1 }); // low and coiled
   if (c.id === 'elio') Object.assign(s, { lean: 0.06, lSh: 1.2, lEl: 0.7, lAb: 0.3, lTw: 0.5, rSh: 0.5, rEl: 1.0, flare: 0.25 }); // a hand open, ready to cast
@@ -137,14 +138,14 @@ const ANIMS = {
     },
   },
   run: {
-    loop: true, lambda: 24, f: (t, c) => {
-      const per = c.id === 'durgan' ? 0.24 : c.id === 'clover' ? 0.27 : 0.3;
+    loop: true, lambda: 30, f: (t, c) => {
+      const per = c.id === 'durgan' ? 0.19 : c.id === 'clover' ? 0.22 : 0.23;
       const p = (t / per) * Math.PI;
       const s = Math.sin(p), co = Math.cos(p), ac = Math.abs(co);
       const r = {
-        dy: ac * 0.06 - 0.025, squash: Math.pow(1 - ac, 6) * 0.45, lean: 0.32, lHip: s * 0.95, rHip: -s * 0.95,
-        lKn: 0.3 + Math.max(0, co) * 1.5, rKn: 0.3 + Math.max(0, -co) * 1.5, lFt: Math.max(0, -s) * 0.4, rFt: Math.max(0, s) * 0.4,
-        lSh: -s * 1.0, rSh: s * 1.0, lEl: 1.35, rEl: 1.35, lAb: 0.22, rAb: 0.22, nod: -0.1, twist: -s * 0.18,
+        dy: ac * 0.07 - 0.03, squash: Math.pow(1 - ac, 6) * 0.5, lean: 0.4, lHip: s * 1.05, rHip: -s * 1.05,
+        lKn: 0.35 + Math.max(0, co) * 1.6, rKn: 0.35 + Math.max(0, -co) * 1.6, lFt: Math.max(0, -s) * 0.45, rFt: Math.max(0, s) * 0.45,
+        lSh: -s * 1.05, rSh: s * 0.7 + 0.3, lEl: 1.35, rEl: 1.25, lAb: 0.24, rAb: 0.34, wp: 0.2, nod: -0.12, twist: -s * 0.2, side: s * 0.04,
       };
       if (c.id === 'clover') Object.assign(r, { lean: 0.48, dy: ac * 0.08 - 0.04 });
       if (c.id === 'durgan') Object.assign(r, { lSh: 0.35, lEl: 0.15, lAb: -0.3, lTw: 0, side: s * 0.08, lean: 0.38 }); // shield charge
@@ -324,7 +325,7 @@ const ANIMS = {
   },
   hurt: {
     // knocked back: a snap of the head, a stagger, then settling into the stance again
-    dur: 0.5, lambda: 55, expr: 'hurt', f: (t, c, k) => keys(k, [
+    dur: 0.38, lambda: 60, expr: 'hurt', f: (t, c, k) => keys(k, [
       [0, {}],
       [0.1, { bz: -0.2, lean: -0.5, nod: -0.4, tilt: 0.22, twist: -0.2, lSh: 0.9, rSh: 0.7, lAb: 0.6, rAb: 0.7, lEl: 0.5, rEl: 0.5, squash: 0.65, dy: -0.04, lKn: 0.3, rKn: 0.45, lHip: -0.2 }, outC],
       [0.3, { bz: -0.24, lean: -0.32, nod: -0.15, tilt: 0.12, lSh: 0.5, rSh: 0.4, lAb: 0.4, rAb: 0.45, lEl: 0.6, rEl: 0.6, squash: 0.15, dy: -0.05, lKn: 0.35, rKn: 0.5 }, sm],
@@ -485,8 +486,207 @@ const ANIMS = {
 /** Lying prone after a trip (legs kicked up behind). */
 function LIE(c) { return { hrx: 1.42, dy: -c.dims.hipH * 0.84, lean: 0.06, lHip: -0.9, rHip: -0.7, lKn: 1.4, rKn: 1.1, lSh: 2.85, rSh: 2.85, lAb: 0.75, rAb: 0.75, lEl: 0.4, rEl: 0.4, nod: -0.5, tilt: 0.25 }; }
 
-export const ANIM_INFO = Object.fromEntries(Object.entries(ANIMS).map(([k, v]) => [k, { dur: v.dur || v.period || 0, impact: v.impact ?? 0.5, loop: !!v.loop }]));
+// ================================================================== the action game (v5, Hades camera)
+// Read from ~52° above: swings sweep wide and flat around the hero, lunges carry the body forward,
+// heavy hits squash into the floor. Every attack: a short anticipation, a fast smeared strike, an
+// impact hold, a recovery the game can cancel by playing the next move. Weapon-type sets are named
+// '<type>_attack1|2|3' and '<type>_special'; play('attack1') / play('special') pick the hero's
+// current type (setWeaponType). impact = fraction of dur where the hit lands; hits = all of them.
+const BRACE = { lHip: 0.38, rHip: -0.32, lKn: 0.55, rKn: 0.38, lHab: 0.14, rHab: 0.16, dy: -0.06 };
+/** Horizontal sweep. dir 1 = forehand (from the hero's right across to the left), -1 = backhand. */
+function sweepKeys(c, k, dir, o = {}) {
+  const s = stance(c), W = o.wind ?? 0.3, H = o.hit ?? 0.42, reach = o.reach ?? 1;
+  const wind = dir > 0
+    ? { ...BRACE, twist: -0.85, hry: -0.32, rSh: 0.45, rAb: 1.45, rEl: 0.55, rTw: 0.2, wp: 0.5, lSh: 0.7, lAb: 0.35, lEl: 0.9, lean: 0.08, nod: 0.04, turn: 0.35, squash: 0.25 }
+    : { ...BRACE, twist: 0.8, hry: 0.3, rSh: 1.05, rAb: -0.95, rEl: 1.25, rTw: -0.4, wp: 0.35, lSh: 0.35, lAb: 0.5, lEl: 0.6, lean: 0.1, nod: 0.04, turn: -0.35, squash: 0.25 };
+  const hit = dir > 0
+    ? { ...BRACE, lHip: 0.6, lKn: 0.7, rHip: -0.45, twist: 0.85, hry: 0.34, rSh: 1.05 * reach, rAb: -0.85, rEl: 0.12, rTw: -0.15, wp: 1.05, lSh: 0.25, lAb: 0.6, lEl: 0.7, lean: 0.32, bz: 0.2 * reach, dy: -0.1, nod: 0.08, turn: -0.3 }
+    : { ...BRACE, lHip: 0.55, lKn: 0.65, rHip: -0.4, twist: -0.85, hry: -0.34, rSh: 0.75 * reach, rAb: 1.4, rEl: 0.1, rTw: 0.3, wp: 1.05, lSh: 0.5, lAb: 0.45, lEl: 0.9, lean: 0.3, bz: 0.2 * reach, dy: -0.1, nod: 0.08, turn: 0.3 };
+  return keys(k, [
+    [0, s],
+    [W, over(wind, o.windExtra || {}), sm],
+    [W + (H - W) * 0.7, over(hit, { smear: 1, squash: -0.25, twist: hit.twist * 0.6, hry: hit.hry * 0.5 }), inQ],
+    [H, over(hit, { smear: 0.35, squash: 0.45, ...(o.hitExtra || {}) }), outQ],
+    [H + 0.18, over(hit, { squash: 0.2 }), lin],
+    [1, s, sm],
+  ]);
+}
+/** Overhead chop / slam into the floor (heavy; both arms if two-handed). */
+function chopKeys(c, k, o = {}) {
+  const s = stance(c), W = o.wind ?? 0.4, H = o.hit ?? 0.52, two = !!o.two;
+  const up = { ...BRACE, rSh: 2.95, rAb: 0.15, rEl: 0.75, rTw: 0, wp: -0.25, lean: -0.32, by: o.hop ? 0.16 : 0.03, dy: -0.02, squash: -0.35, nod: -0.25, twist: 0.05, lSh: two ? 2.85 : 0.6, lAb: two ? -0.1 : 0.5, lEl: two ? 0.85 : 0.9, lKn: 0.4, rKn: 0.3 };
+  const down = { ...BRACE, rSh: 0.55, rAb: -0.05, rEl: 0.15, wp: 0.45, lean: 0.62, bz: 0.26, dy: -0.17, lHip: 0.75, lKn: 1.0, rHip: -0.35, rKn: 0.7, nod: 0.32, lSh: two ? 0.6 : 0.4, lAb: two ? -0.25 : 0.5, lEl: two ? 0.35 : 0.8 };
+  return keys(k, [
+    [0, s],
+    [W * 0.45, over(s, { squash: 0.55, dy: -0.12, lKn: 0.9, rKn: 0.75, lean: 0.3 }), sm],
+    [W, up, outQ],
+    [W + (H - W) * 0.6, over(down, { by: o.hop ? 0.06 : 0, rSh: 1.5, lSh: two ? 1.5 : 0.4, lean: 0.25, smear: 1, squash: -0.3 }), inQ],
+    [H, over(down, { smear: 0.3, squash: 1.0 }), outQ],
+    [H + 0.22, over(down, { squash: 0.4 }), lin],
+    [1, s, sm],
+  ]);
+}
+/** Forward thrust (sword stab, spear jab, dagger stab), optionally lunging far. */
+function thrustKeys(c, k, o = {}) {
+  const s = stance(c), W = o.wind ?? 0.32, H = o.hit ?? 0.42, L = o.lunge ?? 1;
+  const back = { ...BRACE, rSh: 0.4, rEl: 1.95, rAb: 0.35, rTw: 0.3, wp: 0.75, twist: -0.55, lean: 0.02, bz: -0.08, squash: 0.35, lSh: 1.0, lAb: 0.4, lEl: 0.5, lKn: 0.65, rKn: 0.5, turn: 0.25 };
+  const out = { ...BRACE, lHip: 0.85, lKn: 0.75, rHip: -0.55, rKn: 0.2, rSh: 1.55, rEl: 0.0, rAb: 0.12, rTw: 0.2, wp: 1.15, twist: 0.5, lean: 0.48, bz: 0.34 * L, dy: -0.11, lSh: 0.15, lAb: 0.65, lEl: 0.7, nod: 0.12, turn: -0.25 };
+  return keys(k, [
+    [0, s],
+    [W, back, sm],
+    [W + (H - W) * 0.6, over(out, { bz: out.bz * 0.7, smear: 1, squash: -0.35 }), inQ],
+    [H, over(out, { smear: 0.3, squash: 0.35 }), outQ],
+    [H + 0.16, over(out, { squash: 0.15 }), lin],
+    [1, s, sm],
+  ]);
+}
+/** A two-hand cast toward the front (staff bolts, skill casts). */
+function castKeys(c, k, o = {}) {
+  const s = stance(c), W = o.wind ?? 0.38, H = o.hit ?? 0.48;
+  const rel = { ...BRACE, lSh: 1.6, rSh: 1.55, lEl: 0.1, rEl: 0.12, lAb: 0.3, rAb: 0.25, lTw: 0.4, rTw: 0.3, wp: 0.9, lean: 0.3, bz: 0.12, dy: -0.07, nod: 0.05, flare: 1 };
+  return keys(k, [
+    [0, s],
+    [W, over(s, { lSh: -0.15, rSh: 0.1, lEl: 1.6, rEl: 1.4, lAb: 0.6, rAb: 0.5, lTw: -0.8, rTw: -0.5, wp: -0.3, lean: -0.15, by: 0.04, squash: 0.35, nod: -0.25, flare: 0.6, bz: -0.04 }), sm],
+    [W + (H - W) * 0.6, over(rel, { smear: 0.8, squash: -0.3, flare: 0.8 }), inQ],
+    [H, over(rel, { smear: 0.2, squash: 0.3 }), outQ],
+    [H + 0.24, over(rel, { flare: 0.9 }), lin],
+    [1, s, sm],
+  ]);
+}
+/** Whirl: the whole figure spins (hry) turns times with the weapon held out. */
+function spinPose(c, k, turns, o = {}) {
+  const s = stance(c);
+  const out = { ...BRACE, lKn: 0.7, rKn: 0.7, lHip: 0.45, rHip: 0.45, lHab: 0.3, rHab: 0.3, rSh: 0.7, rAb: 1.45, rEl: 0.05, rTw: 0.1, wp: 1.15, lSh: 0.5, lAb: 1.0, lEl: 0.3, lean: 0.18, dy: -0.12, nod: 0.1 };
+  const spinK = sm(seg(k, o.from ?? 0.12, o.to ?? 0.85));
+  const p = keys(k, [[0, s], [o.from ?? 0.12, over(out, { twist: -0.6, squash: 0.4 }), sm], [o.to ?? 0.85, over(out, { twist: 0.3 }), lin], [1, s, sm]]);
+  p.hry = (p.hry || 0) + spinK * turns * TAU;
+  p.smear = k > (o.from ?? 0.12) && k < (o.to ?? 0.85) ? 1 : 0;
+  p.by = Math.sin(seg(k, o.from ?? 0.12, o.to ?? 0.85) * Math.PI) * (o.lift ?? 0.04);
+  return p;
+}
+const SW = (dur, impact, f, extra = {}) => ({ dur, impact, lambda: 70, swing: true, expr: 'determined', f, ...extra });
+const ACTION = {
+  // Durgan's axe: two heavy one-hand cleaves behind the shield, then a hopping overhead chop
+  axe: {
+    attack1: SW(0.42, 0.4, (t, c, k) => sweepKeys(c, k, 1, { wind: 0.3, hit: 0.4, reach: 1.1 })),
+    attack2: SW(0.44, 0.42, (t, c, k) => sweepKeys(c, k, -1, { wind: 0.3, hit: 0.42, reach: 1.1 })),
+    attack3: SW(0.66, 0.55, (t, c, k) => chopKeys(c, k, { wind: 0.42, hit: 0.55, hop: true }), { expr: 'angry' }),
+    special: SW(0.85, 0.3, (t, c, k) => spinPose(c, k, 2, { from: 0.15, to: 0.82, lift: 0.05 }), { hits: [0.32, 0.5, 0.68], wrapHry: true, expr: 'angry' }),
+  },
+  hammer: {
+    attack1: SW(0.5, 0.44, (t, c, k) => sweepKeys(c, k, 1, { wind: 0.34, hit: 0.44, reach: 1, windExtra: { lSh: 1.0, lAb: 0.1, lEl: 1.2 } })),
+    attack2: SW(0.52, 0.46, (t, c, k) => sweepKeys(c, k, -1, { wind: 0.34, hit: 0.46, reach: 1 })),
+    attack3: SW(0.8, 0.58, (t, c, k) => chopKeys(c, k, { wind: 0.46, hit: 0.58, hop: true, two: true }), { expr: 'angry' }),
+    special: SW(1.0, 0.62, (t, c, k) => chopKeys(c, k, { wind: 0.5, hit: 0.62, hop: true, two: true }), { expr: 'angry', jump: 0.35 }),
+  },
+  sword: {
+    attack1: SW(0.36, 0.38, (t, c, k) => sweepKeys(c, k, 1, { wind: 0.28, hit: 0.38 })),
+    attack2: SW(0.38, 0.4, (t, c, k) => sweepKeys(c, k, -1, { wind: 0.28, hit: 0.4 })),
+    attack3: SW(0.46, 0.42, (t, c, k) => thrustKeys(c, k, { wind: 0.32, hit: 0.42, lunge: 1.4 })),
+    special: SW(0.6, 0.4, (t, c, k) => thrustKeys(c, k, { wind: 0.3, hit: 0.4, lunge: 2.4 }), { dash: 3.2 }),
+  },
+  spear: {
+    attack1: SW(0.38, 0.42, (t, c, k) => thrustKeys(c, k, { wind: 0.3, hit: 0.42, lunge: 1.1 })),
+    attack2: SW(0.38, 0.42, (t, c, k) => thrustKeys(c, k, { wind: 0.28, hit: 0.42, lunge: 1.3 })),
+    attack3: SW(0.56, 0.46, (t, c, k) => sweepKeys(c, k, 1, { wind: 0.34, hit: 0.46, reach: 1.3 })),
+    special: SW(0.62, 0.5, (t, c, k) => {
+      // the throw: the spear goes back over the shoulder, the whole body uncoils (the game hides the held mesh at impact)
+      const s = stance(c);
+      const back = { ...BRACE, rSh: 2.6, rAb: 0.5, rEl: 1.4, rTw: 0.3, wp: 0.2, twist: -0.75, lean: -0.15, lSh: 1.4, lAb: 0.2, lEl: 0.2, squash: 0.3, turn: 0.3 };
+      const rel = { ...BRACE, lHip: 0.85, lKn: 0.7, rSh: 1.7, rAb: -0.2, rEl: 0.05, wp: 0.9, twist: 0.7, lean: 0.45, bz: 0.15, lSh: 0.3, lAb: 0.6, lEl: 0.5, nod: 0.1 };
+      return keys(k, [[0, s], [0.36, back, sm], [0.46, over(rel, { smear: 1 }), inQ], [0.5, over(rel, { squash: 0.3 }), outQ], [1, s, sm]]);
+    }, { throws: true }),
+  },
+  dagger: {
+    attack1: SW(0.28, 0.4, (t, c, k) => sweepKeys(c, k, 1, { wind: 0.26, hit: 0.4, reach: 1.3, hitExtra: { by: 0.05, lean: 0.45 } })),
+    attack2: SW(0.28, 0.4, (t, c, k) => sweepKeys(c, k, -1, { wind: 0.26, hit: 0.4, reach: 1.3, hitExtra: { by: 0.05, lean: 0.45 } })),
+    attack3: SW(0.42, 0.34, (t, c, k) => {
+      // a double stab: two quick jabs, the second deeper
+      const a = thrustKeys(c, Math.min(1, k * 2), { wind: 0.36, hit: 0.62, lunge: 1.3 });
+      return k < 0.5 ? a : thrustKeys(c, (k - 0.5) * 2, { wind: 0.24, hit: 0.46, lunge: 1.9 });
+    }, { hits: [0.31, 0.73] }),
+    special: SW(0.8, 0.15, (t, c, k) => {
+      // flurry: a blur of jabs, alternating high and low
+      const s = stance(c), e = sm(seg(k, 0, 0.12)) * (1 - sm(seg(k, 0.85, 1)));
+      const j = Math.sin(t * 52), j2 = Math.sin(t * 26);
+      return over(s, { ...BRACE, lean: 0.45 * e + s.lean * (1 - e), bz: (0.22 + Math.max(0, j) * 0.1) * e, rSh: 1.3 + j * 0.45 * e, rEl: 0.6 - j * 0.6 * e, rAb: 0.2 + j2 * 0.7 * e, wp: 1.1 * e, lSh: 1.1 - j * 0.45 * e, lEl: 0.7 + j * 0.5 * e, lAb: 0.3 - j2 * 0.4 * e, twist: j2 * 0.5 * e, smear: e > 0.5 ? 0.8 : 0, squash: Math.max(0, j) * 0.3 * e, by: Math.abs(j2) * 0.03 * e });
+    }, { hits: [0.15, 0.27, 0.39, 0.51, 0.63, 0.75] }),
+  },
+  staff: {
+    attack1: SW(0.4, 0.42, (t, c, k) => sweepKeys(c, k, 1, { wind: 0.3, hit: 0.42, reach: 1 })),
+    attack2: SW(0.42, 0.44, (t, c, k) => castKeys(c, k, { wind: 0.32, hit: 0.44 })),
+    attack3: SW(0.62, 0.52, (t, c, k) => chopKeys(c, k, { wind: 0.42, hit: 0.52, two: true }), { expr: 'angry' }),
+    special: SW(0.7, 0.5, (t, c, k) => castKeys(c, k, { wind: 0.42, hit: 0.5 })),
+  },
+};
+const WEAPON_TYPES = Object.keys(ACTION);
+for (const wt of WEAPON_TYPES) for (const [n, a] of Object.entries(ACTION[wt])) ANIMS[wt + '_' + n] = a;
+Object.assign(ANIMS, {
+  // a dive-roll-free Hades dash: low, stretched, arms swept back, a squash on landing
+  dash: {
+    dur: 0.24, lambda: 80, expr: 'determined', f: (t, c, k) => keys(k, [
+      [0, { ...BRACE, squash: 0.45, dy: -0.1, lean: 0.35 }],
+      [0.25, { lean: 0.75, dy: -0.12, bz: 0.08, lHip: 0.9, lKn: 1.4, rHip: -0.6, rKn: 0.5, lSh: -0.9, rSh: -0.9, lAb: 0.4, rAb: 0.4, lEl: 0.4, rEl: 0.4, nod: -0.15, smear: 1, squash: -0.4 }, outQ],
+      [0.75, { lean: 0.6, dy: -0.1, bz: 0.06, lHip: 0.7, lKn: 1.2, rHip: -0.4, rKn: 0.7, lSh: -0.7, rSh: -0.7, lAb: 0.45, rAb: 0.45, lEl: 0.5, rEl: 0.5, nod: -0.1, smear: 0.6, squash: -0.2 }, lin],
+      [1, { ...BRACE, lean: 0.3, squash: 0.5, dy: -0.1, lSh: 0.2, rSh: 0.2 }, inQ],
+    ]),
+  },
+  // attack out of a dash: a lunging cleave that carries the dash's speed
+  dashAttack: SW(0.46, 0.34, (t, c, k) => {
+    const p = sweepKeys(c, k, 1, { wind: 0.2, hit: 0.34, reach: 1.25 });
+    return { ...p, bz: (p.bz || 0) + Math.sin(seg(k, 0, 0.5) * Math.PI) * 0.18 };
+  }),
+  die: {
+    // a stagger, the knees go, a slump onto the back, still
+    dur: 1.1, lambda: 34, expr: 'hurt', exact: true, then: 'dead', f: (t, c, k) => {
+      const H = c.dims.hipH;
+      return keys(k, [
+        [0, {}],
+        [0.12, { bz: -0.15, lean: -0.45, nod: -0.4, tilt: 0.25, lSh: 0.8, rSh: 0.6, lAb: 0.7, rAb: 0.8, squash: 0.5, lKn: 0.3, rKn: 0.4 }, outC],
+        [0.4, { bz: -0.1, lean: 0.35, nod: 0.45, tilt: 0.15, lSh: 0.2, rSh: 0.1, lAb: 0.3, rAb: 0.3, dy: -H * 0.35, lHip: 1.0, rHip: 0.9, lKn: 1.8, rKn: 1.7 }, sm],
+        [0.65, { hrx: -0.9, dy: -H * 0.75, lean: -0.2, nod: -0.3, lSh: 1.4, rSh: 1.2, lAb: 0.9, rAb: 1.0, lHip: 1.1, rHip: 0.6, lKn: 1.2, rKn: 0.9 }, inQ],
+        [0.78, { hrx: -1.45, dy: -H * 0.86, lean: -0.1, nod: -0.25, lSh: 2.2, rSh: 1.8, lAb: 1.1, rAb: 1.2, lHip: 0.8, rHip: 0.4, lKn: 0.9, rKn: 0.6, squash: 0.7 }, outQ],
+        [1, DEAD(c), sm],
+      ]);
+    },
+  },
+  dead: { loop: true, exact: true, lambda: 8, expr: 'hurt', f: (t, c) => DEAD(c) },
+  interact: {
+    // lean in and reach: a lever, a chest lid, an anvil
+    dur: 0.55, impact: 0.45, lambda: 40, f: (t, c, k) => keys(k, [
+      [0, {}],
+      [0.3, { lean: 0.25, dy: -0.05, rSh: 0.6, rEl: 1.3, rAb: 0.2, lSh: 0.3, nod: 0.2, lKn: 0.3, rKn: 0.2 }, sm],
+      [0.45, { lean: 0.42, bz: 0.08, dy: -0.07, rSh: 1.45, rEl: 0.15, rAb: 0.05, lSh: 0.5, lEl: 0.6, nod: 0.25, lHip: 0.4, lKn: 0.5, squash: 0.25 }, outQ],
+      [0.7, { lean: 0.35, bz: 0.06, dy: -0.06, rSh: 1.3, rEl: 0.3, lSh: 0.4, nod: 0.22, lHip: 0.35, lKn: 0.45 }, lin],
+      [1, {}, sm],
+    ]),
+  },
+  pickup: {
+    // a quick crouch, the hand sweeps something up and pockets it
+    dur: 0.48, impact: 0.42, lambda: 44, f: (t, c, k) => keys(k, [
+      [0, {}],
+      [0.35, { dy: -c.dims.hipH * 0.35, lean: 0.55, nod: 0.35, lHip: 1.0, lKn: 1.6, rHip: 0.5, rKn: 1.5, rSh: 0.9, rEl: 0.2, rAb: 0.05, lSh: 0.3, squash: 0.4 }, sm],
+      [0.5, { dy: -c.dims.hipH * 0.3, lean: 0.45, nod: 0.3, lHip: 0.9, lKn: 1.5, rHip: 0.45, rKn: 1.4, rSh: 0.7, rEl: 1.2, rAb: 0.1 }, outQ],
+      [0.8, { by: 0.03, lean: -0.05, rSh: 0.4, rEl: 1.4, rAb: 0.3, nod: -0.05, squash: -0.2 }, sm],
+      [1, {}, sm],
+    ]), exact: true,
+  },
+  talk: {
+    // standing chat: a hand that talks, weight shifting, little nods
+    loop: true, lambda: 18, f: (t, c) => {
+      const g = Math.sin(t * 2.7), g2 = Math.sin(t * 1.3);
+      return { lean: 0.03 + g2 * 0.03, twist: g2 * 0.12, rSh: 0.85 + g * 0.3, rEl: 1.1 + g * 0.3, rAb: 0.2 + Math.max(0, g) * 0.25, rTw: g * 0.3, lAb: 0.25, lEl: 0.4, nod: Math.sin(t * 5.4) * 0.06, tilt: g2 * 0.1, turn: g2 * 0.15, side: g2 * 0.03, dy: Math.sin(t * 2.2) * 0.004 };
+    },
+  },
+});
+ANIMS.victoryPose = ANIMS.victory;
+/** Flat on the back (the end of 'die'). */
+function DEAD(c) { return { hrx: -1.5, dy: -c.dims.hipH * 0.88, lean: -0.05, nod: -0.2, tilt: 0.3, lSh: 2.4, rSh: 2.0, lAb: 1.2, rAb: 1.3, lEl: 0.3, rEl: 0.5, lHip: 0.5, rHip: 0.2, lKn: 0.6, rKn: 0.3, lHab: 0.2, rHab: 0.15 }; }
+const ALIAS = new Set(['attack1', 'attack2', 'attack3', 'special']);
+
+export const ANIM_INFO = Object.fromEntries(Object.entries(ANIMS).map(([k, v]) => [k, { dur: v.dur || v.period || 0, impact: v.impact ?? 0.5, hits: v.hits ? v.hits.map((h) => h * (v.dur || 0)) : null, loop: !!v.loop }]));
 export const ANIM_NAMES = Object.keys(ANIMS);
+export { WEAPON_TYPES };
 const SEATED_OK = new Set(['sit', 'sitTalk', 'read', 'argue', 'laugh', 'sleep', 'idle', 'wave', 'point', 'shrug', 'cheer', 'hammer', 'present', 'carry', 'hug']);
 
 // Body language stands in for faces: each mood leans, tilts and settles the figure a little.
@@ -536,11 +736,15 @@ export class Character {
     this._wp = new THREE.Vector3(); this._prevWp = null; this.vel = new THREE.Vector3(); this.velLocal = new THREE.Vector3();
     this._prevSh = 0; this.swing = new Spring(60, 9);
     this._prevPose = { lean: 0, twist: 0, dy: 0 }; this.poseVel = { lean: 0, twist: 0, dy: 0 };
-    this.holdScale = 0.64;
+    this.holdScale = 0.82; // chibi weapons read oversized (and from the action camera, they must)
+    this.weaponType = { bran: 'hammer', elio: 'staff', durgan: 'axe', clover: 'dagger' }[id] || 'sword';
+    this.facing = 0; this.facingTarget = null; this.turnRate = 16;
+    this.animAlias = 'idle';
     this.stone = 0;
     this.upright = [];
     BUILD[id](this);
     buildProps(this);
+    installRim(this.mat, this._rimU = { uRim: { value: new THREE.Color(1.0, 0.86, 0.66).multiplyScalar(0.32) }, uRimPow: { value: 3.0 }, uLift: { value: 0.1 } });
     if (!this.height) this.height = this.dims.hipH + this.dims.torsoH + this.dims.neckH + (this.headTop || 0.4);
     this.applyPose(this.pose);
     this.group.traverse((o) => { o.userData.character = this; });
@@ -642,7 +846,15 @@ export class Character {
   }
 
   // ---------------------------------------------------------- API
+  /**
+   * Play an animation. Action names 'attack1'|'attack2'|'attack3'|'special' resolve to the current
+   * weapon type's set ('<type>_attack1' …); 'special_<type>' names a type's special directly.
+   * opts: { speed, then, onDone, restart, expr, weapon (a type for this one call) }.
+   */
   play(name, opts = {}) {
+    this.animAlias = name;
+    if (name.startsWith('special_')) name = name.slice(8) + '_special';
+    else if (ALIAS.has(name)) name = (opts.weapon || this.weaponType) + '_' + name;
     const a = ANIMS[name];
     if (!a) return;
     if (a.loop) this.loopAnim = name;
@@ -656,8 +868,29 @@ export class Character {
     for (const k in this.props) this.props[k].visible = pr.includes(k);
     if (name === 'hurt') this.flash('#ff9a82', 0.22);
   }
-  /** Seconds from start of a one-shot anim until its impact frame. */
-  impactTime(name) { const a = ANIMS[name]; return a ? (a.dur || a.period || 0.5) * (a.impact ?? 0.5) / (this.animOpts.speed || 1) : 0; }
+  /** The real anim name behind an alias for the current weapon type. */
+  resolveAnim(name, weapon = this.weaponType) { return name.startsWith('special_') ? name.slice(8) + '_special' : ALIAS.has(name) ? weapon + '_' + name : name; }
+  /** Seconds from start of a one-shot anim until its (first) impact frame, at the given speed. */
+  impactTime(name, speed = this.animOpts.speed || 1) { const a = ANIMS[this.resolveAnim(name)]; return a ? (a.dur || a.period || 0.5) * (a.hits ? a.hits[0] : a.impact ?? 0.5) / speed : 0; }
+  /** Every impact of a multi-hit anim (spin, flurry, double stab), in seconds. */
+  impactTimes(name, speed = 1) { const a = ANIMS[this.resolveAnim(name)]; if (!a) return []; const d = a.dur || a.period || 0.5; return (a.hits || [a.impact ?? 0.5]).map((h) => (d * h) / speed); }
+  /** Full length of a one-shot anim in seconds (0 for loops). */
+  animDuration(name, speed = 1) { const a = ANIMS[this.resolveAnim(name)]; return a && a.dur ? a.dur / speed : 0; }
+  /** Which attack set play('attack1') uses: 'axe' | 'hammer' | 'sword' | 'spear' | 'dagger' | 'staff'. */
+  setWeaponType(t) { if (ACTION[t]) this.weaponType = t; }
+  /**
+   * Face a direction (radians, atan2(dx, dz): 0 = +Z). Turns smoothly at turnRate unless instant.
+   * The character then owns group.rotation.y.
+   */
+  setFacing(angle, opts = {}) {
+    this.facingTarget = angle;
+    if (opts.instant || this._facingInit !== true) { this.facing = angle; this.group.rotation.y = angle; this._facingInit = true; }
+  }
+  /**
+   * Readability against busy floors: rim strength (0 = off) and colour, plus self-light lift (0..0.3).
+   * Cutscenes can call setRim(0, …, 0) for a plain look.
+   */
+  setRim(k = 0.32, color = '#ffdba8', lift = 0.1) { this._rimU.uRim.value.set(color).multiplyScalar(k); this._rimU.uLift.value = lift; }
   /** No faces: a mood becomes posture (and Elio's glints, Clover's ears). */
   setExpression(e, opts = {}) {
     this.expr = EXPR_POSE[e] ? e : 'neutral';
@@ -671,7 +904,10 @@ export class Character {
     const prev = this.held[hand];
     if (prev && prev.parent === mount) mount.remove(prev);
     this.held[hand] = mesh || null;
-    if (mesh) { mesh.position.set(0, 0, 0); mesh.rotation.set(0, 0, 0); mesh.userData.held = true; mount.add(mesh); }
+    if (mesh) {
+      mesh.position.set(0, 0, 0); mesh.rotation.set(0, 0, 0); mesh.userData.held = true; mount.add(mesh);
+      for (const m of mesh.userData.bladeMats || []) if (!m.userData.rimmed) { installRim(m, this._rimU); m.userData.rimmed = true; }
+    }
     return prev;
   }
   showBackItem(b) { if (this.backItem) this.backItem.visible = b; }
@@ -713,6 +949,13 @@ export class Character {
     dt = Math.min(dt, 0.1);
     this._stoneSync();
     if (this.stone >= 1) return; // a statue: nothing moves
+    if (this.facingTarget !== null) {
+      // shortest way round, fast but never a snap
+      let d = this.facingTarget - this.facing;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this.facing += d * (1 - Math.exp(-this.turnRate * dt));
+      this.group.rotation.y = this.facing;
+    }
     dt *= 1 - this.stone * 0.85; // stiffening as the stone climbs
     this.time += dt;
     this.animT += dt * (this.animOpts.speed || 1);
@@ -721,6 +964,7 @@ export class Character {
     if (a.dur) {
       const k = this.animT / a.dur;
       if (k >= 1) {
+        if (a.wrapHry) this.pose.hry -= TAU * Math.round(this.pose.hry / TAU); // a whirl ends facing the way it began
         const cb = this.animOpts.onDone;
         const next = this.animOpts.then || a.then || this.loopAnim;
         this.play(next === this.anim ? 'idle' : next);
@@ -767,7 +1011,7 @@ export class Character {
       const w = (this.pose.rSh - this._prevSh) / dt;
       this._prevSh = this.pose.rSh;
       const lag = this.swing.step(clamp(-w * 0.035, -0.5, 0.5), dt);
-      if (this.rig.mountR) this.rig.mountR.rotation.x = Math.PI / 2 - 0.55 + lag;
+      if (this.rig.mountR) { this.rig.mountR.rotation.x = Math.PI / 2 - 0.55 + lag + this.pose.wp; this.rig.mountR.rotation.y = this.pose.wy; }
       for (const k in this._prevPose) { this.poseVel[k] = lerp(this.poseVel[k], (this.pose[k] - this._prevPose[k]) / dt, 1 - Math.exp(-20 * dt)); this._prevPose[k] = this.pose[k]; }
     }
 
@@ -891,6 +1135,24 @@ function buildProps(c) {
   }
 }
 
+// ------------------------------------------------------------------ rim light (readability from the action camera)
+/** A view-angle rim: faces turned away from the camera (the silhouette) catch a warm edge light. */
+function installRim(m, U) {
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    prev && prev(sh, r);
+    sh.uniforms.uRim = U.uRim; sh.uniforms.uRimPow = U.uRimPow; sh.uniforms.uLift = U.uLift || { value: 0 };
+    // rim on the silhouette + a little self-light so a hero never sinks below the floor in a dark room
+    sh.fragmentShader = 'uniform vec3 uRim; uniform float uRimPow; uniform float uLift;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', `float rimK = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), uRimPow);
+  outgoingLight += uRim * rimK + diffuseColor.rgb * uLift;
+  #include <opaque_fragment>`);
+  };
+  const pk = m.customProgramCacheKey && m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : () => '';
+  m.customProgramCacheKey = () => pk() + '|rim1';
+  m.needsUpdate = true;
+}
+export { installRim };
+
 // ------------------------------------------------------------------ petrification shader
 const STONE_GLSL = `
 uniform float uStoneY; uniform float uStoneOn; varying vec3 vStoneW;
@@ -927,7 +1189,8 @@ function installStone(c) {
     }
   }`);
     };
-    m.customProgramCacheKey = () => 'stone1';
+    const pk = m.customProgramCacheKey && m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : () => '';
+    m.customProgramCacheKey = () => pk() + '|stone1';
     m.needsUpdate = true;
   }
 }

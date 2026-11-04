@@ -1,163 +1,112 @@
-// Run flow: which scene follows which (docs/REDESIGN.md §3). Scenes call these instead of game.go.
-//   startRun → cutscene 'intro' → cutscene 'chase' → delve (act start)
-//   delve → enterNode → combat | vein | event | treasure | camp → finishNode → delve (walk on)
-//   boss → cutscene 'rescue_<friend>' → next act's delve … last boss → victory
+// Run flow (docs/REDESIGN.md v5 §3): which scene follows which. Scenes call these instead of game.go.
+//   startRun → (first time: cutscene 'intro' → tutorial with Morel) → dungeon stage 0
+//   dungeon: rooms → boss → hole → nextFloor → dungeon stage 1 … → victory
+//   death anywhere → gameOver
+// Overlays: openBag, openCraft, openMine. Older names (enterNode, finishNode, …) stay as thin
+// wrappers until the old first-person scenes are removed.
 import { Run } from '../systems/run.js';
-import * as RG from '../data/regions.js';
+import * as Regions from '../data/regions.js';
 import * as MON from '../data/monsters.js';
-import * as EV from '../data/events.js';
-import * as ENC from '../systems/encounters.js';
-import * as MG from '../systems/mapgen.js';
 import { CHARACTER_ORDER } from '../data/characters.js';
 import { save } from '../core/save.js';
 import { checkUnlocks } from '../systems/unlocks.js';
 
-const ACTS = () => RG.ACTS || RG.REGIONS;
-export const actOf = (run) => (run ? run.act ?? run.region ?? 0 : 0);
-export const actDef = (run) => { const A = ACTS(); return A[Math.min(A.length - 1, actOf(run))] || A[0]; };
-
-/** Monster defs for an act and tier ('normal' | 'elite' | 'boss'). */
-export function monsterPool(act, tier = 'normal') {
-  const pool = MON.actPool ? MON.actPool(act, tier) : MON.regionPool ? MON.regionPool(act, tier) : [];
-  if (pool && pool.length) return pool;
-  const all = Object.values(MON.MONSTERS || {});
-  return all.filter((m) => m.tier === tier).slice(0, 4);
-}
-/** The monster id for a node (elites/bosses by act, normals from the act pool). `node` may be a type string. */
-export function monsterFor(run, nodeOrType = 'monster') {
-  const node = typeof nodeOrType === 'string' ? null : nodeOrType;
-  const type = node ? node.type : nodeOrType;
-  const tier = type === 'boss' ? 'boss' : type === 'elite' ? 'elite' : 'normal';
-  if (ENC.monsterFor) return ENC.monsterFor(run, node || { id: 'x' + run.stats.floors, type, seed: run.rng.int ? run.rng.int(0, 1e6) : Math.random() * 1e6 }, tier);
-  const act = actOf(run), A = actDef(run), rng = run.rng;
-  if (tier === 'boss') return A.boss;
-  const pool = monsterPool(act, tier);
-  return pool.length ? rng.pick(pool).id : (A.elite && A.elite[0]);
-}
-
-/** The friend a herald of this act holds (rescue order = CHARACTER_ORDER minus the hero). */
-export function friendOf(run, act = actOf(run)) {
-  if (run.friendForAct) return run.friendForAct(act);
-  if (run.statues && run.statues.length) return run.statues[0];
-  const order = CHARACTER_ORDER.filter((id) => id !== run.char);
-  return order[act] || null;
-}
+const stages = () => Regions.STAGES || Regions.ACTS || Regions.REGIONS || [];
+const seen = () => (save.data.seen || (save.data.seen = {}));
+const markSeen = (k) => { seen()[k] = true; save.write(); };
 
 // ------------------------------------------------------------------ run start
-export function startRun(game, charId, seed) {
+/** Start a run with a hero (only Durgan at first). First run: the intro, then Morel's tutorial. */
+export function startRun(game, charId = 'durgan', seed) {
   game.run = new Run(charId, seed);
-  const chase = () => game.go('cutscene', { id: 'chase', char: charId, onDone: () => game.go('delve', { start: true }, { transition: 'fade' }) }, { transition: 'none' });
-  game.go('cutscene', { id: 'intro', char: charId, onDone: chase }, { transition: 'iris' });
+  const toDungeon = () => game.go('dungeon', { stage: 0, newFloor: true }, { transition: 'fade', dur: 0.8 });
+  const tutorial = () => {
+    if (game.scenes.tutorial && !seen().v5tutorial) {
+      game.go('tutorial', { char: charId, onDone: () => { markSeen('v5tutorial'); toDungeon(); } }, { transition: 'fade' });
+    } else toDungeon();
+  };
+  if (game.scenes.cutscene && !seen().v5intro) {
+    game.go('cutscene', { id: 'intro', char: charId, onDone: () => { markSeen('v5intro'); tutorial(); } }, { transition: 'iris' });
+  } else tutorial();
 }
 
-// ------------------------------------------------------------------ nodes
-/**
- * Delve arrived at a node: route to its first-person scene (systems/encounters.js decides what waits).
- * opts.ambush: a monster id that jumps you in the tunnel first — the fight happens on the way, and
- * the room itself waits (run.flags.pendingNode) until finishNode sends you on into it.
- */
-export function enterNode(game, node, opts = {}) {
+/** Boss beaten and the hole taken: the next stage, or the ending after the last. */
+export function nextFloor(game) {
   const run = game.run;
-  if (opts.ambush) {
-    run.flags.pendingNode = node.id;
-    const id = typeof opts.ambush === 'string' ? opts.ambush : monsterFor(run, 'monster');
-    run.flags.lastMonster = id;
-    return game.go('combat', { node: run.map.nodes[run.map.current], monster: id, ambush: true }, { transition: 'none' });
-  }
-  if (MG.arriveAt) MG.arriveAt(run.map, node.id);
-  else { run.map.current = node.id; if (!run.map.visited.includes(node.id)) run.map.visited.push(node.id); }
-  run.stats.floors = (run.stats.floors || 0) + 1;
-  const enc = ENC.encounterFor ? ENC.encounterFor(run, node) : legacyEncounter(run, node);
-  if (!enc) return game.go('delve', {}, { transition: 'fade' });
-  if (enc.scene === 'combat') run.flags.lastMonster = enc.params.monster;
-  const dur = enc.scene === 'camp' || (enc.params && enc.params.boss) ? 0.6 : 0.35;
-  return game.go(enc.scene, enc.params, { transition: 'fade', dur });
-}
-function legacyEncounter(run, node) {
-  const t = node.type;
-  if (t === 'monster' || t === 'elite' || t === 'boss') return { scene: 'combat', params: { node, monster: monsterFor(run, t), elite: t === 'elite', boss: t === 'boss' } };
-  if (t === 'vein' || t === 'mining') return { scene: 'vein', params: { node } };
-  if (t === 'event') return { scene: 'event', params: { node, event: pickEvent(run).id } };
-  if (t === 'treasure' || t === 'camp') return { scene: t, params: { node } };
-  return null;
-}
-
-/** A fresh event for this act (each event at most once per run while others remain). */
-export function pickEvent(run, rng = run.rng) {
-  if (ENC.eventFor) { const id = ENC.eventFor(run, run.map.nodes[run.map.current]); const ev = (EV.EVENTS || []).find((e) => e.id === id); if (ev) return ev; }
-  const act = actOf(run);
-  const all = EV.EVENTS || [];
-  const seen = run.flags.events || (run.flags.events = []);
-  const inAct = (e) => (e.acts || e.regions || [act]).includes(act);
-  let pool = all.filter((e) => inAct(e) && !seen.includes(e.id));
-  if (!pool.length) pool = all.filter((e) => !seen.includes(e.id));
-  if (!pool.length) pool = all;
-  const ev = rng.pick(pool);
-  seen.push(ev.id);
-  return ev;
-}
-
-/** Encounter done. A boss frees a friend and opens the next act; anything else walks on. */
-export function finishNode(game, opts = {}) {
-  const run = game.run;
-  // a tunnel ambush is over: walk on into the room it was guarding
-  if (run.flags.pendingNode !== undefined && run.flags.pendingNode !== null) {
-    const id = run.flags.pendingNode;
-    run.flags.pendingNode = null;
-    const next = run.map.nodes[id];
-    if (next) return enterNode(game, next);
-  }
-  const node = run.map.nodes[run.map.current];
-  if (node) node.done = true;
-  if (node && node.type === 'boss') {
-    run.stats.bosses = (run.stats.bosses || 0) + 1;
-    if (actOf(run) >= ACTS().length - 1) return victory(game);
-    const friend = friendOf(run);
-    if (friend && run.rescue) run.rescue(friend);
-    const next = () => {
-      if (run.nextAct) run.nextAct(); else if (run.nextRegion) run.nextRegion();
-      game.go('delve', { start: true }, { transition: 'fade' });
-    };
-    if (!friend) return next();
-    return game.go('cutscene', { id: 'rescue_' + friend, char: run.char, friend, onDone: next }, { transition: 'fade' });
-  }
-  game.go('delve', { from: node ? node.id : null }, { transition: opts.transition || 'fade', dur: opts.dur ?? 0.4 });
+  if (!run) return game.go('title', {}, { transition: 'fade' });
+  const next = (run.stage ?? 0) + 1;
+  if (next >= Math.max(1, stages().length)) return victory(game);
+  run.stage = next;
+  run.floorN = (run.floorN || 0) + 1;
+  if (run.stats) run.stats.floors = (run.stats.floors || 0) + 1;
+  if (typeof run.nextStage === 'function') run.nextStage(next);
+  if (next > (save.data.stats.bestRegion || 0)) { save.data.stats.bestRegion = next; save.write(); }
+  game.go('dungeon', { stage: next, newFloor: true }, { transition: 'fade', dur: 1.0 });
 }
 
 export function gameOver(game, cause = '') {
   const run = game.run;
-  save.data.stats.deaths++;
+  save.data.stats.deaths = (save.data.stats.deaths || 0) + 1;
   save.write();
-  checkUnlocks();
-  game.go('gameover', { cause, act: actOf(run), region: actOf(run) }, { transition: 'fade', dur: 1.2 });
+  try { checkUnlocks(); } catch (e) { /* data not ready */ }
+  game.go('gameover', { cause, region: run ? run.stage ?? 0 : 0, stage: run ? run.stage ?? 0 : 0 }, { transition: 'fade', dur: 1.2 });
 }
 
 export function victory(game) {
-  save.data.stats.wins++;
+  save.data.stats.wins = (save.data.stats.wins || 0) + 1;
   const run = game.run;
   if (run) save.data.winsBy[run.char] = (save.data.winsBy[run.char] || 0) + 1;
   save.write();
-  checkUnlocks();
+  try { checkUnlocks(); } catch (e) { /* data not ready */ }
   game.go('victory', {}, { transition: 'fade', dur: 1.5 });
 }
 
-/** Open the backpack overlay. opts: { loot, title, onClose }. */
+// ------------------------------------------------------------------ overlays
+/** The backpack (inventory + equipment). opts: { onClose, loot, title } */
 export function openBag(game, opts = {}) {
   if (game.overlays.some((o) => o.name === 'bag')) return null;
   return game.pushOverlay('bag', opts);
 }
-
-/** Open the old map. opts: { pick, options (nodes you may choose), onPick(node), onClose }. */
-export function openMap(game, opts = {}) {
-  if (game.overlays.some((o) => o.name === 'oldmap')) return null;
-  if (!game.scenes.oldmap) return null;
-  return game.pushOverlay('oldmap', opts);
+/** The workbench close-up. opts: { station: 'workbench'|'forge'|'cauldron', onClose } */
+export function openCraft(game, opts = {}) {
+  if (game.overlays.some((o) => o.name === 'craft')) return null;
+  return game.pushOverlay(game.scenes.craft ? 'craft' : 'bag', opts);
 }
+/** Zoom in on a vein or a statue and mine it. opts: { kind:'vein'|'statue', def, monster, vein, stage, at, cam, scene, onDone(res) } */
+export function openMine(game, opts = {}) {
+  if (game.overlays.some((o) => o.name === 'minezoom')) return null;
+  if (!game.scenes.minezoom) { opts.onDone && opts.onDone({ items: [], left: true }); return null; }
+  return game.pushOverlay('minezoom', opts);
+}
+/** v4 had an old-map overlay; v5 uses the minimap (M in the dungeon). */
+export function openMap(game, opts = {}) { opts.onClose && opts.onClose(); return null; }
 
-// ------------------------------------------------------------------ old names (until the old scenes are removed)
-export const arrive = (game, node) => enterNode(game, node);
-export const finish = (game, opts) => finishNode(game, opts);
-export const travel = (game, edge, node) => enterNode(game, node);
+// ------------------------------------------------------------------ helpers kept for older callers
+export const actOf = (run) => (run ? run.stage ?? run.act ?? run.region ?? 0 : 0);
+export const actDef = (run) => { const A = stages(); return A[Math.min(A.length - 1, actOf(run))] || A[0] || {}; };
+export function monsterPool(act, tier = 'normal') {
+  const pool = MON.actPool ? MON.actPool(act, tier) : MON.regionPool ? MON.regionPool(act, tier) : [];
+  if (pool && pool.length) return pool;
+  return Object.values(MON.MONSTERS || {}).filter((m) => m.tier === tier).slice(0, 4);
+}
+export function monsterFor(run, nodeOrType = 'monster') {
+  const type = typeof nodeOrType === 'string' ? nodeOrType : nodeOrType && nodeOrType.type;
+  const tier = type === 'boss' ? 'boss' : type === 'elite' ? 'elite' : 'normal';
+  const pool = monsterPool(actOf(run), tier);
+  return pool.length ? (run.rng ? run.rng.pick(pool) : pool[0]).id : 'shroomling';
+}
+export function friendOf(run, act = actOf(run)) {
+  if (run.friendForAct) return run.friendForAct(act);
+  const order = CHARACTER_ORDER.filter((id) => id !== run.char);
+  return order[act] || null;
+}
+export function pickEvent() { return null; }
+/** Old first-person scenes: anything that arrives or finishes goes back to the dungeon. */
+export function enterNode(game) { game.go('dungeon', {}, { transition: 'fade' }); }
+export function finishNode(game) { game.go('dungeon', {}, { transition: 'fade' }); }
+export const arrive = (game) => enterNode(game);
+export const finish = (game) => finishNode(game);
+export const travel = (game) => enterNode(game);
 
 // handy for automated tests (like window.FORGLITE)
-if (typeof window !== 'undefined') window.FORGLITE_FLOW = { startRun, enterNode, finishNode, gameOver, victory, openBag, openMap, monsterFor, friendOf };
+if (typeof window !== 'undefined') window.FORGLITE_FLOW = { startRun, nextFloor, gameOver, victory, openBag, openCraft, openMine };

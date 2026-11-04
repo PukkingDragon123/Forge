@@ -19,6 +19,13 @@ const ACTIONS = {
   up: ['ArrowUp', 'KeyW'],
   down: ['ArrowDown', 'KeyS'],
   fast: ['KeyF', 'Touch_fast'],
+  // action game (src/action): mouse buttons are read separately (LMB attack, RMB special)
+  a_attack: ['KeyJ', 'Touch_a_attack'],
+  a_special: ['KeyK', 'Touch_a_special'],
+  a_dash: ['Space', 'ShiftLeft', 'ShiftRight', 'KeyL', 'Touch_a_dash'],
+  a_skill1: ['KeyQ', 'Digit1', 'Touch_a_skill1'],
+  a_skill2: ['KeyE', 'Digit2', 'Touch_a_skill2'],
+  a_interact: ['KeyF', 'Enter', 'Touch_a_interact'],
 };
 const HOLD_MS = 430, HOLD_SLOP = 9;
 
@@ -47,6 +54,11 @@ export class Input {
     this._queue = [];
     this.onFirstGesture = null;
     this.onGesture = null;
+    // floating virtual joystick for touch action play: a finger landing inside stickZone (set by the
+    // action scene every frame, ignored if stale) drives stick.dx/dy in -1..1
+    this.stick = { on: false, id: null, ox: 0, oy: 0, x: 0, y: 0, dx: 0, dy: 0, r: 46 };
+    this.stickZone = null;
+    this._frame = 0;
     this._bind();
   }
   _gesture() {
@@ -67,6 +79,7 @@ export class Input {
     const pos = (e) => { const v = virt(e); this.x = v.x; this.y = v.y; this.moved = true; };
     el.addEventListener('pointermove', (e) => {
       const p = this._ptr.get(e.pointerId);
+      if (p && p.kind === 'stick') { this._stickMove(virt(e)); return; }
       if (p && p.kind !== 'primary') return;
       if (!p && e.pointerType === 'touch') return; // stray finger
       this.touch = e.pointerType === 'touch';
@@ -88,6 +101,12 @@ export class Input {
         this.onButton && this.onButton(b.action);
         return;
       }
+      if ((isTouch || e.pointerType === 'pen') && !this.stick.on && this._stickLive() && this._inStickZone(v)) {
+        this._ptr.set(e.pointerId, { kind: 'stick' });
+        const st = this.stick;
+        st.on = true; st.id = e.pointerId; st.ox = v.x; st.oy = v.y; st.x = v.x; st.y = v.y; st.dx = 0; st.dy = 0;
+        return;
+      }
       if (this._primary !== null && isTouch) { this._ptr.set(e.pointerId, { kind: 'extra' }); return; }
       this._primary = e.pointerId;
       this._ptr.set(e.pointerId, { kind: 'primary', x: v.x, y: v.y, t0: performance.now(), touch: isTouch });
@@ -100,6 +119,7 @@ export class Input {
       const p = this._ptr.get(e.pointerId);
       this._ptr.delete(e.pointerId);
       if (p && p.kind === 'button') { this.held.delete(p.action); this._queue.push('k-Touch_' + p.action); return; }
+      if (p && p.kind === 'stick') { this.stick.on = false; this.stick.id = null; this.stick.dx = 0; this.stick.dy = 0; return; }
       if (p && p.kind === 'extra') return;
       if (e.pointerId === this._primary) this._primary = null;
       pos(e);
@@ -128,10 +148,30 @@ export class Input {
       this.keys.clear(); this.down = false; this.rdown = false;
       for (const a of this.held) this.keys.delete('Touch_' + a);
       this.held.clear(); this._ptr.clear(); this._primary = null;
+      this.stick.on = false; this.stick.dx = 0; this.stick.dy = 0;
     });
   }
+  _stickLive() { return !!this.stickZone && this._frame - (this.stickZone.frame ?? -9) <= 2; }
+  _inStickZone(v) { const z = this.stickZone; return v.x >= z.x0 && v.x <= z.x1 && v.y >= z.y0 && v.y <= z.y1; }
+  _stickMove(v) {
+    const st = this.stick;
+    st.x = v.x; st.y = v.y;
+    let dx = v.x - st.ox, dy = v.y - st.oy;
+    const d = Math.hypot(dx, dy);
+    // a floating stick: drag past the rim and the base follows the thumb
+    if (d > st.r) { st.ox += (dx / d) * (d - st.r); st.oy += (dy / d) * (d - st.r); dx = v.x - st.ox; dy = v.y - st.oy; }
+    const k = Math.min(1, Math.hypot(dx, dy) / st.r);
+    const L = Math.hypot(dx, dy) || 1;
+    const dead = 0.12;
+    const m = k < dead ? 0 : (k - dead) / (1 - dead);
+    st.dx = (dx / L) * m; st.dy = (dy / L) * m;
+  }
+  /** Action scenes call this every frame they want a joystick (zone in virtual px). */
+  useStick(x0, y0, x1, y1) { this.stickZone = { x0, y0, x1, y1, frame: this._frame }; }
   /** Called once per frame before update. Applies queued events so presses are never lost. */
   poll() {
+    this._frame++;
+    if (this.stick.on && !this._stickLive()) { this.stick.on = false; this.stick.dx = 0; this.stick.dy = 0; if (this.stick.id !== null) this._ptr.delete(this.stick.id); this.stick.id = null; }
     this.pressed = this.released = this.rpressed = this.rreleased = false;
     this.keysPressed.clear(); this.keysReleased.clear();
     this.consumed = false;
