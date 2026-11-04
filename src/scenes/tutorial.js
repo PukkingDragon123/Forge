@@ -106,6 +106,7 @@ export class TutorialScene extends Scene {
     this.talking = false;
     this.hint = null;
     this.flags = { dashed: 0, killed: 0, mined: false, crafted: false, cast: 0 };
+    this.busy = null;
     this.outroT = -1;
     aw.on('dash', () => this.onDash());
     aw.on('enemyKilled', (ev) => this.onKill(ev));
@@ -318,11 +319,13 @@ export class TutorialScene extends Scene {
     }
   }
   mineStatue(s) {
-    if (s.mined || this.step < 3) return;
+    if (s.mined || this.step < 3 || this.busy) return;
     const game = this.game;
     if (has(this.player, 'lockInput')) this.player.lockInput(true);
+    this.busy = { kind: 'minezoom', t: 0 };
     const done = () => {
       if (s.mined) return;
+      this.busy = null;
       s.mined = true; this.flags.mined = true;
       if (s.it) this.aw.removeInteractable(s.it);
       if (has(this.player, 'lockInput')) this.player.lockInput(false);
@@ -338,10 +341,12 @@ export class TutorialScene extends Scene {
     if (!ov && !game.overlays.some((o) => o.name === 'minezoom')) done();
   }
   openBench() {
-    if (this.step !== 4) return;
+    if (this.step !== 4 || this.busy) return;
     const game = this.game, run = this.run;
     if (has(this.player, 'lockInput')) this.player.lockInput(true);
+    this.busy = { kind: 'craft', t: 0 };
     const close = () => {
+      this.busy = null;
       if (has(this.player, 'lockInput')) this.player.lockInput(false);
       // did Spore Burst come out of it? slot it into Q
       const gem = this.findSkillGem('spore_burst');
@@ -355,6 +360,25 @@ export class TutorialScene extends Scene {
     };
     const ov = Flow.openCraft ? Flow.openCraft(game, { station: 'workbench', onClose: close }) : null;
     if (!ov) close();
+  }
+  /** The backpack (the HUD medallion / Tab): look at your loot, slot a skill by hand. */
+  openBag() {
+    const game = this.game;
+    if (this.busy || this.talking || this.outroT >= 0 || game.overlays.length || !Flow.openBag) return;
+    if (has(this.player, 'lockInput')) this.player.lockInput(true);
+    this.busy = { kind: 'bag', t: 0 };
+    const ov = Flow.openBag(game, {
+      onClose: () => {
+        this.busy = null;
+        if (has(this.player, 'lockInput')) this.player.lockInput(false);
+        // slotted Spore Burst by hand? that counts as the crafting beat's equip
+        if (this.step === 4 && (this.run.skills || []).some((x) => x && x.id === 'skill_spore_burst')) this.flags.crafted = true;
+        this.refreshLoadout();
+      },
+      // nothing gets left on the floor here: it goes back in the bag
+      onLeave: (items) => { for (const it of items || []) { try { this.run.addItem ? this.run.addItem(it) : this.run.bag.add(it); } catch (e) { /* bag full */ } } },
+    });
+    if (!ov) { this.busy = null; if (has(this.player, 'lockInput')) this.player.lockInput(false); }
   }
   findSkillGem(skill) {
     const run = this.run;
@@ -416,6 +440,13 @@ export class TutorialScene extends Scene {
   update(dt) {
     const aw = this.aw, P = this.player;
     this.stepT += dt;
+    if (this.busy) {
+      const b = this.busy; b.t += dt;
+      if (b.t > 0.5 && !this.game.overlays.some((o) => o.name === b.kind || (b.kind === 'craft' && o.name === 'bag'))) {
+        this.busy = null;
+        if (!this.talking && this.outroT < 0 && has(P, 'lockInput')) P.lockInput(false);
+      }
+    } else if (!this.talking && this.outroT < 0 && !this.game.overlays.length && this.game.input && this.game.input.actionPressed && this.game.input.actionPressed('bag')) this.openBag();
     this.fade = this.fadeOut ? Math.min(1, this.fade + dt * 1.2) : Math.max(0, this.fade - dt * 1.4);
     for (let i = this.timers.length - 1; i >= 0; i--) { const t = this.timers[i]; t.t -= dt; if (t.t <= 0) { this.timers.splice(i, 1); t.fn(); } }
     // opening: Durgan runs in on his own
@@ -492,6 +523,7 @@ export class TutorialScene extends Scene {
     if (it && !hidden) { const p = this.project(it.x, 1.3, it.z); prompt = { x: p.x, y: p.y, label: it.label, key: 'F' }; }
     const out = drawActionHud(ui, this.hud, { player: P, loadout: this.loadout, run: this.run, touch: ui.touch, hidden, interact: prompt });
     if (out.interact && it && it.onInteract) it.onInteract(P, this.aw);
+    if (out.bag) this.openBag();
     if (!hidden) this.aw.drawUI(ui);
     // Morel shouting while you play
     if (this.aside && !this.talking && !overlay) {

@@ -8,6 +8,8 @@
 //   room.grid.get(tx, tz) → 0 floor | 1 wall | 2 obstacle | 3 pit     (tile 0.5 m, centred on the origin)
 //   room.doors.n.setOpen(k)   room.veins[i].setMined(k)   room.openHole(k)   releaseRoom(room) / room.dispose()
 //   prebuildRoom(stage, room, opts)   — bake a neighbour in idle time; a later buildRoom() returns it ready
+//   pumpRooms(ms)                     — spend up to ms baking prebuilt rooms now (calm moments)
+//   room.setPlayer({x, z})            — props between the camera and this entity fade (see-through)
 //
 // Room space: origin at the room centre, floor surface y = 0, x → east, z → south (toward the camera).
 // The camera looks from the south, high up (≈52° pitch); faces that can only be seen from the north or
@@ -162,7 +164,10 @@ function planRoom(stage, type, size, doors, seed) {
     for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) {
       const dx = (ix + 0.5 - cxT) / (nx * 0.5), dz = (iz + 0.5 - czT) / (nz * 0.5);
       const doorClear = zones.some((z) => hits({ ix, iz, tw: 1, th: 1 }, z));
-      if (dx * dx + dz * dz > 1.02 && !doorClear) thicket.push([ix, iz]);
+      // the throne mushroom and its ring of caps against the north edge
+      const tx = (ix + 0.5 - cxT) * TILE, tz = (iz + 0.5) * TILE - D / 2;
+      const throne = (tx / 2.1) ** 2 + ((tz - (-HD + 1.6)) / 1.25) ** 2 <= 1;
+      if ((dx * dx + dz * dz > 1.02 || throne) && !doorClear) thicket.push([ix, iz]);
     }
     obs = [];
   }
@@ -274,7 +279,7 @@ function planBackdrop(pl, stage, type) {
   const items = [], lamps = [], u = (m) => Math.round(m / BS);
   const kind = A.backdrop;
   const stemBase = (top, deep) => Math.max(deep, top - 7); // stems vanish into the fog well before their roots
-  const sparse = pl.W > 20 ? 1.35 : 1; // big rooms already fill the screen
+  const sparse = pl.W > 30 ? 1.8 : pl.W > 20 ? 1.35 : 1; // big rooms already fill the screen
   // north band: tall things rising above the north wall
   for (let x = -HW - 6; x < HW + 6; x += (3.4 + r() * 3.2) * sparse) {
     const z = -HD - 1.8 - r() * 6.5, top = 3.2 + r() * 5.5;
@@ -396,6 +401,15 @@ function remember(key, R) {
     if (!old.active) old.dispose();
   }
 }
+/** Bake prebuilt rooms for up to `ms` milliseconds now (call in calm moments: a cleared room, a transition). */
+export function pumpRooms(ms = 8) {
+  const t0 = performance.now();
+  for (const R of cache.values()) {
+    if (R.disposed || R.active) continue;
+    while (!R.done() && performance.now() - t0 < ms) R.bakeNext();
+    if (performance.now() - t0 >= ms) break;
+  }
+}
 // idle-time baking of prebuilt rooms
 let pumping = false;
 function pump() {
@@ -429,7 +443,7 @@ function makeRoom(n) {
   for (const o of pl.obs) if (o.kind === 'shroom' || o.kind === 'crystal') lamps.push({ x: (o.b.x0 + o.b.x1) / 2, y: 0.9, z: (o.b.z0 + o.b.z1) / 2 + 0.2, c: (A.gills || [A.glow])[(seed + o.ix) % (A.gills || [1]).length], r: 2.4, i: 0.85 });
   for (const s of pl.special) lamps.push({ x: (s.b.x0 + s.b.x1) / 2, y: 1, z: (s.b.z0 + s.b.z1) / 2 + 0.3, c: s.kind === 'bench' ? '#ffd27a' : A.glow, r: 3, i: 1 });
   for (const v of pl.veins) lamps.push({ x: (v.b.x0 + v.b.x1) / 2, y: 0.8, z: (v.b.z0 + v.b.z1) / 2 + 0.3, c: A.oreGlow || '#fff0b0', r: 1.8, i: 0.7 });
-  if (type === 'boss') lamps.push({ x: 0, y: 1.2, z: 0, c: A.glow, r: 6, i: 0.8 });
+  if (type === 'boss') for (const [x, z] of [[-6, -4], [6, -4], [0, -5.5]]) lamps.push({ x, y: 1.6, z, c: A.gills ? A.gills[(x + 6) % 4 | 0] : A.glow, r: 4, i: 0.7 }); // pools of cap-light at the edges, a dim centre
   const moody = type === 'boss';
   const rig = makeLightRig({ amb: A.amb, ambI: moody ? 0.46 : 0.64, sky: A.sky, skyI: moody ? 0.12 : 0.24, key: A.key, keyI: moody ? 0.18 : 0.26, keyDir: [-0.35, 1, 0.45], lamps: lamps.map((l) => ({ ...l, i: l.i * 1.7, r: l.r * 1.15 })), bands: 12 });
   const rigBack = makeLightRig({ amb: A.amb, ambI: 0.55, sky: A.sky, skyI: 0.25, key: A.key, keyI: 0.15, keyDir: [-0.35, 1, 0.45], lamps: bd.lamps, bands: 18 });
@@ -466,9 +480,9 @@ function makeRoom(n) {
     const gr = rngOf(seed + 3);
     let q = 0;
     for (const [ix, iz] of rim) {
-      if (gr() > 0.26) continue;
+      if (gr() > 0.2) continue;
       const b = grid.box(ix + 1, iz + 1), x = (b.x0 + b.x1) / 2, z = (b.z0 + b.z1) / 2, south = z > 0;
-      const h = south ? 10 + Math.floor(gr() * 8) : 22 + Math.floor(gr() * 26), cap = south ? 9 + Math.floor(gr() * 5) : 14 + Math.floor(gr() * 14), k = q++;
+      const h = south ? 10 + Math.floor(gr() * 8) : 22 + Math.floor(gr() * 24), cap = south ? 9 + Math.floor(gr() * 5) : 13 + Math.floor(gr() * 11), k = q++;
       const fn = (w) => RP.bigMushroom(w, A, Math.round(x / S), 3, Math.round(z / S), h, cap, k, seed + k * 13);
       if (south || Math.abs(x) > HW - 3) propUnits.push({ tag: 'dress', prop: { kind: 'grove', box: { x0: x - cap * S, x1: x + cap * S, z0: z - cap * S, z1: z + cap * S }, fn } });
       else dress.push({ ...vb(x - 1.4, x + 1.4, z - 1.4, z + 1.4), fn });
@@ -687,7 +701,9 @@ function makeRoom(n) {
     setPlayer(e) { R._player = e; },
     update(dt, t, o = {}) {
       firstFrameDone = true;
-      const pl0 = o.player || R._player, cam0 = o.cam || R._cam;
+      const cam0 = o.cam || R._cam;
+      // no player given: the Hades camera centres on the hero, so use where its view ray meets the floor
+      const pl0 = o.player || R._player || (cam0 && camFocus(cam0, st.group));
       if (pl0 && cam0 && props.length) fadeProps(props, st.group, cam0, pl0, dt);
       // stream the dressing & backdrop within a small frame budget, nearest to the camera's focus first
       if (queue.length) {
@@ -715,7 +731,6 @@ function makeRoom(n) {
     },
   };
   timing.planned = performance.now() - t0;
-  R._debugOps = () => [...core.map((o, i) => ['core' + i, o]), ...dress.map((o, i) => ['dress' + i, o])].map(([n, o]) => { const r = bakeUnit([o], { x0: o.x0, x1: o.x1, z0: o.z0, z1: o.z1 }, S, rig, 1.6, SKIP); return [n, r ? r.faces : 0]; });
   return R;
 }
 let _sortT = 0;
@@ -742,6 +757,15 @@ function segHitsBox(ax, ay, az, bx, by, bz, x0, x1, y0, y1, z0, z1) {
     if (t0 > t1) return false;
   }
   return true;
+}
+const _cd = new THREE.Vector3(), _cf = { x: 0, z: 0 };
+function camFocus(cam, root) {
+  cam.getWorldPosition(_cp); cam.getWorldDirection(_cd);
+  if (_cd.y > -0.05) return null;
+  const t = -_cp.y / _cd.y; _cp.addScaledVector(_cd, t);
+  root.updateWorldMatrix(true, false); root.worldToLocal(_cp);
+  _cf.x = _cp.x; _cf.z = _cp.z;
+  return _cf;
 }
 /** Fade props that stand between the camera and the hero's feet or head; ease them back otherwise. */
 function fadeProps(props, root, cam, p, dt) {

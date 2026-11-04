@@ -104,7 +104,7 @@ function groveTop(A, X, Z) {
   if (Math.abs(m - 0.5) < 0.008) return h3(qx >> 2, qz >> 2, 1, 1) > 0.72 ? glowC('#7affd8') : mixC(A.moss[1], C('#8ac8b0'), 0.35);
   if (n > 0.68) { const sl = slabAt(X, Z); return sl.joint ? A.joint : tone(A.flag, 0.16 + h3(sl.id, 1, 2, 3) * 0.2); }
   if (n < 0.24) return tone(A.dirt, n < 0.18 ? 0.12 : 0.22);
-  return mixC(tone(A.moss, 0.06 + Math.round(noise2(qx * 0.12, qz * 0.12) * 3) / 3 * 0.2), A.rock[1], 0.25);
+  return mixC(tone(A.moss, 0.04 + Math.round(noise2(qx * 0.12, qz * 0.12) * 3) / 3 * 0.16), A.rock[0], 0.45);
 }
 /** Floor slab (3 voxels) with flagstones, moss and dirt, holes for pits, a glowing mycelium web, blades of grass. */
 export function paintFloor(w, ctx) {

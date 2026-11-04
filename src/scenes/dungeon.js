@@ -165,6 +165,8 @@ export class DungeonScene extends Scene {
     }
   }
   pumpPrebuild(dt) {
+    // calm moments (no fight, no transition): give prebuilt neighbours a few ms of baking per frame
+    if (!this.trans && !this.inFight() && fn(Rooms, 'pumpRooms')) { try { Rooms.pumpRooms(5); } catch (e) { /* optional */ } }
     if (!this.prebuildQ.length || this.trans || this.inFight()) return;
     this.prebuildT = (this.prebuildT || 0) + dt;
     if (this.prebuildT < 0.7) return;
@@ -210,6 +212,8 @@ export class DungeonScene extends Scene {
       p.x = px; p.z = pz; p.vx = p.vz = 0; p.kbx = p.kbz = 0; p.facing = facing;
       if (aw.player !== p) aw.setPlayer(p);
       this.cam.follow(p, true);
+      // tall mushrooms between the camera and the hero fade out: the room tracks the hero itself
+      if (typeof b.setPlayer === 'function') b.setPlayer(p);
     }
     // the room's contents
     const st = this.roomState(id);

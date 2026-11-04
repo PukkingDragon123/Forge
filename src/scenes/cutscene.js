@@ -268,9 +268,11 @@ export class Cine {
    * waits until you pick. lines: dialogue lines (see scenes/dialogue.js); then(result) afterwards.
    */
   ask(lines, then) {
-    if (!this.game.scenes.dialogue) { if (then) then({ choices: {}, picked: [] }); return; }
+    if (!this.game.scenes.dialogue || this.finishing || this.done) { if (then) then({ choices: {}, picked: [] }); return; }
     this.waiting = true;
-    this.game.pushOverlay('dialogue', { lines, cam: null, camera: this.camera, bars: false, sound: false, onDone: (r) => { this.waiting = false; if (then) then(r); } });
+    // played as an overlay (a boss intro over the dungeon): keep the fight below frozen while you answer
+    const freeze = !(this.game.scene && this.game.scene.cine === this);
+    this.askOv = this.game.pushOverlay('dialogue', { lines, cam: null, camera: this.camera, bars: false, sound: false, freeze, onDone: (r) => { this.waiting = false; this.askOv = null; if (then) then(r); } });
   }
   /** The hero's current weapon as a mesh (the forged one if there is a run, else their trade tool). */
   heroWeapon(who) {
@@ -548,6 +550,9 @@ export class Cine {
     }
   }
   dispose() {
+    // a question still open when the scene is torn down (a caller's watchdog) goes with it
+    if (this.askOv && this.game.overlays.includes(this.askOv)) this.game.popOverlay(this.askOv);
+    this.askOv = null; this.waiting = false;
     for (const h of this.loops) h && h.stop && h.stop(0.4);
     this.env.solid.color.copy(this.envSave.solid);
     this.env.glow.color.copy(this.envSave.glow);
