@@ -297,6 +297,17 @@ function planBackdrop(pl, stage, type) {
     if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: stemBase(top, -12), top, cap: 0.9 + r() * 1.3, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
     else items.push({ t: 'spire', x, z, base: stemBase(top, -12), top, rr: 0.5 + r() * 0.5, glow: kind === 'crystals' && r() < 0.5, seed: Math.floor(r() * 999) });
   }
+  // just below the south edge and the sides: caps and spires close under the rim (fills the drop with life)
+  for (let x = -HW - 3; x < HW + 3; x += (1.8 + r() * 2.2) * sparse) {
+    const z = HD + 0.9 + r() * 2.6, top = -1.1 - r() * 2.2;
+    if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: stemBase(top, -10), top, cap: 0.7 + r() * 0.9, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
+    else items.push({ t: 'spire', x, z, base: stemBase(top, -10), top, rr: 0.4 + r() * 0.4, glow: kind === 'crystals', seed: Math.floor(r() * 999) });
+  }
+  for (const side of [-1, 1]) for (let z = -HD + 0.5; z < HD + 2; z += (2 + r() * 2) * sparse) {
+    const x = side * (HW + 1.2 + r() * 2.2), top = -1.4 - r() * 1.8;
+    if (kind === 'mushrooms') items.push({ t: 'mush', x, z, base: stemBase(top, -10), top, cap: 0.6 + r() * 0.8, ci: Math.floor(r() * 4), seed: Math.floor(r() * 999) });
+    else items.push({ t: 'spire', x, z, base: stemBase(top, -10), top, rr: 0.35 + r() * 0.35, glow: kind === 'crystals' && r() < 0.5, seed: Math.floor(r() * 999) });
+  }
   // the abyss below the south edge: caps glowing far down
   for (let x = -HW - 4; x < HW + 4; x += (2.6 + r() * 2.8) * sparse) {
     const z = HD + 1.5 + r() * 4.5, top = -2 - r() * 4;
@@ -598,6 +609,16 @@ function makeRoom(n) {
     st.group.add(hole);
     st.emitters.push((dt) => { if (hole.visible && rnd.chance(dt * 10)) st.P.add.emit({ pos: [holeAt.x + rnd.float(-0.6, 0.6), 0.05, holeAt.z + rnd.float(-0.5, 0.5)], vel: [0, rnd.float(0.4, 1.2), 0], spread: 0.1, life: [1, 2], size: [1, 2], color: [A.glow, '#ffffff'], glow: 3, swirl: 0.8 }); });
   }
+  // ---- the abyss around the platform: a luminous mist layer and a deeper, darker one (never a flat void)
+  for (const [y, op, k] of [[-2.6, 0.5, 1], [-6.5, 0.85, 0.45]]) {
+    const tex = mistTexture(A, seed + y);
+    tex.repeat.set((pl.W + 34) / 6, (pl.D + 30) / 6);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(pl.W + 34, pl.D + 30).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: op, depthWrite: false, fog: true, color: new THREE.Color(k, k, k) }));
+    m.position.set(0, y, -3); m.renderOrder = -1;
+    st.group.add(m);
+    const sp = y > -3 ? 0.012 : 0.006;
+    st.updaters.push((dt, t) => { tex.offset.x = t * sp; tex.offset.y = Math.sin(t * 0.07) * 0.3; });
+  }
   // ---- the depths of each pit: a dark floor far below speckled with glowing caps, spores drifting up
   if (pl.pits.length) {
     const ptex = pitTexture(A, seed);
@@ -759,6 +780,22 @@ function glowShard(w, x, y, z, r, col) {
 function ashTreeCoarse(w, A, x, y, z, h, seed) {
   for (let s = 0; s < h; s++) { const r = 1.6 * (1 - s / h) + 0.6; for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dz * dz <= r * r) w.set(x + dx, y + s, z + dz, h3(dx, s, dz, seed) > 0.96 ? glowC('#ff6a1a') : tone(A.root, 0.15 + h3(dx, s, dz, 2) * 0.25)); }
   for (let k = 0; k < 18; k++) { const a = h3(k, seed, 1, 1) * Math.PI * 2, rr = 2 + h3(k, seed, 2, 2) * 5, yy = y + h - 2 + Math.round(h3(k, seed, 3, 3) * 5); w.set(Math.round(x + Math.cos(a) * rr), yy, Math.round(z + Math.sin(a) * rr), h3(k, seed, 4, 4) > 0.4 ? glowC(A.leaf[3 + (k & 1)]) : tone(A.leaf, 0.5)); }
+}
+function mistTexture(A, seed) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), img = g.createImageData(64, 64);
+  const [fr, fg, fb] = new THREE.Color(A.fog).lerp(new THREE.Color(A.glow), 0.35).lerp(new THREE.Color(A.amb), 0.3).toArray().map((v) => v * 255);
+  const gl = new THREE.Color(A.glow).toArray().map((v) => v * 255);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const i = (y * 64 + x) * 4, n = noise2(x * 0.09 + seed, y * 0.09) * 0.7 + noise2(x * 0.23, y * 0.23 + seed) * 0.3;
+    const spark = h3(x, y, seed | 0, 9) > 0.992;
+    img.data[i] = spark ? gl[0] : fr * (0.6 + n * 0.8); img.data[i + 1] = spark ? gl[1] : fg * (0.6 + n * 0.8); img.data[i + 2] = spark ? gl[2] : fb * (0.6 + n * 0.8);
+    img.data[i + 3] = spark ? 255 : Math.round(Math.max(0, n - 0.25) * 255);
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
 }
 function pitTexture(A, seed) {
   const c = document.createElement('canvas'); c.width = c.height = 64;

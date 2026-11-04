@@ -171,7 +171,7 @@ export function drawActionHud(ui, st, p) {
   if (touch) {
     // an on-screen button (Touch_bag → the 'bag' action) so it works while the stick is held
     // (the scene reads the 'bag' action; this only draws and registers the button)
-    ui.touchButton('bag', bgx + 18, bgy + 16, 19, { icon: 'bag', style: 'brass' });
+    ui.touchButton('bag', bgx + 20, bgy + 18, 24, { icon: 'bag', style: 'brass' });
   } else {
     const bh2 = ui.hit('hud-bag', bgx, bgy, 32, 32, { sound: false });
     ui.icon('bag', bgx, bgy - (bh2.hover ? 2 : 0), { scale: 2 });
