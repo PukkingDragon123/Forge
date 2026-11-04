@@ -141,12 +141,13 @@ export function hazard(world, o) {
   const col = new THREE.Color(o.color || '#7affb0');
   const g = new THREE.Group();
   const puffs = [];
-  const n = Math.round(5 + o.r * 3);
+  // a low, thin ground haze: the danger zone reads, but the fight inside stays visible
+  const n = Math.round(3 + o.r * 1.6);
   for (let i = 0; i < n; i++) {
     const m = new THREE.Mesh(CLOUD, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
     const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * o.r * 0.75;
-    m.position.set(Math.cos(a) * rr, 0.25 + Math.random() * 0.4, Math.sin(a) * rr);
-    const s = o.r * (0.32 + Math.random() * 0.25); m.scale.set(s, s * 0.55, s);
+    m.position.set(Math.cos(a) * rr, 0.1 + Math.random() * 0.18, Math.sin(a) * rr);
+    const s = o.r * (0.36 + Math.random() * 0.22); m.scale.set(s, s * 0.28, s);
     m.userData.ph = Math.random() * 6;
     g.add(m); puffs.push(m);
   }
@@ -189,7 +190,7 @@ export function updateEnemyFx(world, dt) {
     const fadeIn = Math.min(1, H.t / 0.35), fadeOut = Math.min(1, (H.life - H.t) / 0.6);
     for (const m of H.puffs) {
       m.userData.ph += dt;
-      m.material.opacity = 0.22 * Math.max(0, Math.min(fadeIn, fadeOut)) * (0.8 + Math.sin(m.userData.ph * 1.7) * 0.2);
+      m.material.opacity = 0.13 * Math.max(0, Math.min(fadeIn, fadeOut)) * (0.8 + Math.sin(m.userData.ph * 1.7) * 0.2);
       m.position.y += Math.sin(m.userData.ph) * 0.002;
       m.rotation.y += dt * 0.3;
     }

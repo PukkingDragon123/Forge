@@ -1167,15 +1167,16 @@ SCRIPTS.rescue = (c, p) => {
       { dur: 3.6,
         cam: { pos: [hadesAt(hpos.clone().lerp(fpos, 0.5), 0.36, 1.5).pos], look: [hpos.clone().lerp(fpos, 0.5).setY(0.5)], fov: 34 },
         enter: (c) => {
-          const meet = hpos.clone().lerp(flat(fpos), 0.6);
-          c.walk(friend, meet, 0.7, { anim: 'run', then: false });
+          // they meet just in front of you (you take a step too): close enough to hug
+          c.walk(friend, hpos.clone().lerp(flat(fpos), 0.46), 0.8, { anim: 'run', then: false });
+          c.later(0.2, () => c.walk(hero, hpos.clone().lerp(flat(fpos), 0.17), 0.5, { anim: 'walk', then: false }));
           c.later(0.7, () => { c.act(friend, ['hug', 'cheer'], { loop: true }); c.act(hero, ['hug', 'cheer'], { loop: true }); c.sfx('hug'); hero.setExpression && hero.setExpression('happy'); friend.setExpression && friend.setExpression('happy'); });
           if (pip) { c.later(0.5, () => { c.act(pip, ['happy', 'bark', 'run'], { loop: true }); c.sfx('pip_bark'); }); c.later(1.5, () => c.sfx('pip_yip')); }
           c.later(1.1, () => { const m = hpos.clone().lerp(fpos, 0.55); c.P.add.emit({ pos: [m.x, 1.0, m.z], radial: [0.4, 1.2], radialUp: 1.2, count: 30, life: [0.8, 1.6], size: [1, 2], color: ['#ff9ab0', '#ffd27a', '#ffffff'], glow: 2.6, gravity: -0.2 }); });
         } },
       // a word (you answer), and they're free for good
       { dur: 3.6,
-        cam: { pos: (c) => fh().addScaledVector(toF, -1.2).addScaledVector(side, 1.0).add(V(0, 0.25, 0)), look: (c) => fh().add(V(0, -0.15, 0)), fov: 32 },
+        cam: { pos: (c) => fh().addScaledVector(toF, -1.8).addScaledVector(side, 1.15).add(V(0, 0.4, 0)), look: (c) => fh().add(V(0, -0.3, 0)), fov: 34 },
         enter: (c) => { c.act(friend, ['cheer', 'idle'], {}); },
         at: [
           [0.3, (c) => c.ask([{ who: fid, at: friend, text: RESCUE_LINE[fid] || 'Thank you!', replies: RESCUE_REPLY[fid], replyAt: hero }])],
